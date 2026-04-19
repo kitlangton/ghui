@@ -392,7 +392,7 @@ const FooterHints = ({ showFilterClear, detailFullView }: { showFilterClear: boo
 const GroupTitle = ({ label, color }: { label: string; color: string }) => (
 	<TextLine>
 		<span fg={color} attributes={TextAttributes.BOLD}>
-			{label}
+			◆ {label}
 		</span>
 	</TextLine>
 )
@@ -477,7 +477,7 @@ const PullRequestList = ({
 
 	return (
 		<box flexDirection="column">
-			<SectionTitle title="OPEN PULL REQUESTS" />
+			<SectionTitle title="PULL REQUESTS" />
 			{showFilterBar ? (
 				<TextLine>
 					<span fg={colors.count}>/</span>
@@ -488,9 +488,8 @@ const PullRequestList = ({
 			{status === "loading" && itemCount === 0 ? <PlainLine text="- Loading pull requests..." fg={colors.muted} /> : null}
 			{status === "error" ? <PlainLine text={`- ${error ?? "Could not load pull requests."}`} fg={colors.error} /> : null}
 			{status === "ready" && itemCount === 0 ? <PlainLine text={filterText.length > 0 ? "- No matching pull requests." : "- No open pull requests."} fg={colors.muted} /> : null}
-			{groups.map(([repo, pullRequests], index) => (
+			{groups.map(([repo, pullRequests]) => (
 				<Fragment key={repo}>
-					{index > 0 ? <BlankRow /> : null}
 					<box flexDirection="column">
 						<GroupTitle label={repo} color={repoColor(repo)} />
 						{pullRequests.map((pullRequest) => (
@@ -582,7 +581,6 @@ const DetailsPane = ({
 							)) : <span fg={colors.muted}>no labels</span>}
 						</TextLine>
 					</box>
-					<BlankRow />
 					<Divider width={paneWidth} />
 					<box flexDirection="column" paddingLeft={1} paddingRight={1}>
 						{paddedPreviewLines.map((line, index) => (

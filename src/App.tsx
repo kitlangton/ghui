@@ -459,6 +459,20 @@ const copyPullRequestMetadata = async (pullRequest: PullRequestItem) => {
 	}
 }
 
+const openPullRequestInBrowser = async (pullRequest: PullRequestItem) => {
+	const proc = Bun.spawn({
+		cmd: ["gh", "pr", "view", pullRequest.url, "--web"],
+		stdout: "ignore",
+		stderr: "pipe",
+	})
+
+	const exitCode = await proc.exited
+	if (exitCode !== 0) {
+		const stderr = await Bun.readableStreamToText(proc.stderr)
+		throw new Error(stderr.trim() || "Could not open PR in browser")
+	}
+}
+
 const PlainLine = ({ text, fg = colors.text, bold = false }: { text: string; fg?: string; bold?: boolean }) => (
 	<box height={1}>
 		{bold ? (
@@ -1409,8 +1423,9 @@ export const App = () => {
 				return
 			}
 			if (key.name === "o" && selectedPullRequest) {
-				void Bun.spawn({ cmd: ["open", selectedPullRequest.url], stdout: "ignore", stderr: "ignore" })
-				flashNotice(`Opened #${selectedPullRequest.number} in browser`)
+				void openPullRequestInBrowser(selectedPullRequest)
+					.then(() => flashNotice(`Opened #${selectedPullRequest.number} in browser`))
+					.catch((error) => flashNotice(error instanceof Error ? error.message : String(error)))
 				return
 			}
 			if (key.name === "y" && selectedPullRequest) {
@@ -1557,8 +1572,9 @@ export const App = () => {
 			return
 		}
 		if (key.name === "o" && selectedPullRequest) {
-			void Bun.spawn({ cmd: ["open", selectedPullRequest.url], stdout: "ignore", stderr: "ignore" })
-			flashNotice(`Opened #${selectedPullRequest.number} in browser`)
+			void openPullRequestInBrowser(selectedPullRequest)
+				.then(() => flashNotice(`Opened #${selectedPullRequest.number} in browser`))
+				.catch((error) => flashNotice(error instanceof Error ? error.message : String(error)))
 			return
 		}
 		if ((key.name === "d" || key.name === "D") && selectedPullRequest) {

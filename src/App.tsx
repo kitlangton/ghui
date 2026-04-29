@@ -438,25 +438,56 @@ const copyPullRequestMetadata = async (pullRequest: PullRequestItem) => {
 		lines.push(pullRequest.checkSummary)
 	}
 
-	const proc = Bun.spawn({
-		cmd: ["pbcopy"],
-		stdin: "pipe",
-		stdout: "ignore",
-		stderr: "pipe",
-	})
+	await copyToClipboard(lines.join("\n"))
+}
 
-	if (!proc.stdin) {
-		throw new Error("Clipboard is not available")
+const clipboardCommands = () => {
+	if (process.platform === "darwin") return [["pbcopy"]]
+	if (process.platform === "linux") {
+		return [
+			...(process.env.WAYLAND_DISPLAY ? [["wl-copy"]] : []),
+			["xclip", "-selection", "clipboard"],
+			["xsel", "--clipboard", "--input"],
+		]
 	}
+	return []
+}
 
-	proc.stdin.write(lines.join("\n"))
-	proc.stdin.end()
+const copyToClipboard = async (text: string) => {
+	const commands = clipboardCommands()
+	let lastError = ""
 
-	const exitCode = await proc.exited
-	if (exitCode !== 0) {
+	for (const command of commands) {
+		let proc: Bun.Subprocess<"pipe", "ignore", "pipe">
+		try {
+			proc = Bun.spawn({
+				cmd: command,
+				stdin: "pipe",
+				stdout: "ignore",
+				stderr: "pipe",
+			})
+		} catch (error) {
+			lastError = error instanceof Error ? error.message : String(error)
+			continue
+		}
+
+		if (!proc.stdin) {
+			lastError = "Clipboard is not available"
+			continue
+		}
+
+		proc.stdin.write(text)
+		proc.stdin.end()
+
+		const exitCode = await proc.exited
+		if (exitCode === 0) return
+
 		const stderr = await Bun.readableStreamToText(proc.stderr)
-		throw new Error(stderr.trim() || "Could not copy PR metadata")
+		lastError = stderr.trim()
 	}
+
+	const installHint = process.platform === "linux" ? " Install wl-clipboard, xclip, or xsel." : ""
+	throw new Error(lastError || `Could not copy PR metadata.${installHint}`)
 }
 
 const PlainLine = ({ text, fg = colors.text, bold = false }: { text: string; fg?: string; bold?: boolean }) => (

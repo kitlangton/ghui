@@ -1,11 +1,24 @@
 import { Context, Effect, Layer } from "effect"
 import { config } from "../config.js"
-import type { CheckItem, PullRequestItem } from "../domain.js"
+import type { CheckItem, PullRequestItem, PullRequestMergeAction, PullRequestMergeInfo } from "../domain.js"
 import { CommandRunner, type CommandError, type JsonParseError } from "./CommandRunner.js"
 
-interface GitHubPullRequestNode {
+interface GitHubPullRequestSummaryNode {
 	readonly number: number
 	readonly title: string
+	readonly isDraft: boolean
+	readonly reviewDecision: string | null
+	readonly autoMergeRequest: unknown | null
+	readonly state: string
+	readonly createdAt: string
+	readonly closedAt?: string | null
+	readonly url: string
+	readonly repository: {
+		readonly nameWithOwner: string
+	}
+}
+
+interface GitHubPullRequestNode extends GitHubPullRequestSummaryNode {
 	readonly body: string
 	readonly labels: {
 		readonly nodes: readonly {
@@ -16,20 +29,11 @@ interface GitHubPullRequestNode {
 	readonly additions: number
 	readonly deletions: number
 	readonly changedFiles: number
-	readonly isDraft: boolean
-	readonly reviewDecision: string | null
 	readonly statusCheckRollup?: {
 		readonly contexts: {
 			readonly nodes: readonly GraphQLCheckContext[]
 		}
 	} | null
-	readonly state: string
-	readonly createdAt: string
-	readonly closedAt?: string | null
-	readonly url: string
-	readonly repository: {
-		readonly nameWithOwner: string
-	}
 }
 
 type GraphQLCheckContext =
@@ -57,8 +61,31 @@ interface GraphQLSearchResponse {
 	}
 }
 
+interface GraphQLSearchSummaryResponse {
+	readonly data: {
+		readonly search: {
+			readonly nodes: readonly (GitHubPullRequestSummaryNode | null)[]
+			readonly pageInfo: {
+				readonly hasNextPage: boolean
+				readonly endCursor: string | null
+			}
+		}
+	}
+}
+
 interface GitHubViewer {
 	readonly login: string
+}
+
+interface GitHubMergeInfoResponse {
+	readonly number: number
+	readonly title: string
+	readonly state: string
+	readonly isDraft: boolean
+	readonly mergeable: string
+	readonly reviewDecision: string | null
+	readonly autoMergeRequest: unknown | null
+	readonly statusCheckRollup: readonly GraphQLCheckContext[]
 }
 
 const pullRequestSearchQuery = `
@@ -71,6 +98,7 @@ query PullRequests($searchQuery: String!, $first: Int!, $after: String) {
         body
         isDraft
         reviewDecision
+        autoMergeRequest { enabledAt }
         additions
         deletions
         changedFiles
@@ -96,12 +124,34 @@ query PullRequests($searchQuery: String!, $first: Int!, $after: String) {
 }
 `
 
+const pullRequestSummarySearchQuery = `
+query PullRequests($searchQuery: String!, $first: Int!, $after: String) {
+  search(query: $searchQuery, type: ISSUE, first: $first, after: $after) {
+    nodes {
+      ... on PullRequest {
+        number
+        title
+        isDraft
+        reviewDecision
+        autoMergeRequest { enabledAt }
+        state
+        createdAt
+        closedAt
+        url
+        repository { nameWithOwner }
+      }
+    }
+    pageInfo { hasNextPage endCursor }
+  }
+}
+`
+
 const normalizeDate = (value: string | null | undefined) => {
 	if (!value || value.startsWith("0001-01-01")) return null
 	return new Date(value)
 }
 
-const getReviewStatus = (item: GitHubPullRequestNode): PullRequestItem["reviewStatus"] => {
+const getReviewStatus = (item: { readonly isDraft: boolean; readonly reviewDecision: string | null }): PullRequestItem["reviewStatus"] => {
 	if (item.isDraft) return "draft"
 	if (item.reviewDecision === "APPROVED") return "approved"
 	if (item.reviewDecision === "CHANGES_REQUESTED") return "changes"
@@ -139,8 +189,7 @@ const getContextConclusion = (context: GraphQLCheckContext): CheckItem["conclusi
 	return null
 }
 
-const getCheckInfo = (item: GitHubPullRequestNode): Pick<PullRequestItem, "checkStatus" | "checkSummary" | "checks"> => {
-	const contexts = item.statusCheckRollup?.contexts.nodes ?? []
+const getCheckInfoFromContexts = (contexts: readonly GraphQLCheckContext[]): Pick<PullRequestItem, "checkStatus" | "checkSummary" | "checks"> => {
 	if (contexts.length === 0) {
 		return { checkStatus: "none", checkSummary: null, checks: [] }
 	}
@@ -182,6 +231,9 @@ const getCheckInfo = (item: GitHubPullRequestNode): Pick<PullRequestItem, "check
 	return { checkStatus: "passing", checkSummary: `checks ${successful}/${contexts.length}`, checks }
 }
 
+const getCheckInfo = (item: GitHubPullRequestNode): Pick<PullRequestItem, "checkStatus" | "checkSummary" | "checks"> =>
+	getCheckInfoFromContexts(item.statusCheckRollup?.contexts.nodes ?? [])
+
 const parsePullRequest = (item: GitHubPullRequestNode): PullRequestItem => {
 	const checkInfo = getCheckInfo(item)
 
@@ -202,20 +254,52 @@ const parsePullRequest = (item: GitHubPullRequestNode): PullRequestItem => {
 		checkStatus: checkInfo.checkStatus,
 		checkSummary: checkInfo.checkSummary,
 		checks: checkInfo.checks,
+		autoMergeEnabled: item.autoMergeRequest !== null,
+		detailLoaded: true,
 		createdAt: new Date(item.createdAt),
 		closedAt: normalizeDate(item.closedAt),
 		url: item.url,
 	}
 }
 
+const parsePullRequestSummary = (item: GitHubPullRequestSummaryNode): PullRequestItem => ({
+	repository: item.repository.nameWithOwner,
+	number: item.number,
+	title: item.title,
+	body: "",
+	labels: [],
+	additions: 0,
+	deletions: 0,
+	changedFiles: 0,
+	state: item.state.toLowerCase() === "open" ? "open" : "closed",
+	reviewStatus: getReviewStatus(item),
+	checkStatus: "none",
+	checkSummary: null,
+	checks: [],
+	autoMergeEnabled: item.autoMergeRequest !== null,
+	detailLoaded: false,
+	createdAt: new Date(item.createdAt),
+	closedAt: normalizeDate(item.closedAt),
+	url: item.url,
+})
+
 const searchQuery = (author: string) => `author:${author} is:pr is:open sort:created-desc`
 
 type GitHubError = CommandError | JsonParseError
 
+const normalizeMergeable = (value: string): PullRequestMergeInfo["mergeable"] => {
+	if (value === "MERGEABLE") return "mergeable"
+	if (value === "CONFLICTING") return "conflicting"
+	return "unknown"
+}
+
 export class GitHubService extends Context.Service<GitHubService, {
 	readonly listOpenPullRequests: () => Effect.Effect<readonly PullRequestItem[], GitHubError>
+	readonly listOpenPullRequestDetails: () => Effect.Effect<readonly PullRequestItem[], GitHubError>
 	readonly getAuthenticatedUser: () => Effect.Effect<string, GitHubError>
 	readonly getPullRequestDiff: (repository: string, number: number) => Effect.Effect<string, CommandError>
+	readonly getPullRequestMergeInfo: (repository: string, number: number) => Effect.Effect<PullRequestMergeInfo, GitHubError>
+	readonly mergePullRequest: (repository: string, number: number, action: PullRequestMergeAction) => Effect.Effect<void, CommandError>
 	readonly toggleDraftStatus: (repository: string, number: number, isDraft: boolean) => Effect.Effect<void, CommandError>
 	readonly listRepoLabels: (repository: string) => Effect.Effect<readonly { readonly name: string; readonly color: string | null }[], GitHubError>
 	readonly addPullRequestLabel: (repository: string, number: number, label: string) => Effect.Effect<void, CommandError>
@@ -227,6 +311,32 @@ export class GitHubService extends Context.Service<GitHubService, {
 			const command = yield* CommandRunner
 
 			const listOpenPullRequests = Effect.fn("GitHubService.listOpenPullRequests")(function*() {
+				const pullRequests: PullRequestItem[] = []
+				let cursor: string | null = null
+
+				while (pullRequests.length < config.prFetchLimit) {
+					const pageSize = Math.min(100, config.prFetchLimit - pullRequests.length)
+					const response: GraphQLSearchSummaryResponse = yield* command.runJson<GraphQLSearchSummaryResponse>("gh", [
+						"api", "graphql",
+						"-f", `query=${pullRequestSummarySearchQuery}`,
+						"-F", `searchQuery=${searchQuery(config.author)}`,
+						"-F", `first=${pageSize}`,
+						...(cursor ? ["-F", `after=${cursor}`] : []),
+					])
+
+					for (const node of response.data.search.nodes) {
+						if (node) pullRequests.push(parsePullRequestSummary(node))
+					}
+
+					if (!response.data.search.pageInfo.hasNextPage) break
+					cursor = response.data.search.pageInfo.endCursor
+					if (!cursor) break
+				}
+
+				return pullRequests.sort((left, right) => right.createdAt.getTime() - left.createdAt.getTime())
+			})
+
+			const listOpenPullRequestDetails = Effect.fn("GitHubService.listOpenPullRequestDetails")(function*() {
 				const pullRequests: PullRequestItem[] = []
 				let cursor: string | null = null
 
@@ -262,6 +372,40 @@ export class GitHubService extends Context.Service<GitHubService, {
 				return result.stdout
 			})
 
+			const getPullRequestMergeInfo = Effect.fn("GitHubService.getPullRequestMergeInfo")(function*(repository: string, number: number) {
+				const info = yield* command.runJson<GitHubMergeInfoResponse>("gh", [
+					"pr", "view", String(number), "--repo", repository,
+					"--json", "number,title,state,isDraft,mergeable,reviewDecision,autoMergeRequest,statusCheckRollup",
+				])
+				const checkInfo = getCheckInfoFromContexts(info.statusCheckRollup)
+
+				return {
+					repository,
+					number: info.number,
+					title: info.title,
+					state: info.state.toLowerCase() === "open" ? "open" : "closed",
+					isDraft: info.isDraft,
+					mergeable: normalizeMergeable(info.mergeable),
+					reviewStatus: getReviewStatus(info),
+					checkStatus: checkInfo.checkStatus,
+					checkSummary: checkInfo.checkSummary,
+					autoMergeEnabled: info.autoMergeRequest !== null,
+				} satisfies PullRequestMergeInfo
+			})
+
+			const mergePullRequest = Effect.fn("GitHubService.mergePullRequest")(function*(repository: string, number: number, action: PullRequestMergeAction) {
+				const base = ["pr", "merge", String(number), "--repo", repository] as const
+				if (action === "disable-auto") {
+					yield* command.run("gh", [...base, "--disable-auto"])
+				} else if (action === "auto") {
+					yield* command.run("gh", [...base, "--squash", "--auto", "--delete-branch"])
+				} else if (action === "admin") {
+					yield* command.run("gh", [...base, "--squash", "--admin", "--delete-branch"])
+				} else {
+					yield* command.run("gh", [...base, "--squash", "--delete-branch"])
+				}
+			})
+
 			const toggleDraftStatus = Effect.fn("GitHubService.toggleDraftStatus")(function*(repository: string, number: number, isDraft: boolean) {
 				yield* command.run("gh", ["pr", "ready", String(number), "--repo", repository, ...(isDraft ? [] : ["--undo"])])
 			})
@@ -283,8 +427,11 @@ export class GitHubService extends Context.Service<GitHubService, {
 
 			return GitHubService.of({
 				listOpenPullRequests,
+				listOpenPullRequestDetails,
 				getAuthenticatedUser,
 				getPullRequestDiff,
+				getPullRequestMergeInfo,
+				mergePullRequest,
 				toggleDraftStatus,
 				listRepoLabels,
 				addPullRequestLabel,

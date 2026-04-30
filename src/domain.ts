@@ -27,7 +27,24 @@ export interface PullRequestItem {
 	readonly checkStatus: "passing" | "pending" | "failing" | "none"
 	readonly checkSummary: string | null
 	readonly checks: readonly CheckItem[]
+	readonly autoMergeEnabled: boolean
+	readonly detailLoaded: boolean
 	readonly createdAt: Date
 	readonly closedAt: Date | null
 	readonly url: string
 }
+
+export interface PullRequestMergeInfo {
+	readonly repository: string
+	readonly number: number
+	readonly title: string
+	readonly state: PullRequestState
+	readonly isDraft: boolean
+	readonly mergeable: "mergeable" | "conflicting" | "unknown"
+	readonly reviewStatus: PullRequestItem["reviewStatus"]
+	readonly checkStatus: PullRequestItem["checkStatus"]
+	readonly checkSummary: string | null
+	readonly autoMergeEnabled: boolean
+}
+
+export type PullRequestMergeAction = "squash" | "auto" | "admin" | "disable-auto"

@@ -1,45 +1,24 @@
-import { parseColor, SyntaxStyle, TextAttributes, type ScrollBoxRenderable } from "@opentui/core"
+import { TextAttributes, type ScrollBoxRenderable } from "@opentui/core"
 import { useAtom, useAtomRefresh, useAtomSet, useAtomValue } from "@effect/atom-react"
 import { useKeyboard, useRenderer, useTerminalDimensions } from "@opentui/react"
-import { Cause, Effect, Schedule } from "effect"
+import { Cause, Effect, Layer, Schedule } from "effect"
 import * as AsyncResult from "effect/unstable/reactivity/AsyncResult"
 import * as Atom from "effect/unstable/reactivity/Atom"
 import { Fragment, useEffect, useMemo, useRef, useState } from "react"
 import { config } from "./config.js"
-import type { CheckItem, PullRequestItem, PullRequestLabel } from "./domain.js"
-import { daysOpen, formatRelativeDate, formatShortDate, formatTimestamp } from "./date.js"
+import type { CheckItem, PullRequestItem, PullRequestLabel, PullRequestMergeAction } from "./domain.js"
+import { formatRelativeDate, formatShortDate, formatTimestamp } from "./date.js"
+import { Observability } from "./observability.js"
 import { GitHubService } from "./services/GitHubService.js"
+import { colors } from "./ui/colors.js"
+import { diffStatText, diffSyntaxStyle, patchRenderableLineCount, pullRequestDiffKey, splitPatchFiles, type PullRequestDiffState } from "./ui/diff.js"
+import { FooterHints, type RetryProgress } from "./ui/FooterHints.js"
+import { centerCell, Divider, fitCell, PlainLine, SeparatorColumn, TextLine } from "./ui/primitives.js"
+import { initialLabelModalState, initialMergeModalState, LabelModal, MergeModal, mergeActionPastTense, mergeModalOptions } from "./ui/modals.js"
+import { groupBy, labelColor, labelTextColor, reviewLabel, shortRepoName, statusColor } from "./ui/pullRequests.js"
+import { PullRequestList } from "./ui/PullRequestList.js"
 
-const githubRuntime = Atom.runtime(GitHubService.layer)
-
-const colors = {
-	text: "#ede7da",
-	muted: "#9f9788",
-	separator: "#6f685d",
-	accent: "#f4a51c",
-	inlineCode: "#d7c5a1",
-	error: "#f97316",
-	selectedBg: "#1d2430",
-	selectedText: "#f8fafc",
-	count: "#d7c5a1",
-	status: {
-		draft: "#f59e0b",
-		approved: "#7dd3a3",
-		changes: "#f87171",
-		review: "#93c5fd",
-		none: "#9f9788",
-		passing: "#7dd3a3",
-		pending: "#f4a51c",
-		failing: "#f87171",
-	},
-	repos: {
-		opencode: "#60a5fa",
-		"effect-smol": "#34d399",
-		"opencode-console": "#f472b6",
-		opencontrol: "#f59e0b",
-		default: "#93c5fd",
-	},
-} as const
+const githubRuntime = Atom.runtime(GitHubService.layer.pipe(Layer.provideMerge(Observability.layer)))
 
 type LoadStatus = "loading" | "ready" | "error"
 
@@ -60,22 +39,6 @@ interface DetailPlaceholderContent {
 	readonly title: string
 	readonly hint: string
 }
-
-interface RetryProgress {
-	readonly attempt: number
-	readonly max: number
-}
-
-interface DiffFilePatch {
-	readonly name: string
-	readonly filetype: string | undefined
-	readonly patch: string
-}
-
-type PullRequestDiffState =
-	| { readonly status: "loading" }
-	| { readonly status: "ready"; readonly patch: string; readonly files: readonly DiffFilePatch[] }
-	| { readonly status: "error"; readonly error: string }
 
 interface DetailPlaceholderInput {
 	readonly status: LoadStatus
@@ -125,27 +88,8 @@ const diffRenderViewAtom = Atom.make<"unified" | "split">("split").pipe(Atom.kee
 const diffWrapModeAtom = Atom.make<"none" | "word">("none").pipe(Atom.keepAlive)
 const pullRequestDiffCacheAtom = Atom.make<Record<string, PullRequestDiffState>>({}).pipe(Atom.keepAlive)
 
-const GROUP_ICON = "◆"
-
-interface LabelModalState {
-	readonly open: boolean
-	readonly repository: string | null
-	readonly query: string
-	readonly selectedIndex: number
-	readonly availableLabels: readonly PullRequestLabel[]
-	readonly loading: boolean
-}
-
-const initialLabelModalState: LabelModalState = {
-	open: false,
-	repository: null,
-	query: "",
-	selectedIndex: 0,
-	availableLabels: [],
-	loading: false,
-}
-
 const labelModalAtom = Atom.make(initialLabelModalState).pipe(Atom.keepAlive)
+const mergeModalAtom = Atom.make(initialMergeModalState).pipe(Atom.keepAlive)
 const labelCacheAtom = Atom.make<Record<string, readonly PullRequestLabel[]>>({}).pipe(Atom.keepAlive)
 const pullRequestOverridesAtom = Atom.make<Record<string, PullRequestItem>>({}).pipe(Atom.keepAlive)
 const usernameAtom = githubRuntime.atom(
@@ -156,6 +100,9 @@ const usernameAtom = githubRuntime.atom(
 
 const listRepoLabelsAtom = githubRuntime.fn<string>()((repository) =>
 	GitHubService.use((github) => github.listRepoLabels(repository))
+)
+const listOpenPullRequestDetailsAtom = githubRuntime.fn<void>()(() =>
+	GitHubService.use((github) => github.listOpenPullRequestDetails())
 )
 const addPullRequestLabelAtom = githubRuntime.fn<{ readonly repository: string; readonly number: number; readonly label: string }>()((input) =>
 	GitHubService.use((github) => github.addPullRequestLabel(input.repository, input.number, input.label))
@@ -169,24 +116,14 @@ const toggleDraftAtom = githubRuntime.fn<{ readonly repository: string; readonly
 const getPullRequestDiffAtom = githubRuntime.fn<{ readonly repository: string; readonly number: number }>()((input) =>
 	GitHubService.use((github) => github.getPullRequestDiff(input.repository, input.number))
 )
-
-const shortRepoName = (repository: string) => repository.split("/")[1] ?? repository
-
-const repoColor = (repository: string) => colors.repos[shortRepoName(repository) as keyof typeof colors.repos] ?? colors.repos.default
+const getPullRequestMergeInfoAtom = githubRuntime.fn<{ readonly repository: string; readonly number: number }>()((input) =>
+	GitHubService.use((github) => github.getPullRequestMergeInfo(input.repository, input.number))
+)
+const mergePullRequestAtom = githubRuntime.fn<{ readonly repository: string; readonly number: number; readonly action: PullRequestMergeAction }>()((input) =>
+	GitHubService.use((github) => github.mergePullRequest(input.repository, input.number, input.action))
+)
 
 const BlankRow = () => <box height={1} />
-
-const reviewLabel = (pullRequest: PullRequestItem) => {
-	if (pullRequest.reviewStatus === "draft") return "draft"
-	if (pullRequest.reviewStatus === "approved") return "approved"
-	if (pullRequest.reviewStatus === "changes") return "changes"
-	if (pullRequest.reviewStatus === "review") return "review"
-	return null
-}
-
-const checkLabel = (pullRequest: PullRequestItem) => pullRequest.checkSummary
-
-const statusColor = (status: PullRequestItem["reviewStatus"] | PullRequestItem["checkStatus"]) => colors.status[status]
 const DETAIL_BODY_LINES = 6
 
 const wrapText = (text: string, width: number): string[] => {
@@ -205,61 +142,6 @@ const wrapText = (text: string, width: number): string[] => {
 	}
 	if (current.length > 0) lines.push(current)
 	return lines.length > 0 ? lines : [""]
-}
-
-const reviewIcon = (pullRequest: PullRequestItem) => {
-	if (pullRequest.reviewStatus === "draft") return "◌"
-	if (pullRequest.reviewStatus === "approved") return "✓"
-	if (pullRequest.reviewStatus === "changes") return "!"
-	if (pullRequest.reviewStatus === "review") return "◐"
-	return "·"
-}
-
-const getRowLayout = (contentWidth: number, numberWidth = 6) => {
-	const reviewWidth = 1
-	const checkWidth = 6
-	const ageWidth = 4
-	const fixedWidth = reviewWidth + 1 + numberWidth + 1 + checkWidth + ageWidth
-	const titleWidth = Math.max(8, contentWidth - fixedWidth)
-	return { reviewWidth, checkWidth, ageWidth, numberWidth, titleWidth }
-}
-
-const groupNumberWidth = (pullRequests: readonly PullRequestItem[]) => {
-	if (pullRequests.length === 0) return 4
-	const maxLen = Math.max(...pullRequests.map((pr) => String(pr.number).length))
-	return maxLen + 1 // +1 for the # prefix
-}
-
-const fitCell = (text: string, width: number, align: "left" | "right" = "left") => {
-	const trimmed = text.length > width ? `${text.slice(0, Math.max(0, width - 1))}…` : text
-	return align === "right" ? trimmed.padStart(width, " ") : trimmed.padEnd(width, " ")
-}
-
-const trimCell = (text: string, width: number) => text.length > width ? `${text.slice(0, Math.max(0, width - 1))}…` : text
-
-const centerCell = (text: string, width: number) => {
-	const trimmed = text.length > width ? `${text.slice(0, Math.max(0, width - 1))}…` : text
-	const left = Math.floor((width - trimmed.length) / 2)
-	return `${" ".repeat(Math.max(0, left))}${trimmed}`.padEnd(width, " ")
-}
-
-const Divider = ({ width, junctionAt, junctionChar }: { width: number; junctionAt?: number; junctionChar?: string }) => {
-	if (junctionAt === undefined || junctionChar === undefined || junctionAt < 0 || junctionAt >= width) {
-		return <PlainLine text={"─".repeat(Math.max(1, width))} fg={colors.separator} />
-	}
-
-	return <PlainLine text={`${"─".repeat(junctionAt)}${junctionChar}${"─".repeat(Math.max(0, width - junctionAt - 1))}`} fg={colors.separator} />
-}
-
-const SeparatorColumn = ({ height, junctionRows }: { height: number; junctionRows?: readonly number[] }) => {
-	const junctions = new Set(junctionRows)
-	return (
-		<box width={1} height={height} flexDirection="column">
-			{Array.from({ length: height }, (_, index) => (
-				<PlainLine key={index} text={junctions.has(index) ? "├" : "│"} fg={colors.separator} />
-			))}
-		</box>
-	)
 }
 
 const deleteLastWord = (value: string) => value.replace(/\s*\S+\s*$/, "")
@@ -313,136 +195,10 @@ const wrapPreviewSegments = (segments: PreviewLine["segments"], width: number, i
 	return lines
 }
 
-const fallbackLabelColor = (name: string) => {
-	let hash = 0
-	for (const char of name) {
-		hash = (hash * 31 + char.charCodeAt(0)) >>> 0
-	}
-	const hue = hash % 360
-	return `hsl(${hue} 55% 35%)`
-}
-
 const errorMessage = (error: unknown) => error instanceof Error ? error.message : String(error)
 
-const labelColor = (label: PullRequestLabel) => label.color ?? fallbackLabelColor(label.name)
-
-const labelTextColor = (color: string) => {
-	if (color.startsWith("#") && color.length === 7) {
-		const red = Number.parseInt(color.slice(1, 3), 16)
-		const green = Number.parseInt(color.slice(3, 5), 16)
-		const blue = Number.parseInt(color.slice(5, 7), 16)
-		const luminance = (0.2126 * red + 0.7152 * green + 0.0722 * blue) / 255
-		return luminance > 0.6 ? "#111111" : "#f8fafc"
-	}
-	return "#f8fafc"
-}
-
-const diffSyntaxStyle = SyntaxStyle.fromStyles({
-	keyword: { fg: parseColor("#f4a51c"), bold: true },
-	"keyword.import": { fg: parseColor("#f4a51c"), bold: true },
-	string: { fg: parseColor("#d7c5a1") },
-	comment: { fg: parseColor(colors.muted), italic: true },
-	number: { fg: parseColor("#93c5fd") },
-	boolean: { fg: parseColor("#93c5fd") },
-	constant: { fg: parseColor("#93c5fd") },
-	function: { fg: parseColor("#7dd3a3") },
-	"function.call": { fg: parseColor("#7dd3a3") },
-	constructor: { fg: parseColor("#f59e0b") },
-	type: { fg: parseColor("#f59e0b") },
-	operator: { fg: parseColor("#f87171") },
-	variable: { fg: parseColor(colors.text) },
-	property: { fg: parseColor("#93c5fd") },
-	bracket: { fg: parseColor(colors.text) },
-	punctuation: { fg: parseColor(colors.text) },
-	default: { fg: parseColor(colors.text) },
-})
-
-const extensionFiletypes: Record<string, string> = {
-	c: "c",
-	cc: "cpp",
-	cpp: "cpp",
-	cs: "csharp",
-	css: "css",
-	go: "go",
-	h: "c",
-	hpp: "cpp",
-	html: "html",
-	java: "java",
-	js: "javascript",
-	jsx: "javascript",
-	json: "json",
-	kt: "kotlin",
-	md: "markdown",
-	mjs: "javascript",
-	py: "python",
-	rs: "rust",
-	rb: "ruby",
-	sh: "bash",
-	svelte: "svelte",
-	toml: "toml",
-	ts: "typescript",
-	tsx: "typescript",
-	txt: "text",
-	vue: "vue",
-	yaml: "yaml",
-	yml: "yaml",
-	zig: "zig",
-}
-
-const filetypeForPath = (path: string) => {
-	const basename = path.split("/").at(-1) ?? path
-	if (basename === "Dockerfile") return "dockerfile"
-	const extension = basename.includes(".") ? basename.split(".").at(-1)?.toLowerCase() : undefined
-	return extension ? extensionFiletypes[extension] : undefined
-}
-
-const unquoteDiffPath = (path: string) => path.replace(/^"|"$/g, "").replace(/^a\//, "").replace(/^b\//, "")
-
-const patchFileName = (patch: string) => {
-	const diffLine = patch.split("\n").find((line) => line.startsWith("diff --git "))
-	if (diffLine) {
-		const match = diffLine.match(/^diff --git\s+(\S+)\s+(\S+)/)
-		if (match) {
-			const next = unquoteDiffPath(match[2]!)
-			if (next !== "/dev/null") return next
-			return unquoteDiffPath(match[1]!)
-		}
-	}
-
-	const nextLine = patch.split("\n").find((line) => line.startsWith("+++ "))
-	return nextLine ? unquoteDiffPath(nextLine.slice(4).trim()) : "diff"
-}
-
-const splitPatchFiles = (patch: string): readonly DiffFilePatch[] => {
-	const trimmed = patch.trimEnd()
-	if (trimmed.length === 0) return []
-
-	const matches = [...trimmed.matchAll(/^diff --git .+$/gm)]
-	if (matches.length === 0) {
-		return [{ name: "diff", filetype: undefined, patch: trimmed }]
-	}
-
-	return matches.map((match, index) => {
-		const start = match.index ?? 0
-		const end = index + 1 < matches.length ? matches[index + 1]!.index ?? trimmed.length : trimmed.length
-		const filePatch = trimmed.slice(start, end).trimEnd()
-		const name = patchFileName(filePatch)
-		return { name, filetype: filetypeForPath(name), patch: filePatch }
-	})
-}
-
-const pullRequestDiffKey = (pullRequest: PullRequestItem) => `${pullRequest.repository}#${pullRequest.number}`
-
-const diffStatText = (pullRequest: PullRequestItem) => {
-	const files = pullRequest.changedFiles === 1 ? "1 file" : `${pullRequest.changedFiles} files`
-	return [
-		pullRequest.additions > 0 ? `+${pullRequest.additions}` : null,
-		pullRequest.deletions > 0 ? `-${pullRequest.deletions}` : null,
-		files,
-	].filter((part): part is string => part !== null).join(" ")
-}
-
 const DiffStats = ({ pullRequest }: { pullRequest: PullRequestItem }) => {
+	if (!pullRequest.detailLoaded) return <span fg={colors.muted}>loading details</span>
 	const files = pullRequest.changedFiles === 1 ? "1 file" : `${pullRequest.changedFiles} files`
 	type Part = { key: string; text: string; color: string }
 	const rawParts: Array<Part | null> = [
@@ -462,106 +218,6 @@ const DiffStats = ({ pullRequest }: { pullRequest: PullRequestItem }) => {
 			))}
 		</>
 	)
-}
-
-const estimatedWrappedLineCount = (text: string, width: number, wrapMode: "none" | "word") => {
-	if (wrapMode === "none") return 1
-	return Math.max(1, Math.ceil(Bun.stringWidth(text) / Math.max(1, width)))
-}
-
-const patchLineNumberGutterWidth = (lines: readonly string[]) => {
-	let maxLineNumber = 1
-	let hasSigns = false
-	let oldLine = 0
-	let newLine = 0
-
-	for (const line of lines) {
-		const hunk = line.match(/^@@ -(\d+)(?:,\d+)? \+(\d+)(?:,\d+)? @@/)
-		if (hunk) {
-			oldLine = Number(hunk[1])
-			newLine = Number(hunk[2])
-			maxLineNumber = Math.max(maxLineNumber, oldLine, newLine)
-			continue
-		}
-
-		const firstChar = line[0]
-		if (firstChar === "-") {
-			hasSigns = true
-			maxLineNumber = Math.max(maxLineNumber, oldLine)
-			oldLine++
-		} else if (firstChar === "+") {
-			hasSigns = true
-			maxLineNumber = Math.max(maxLineNumber, newLine)
-			newLine++
-		} else if (firstChar === " ") {
-			maxLineNumber = Math.max(maxLineNumber, oldLine, newLine)
-			oldLine++
-			newLine++
-		}
-	}
-
-	const digits = Math.floor(Math.log10(maxLineNumber)) + 1
-	return Math.max(3, digits + 2) + (hasSigns ? 2 : 0)
-}
-
-const patchRenderableLineCount = (patch: string, view: "unified" | "split", wrapMode: "none" | "word", width: number) => {
-	const lines = patch.split("\n")
-	const lineNumberGutterWidth = patchLineNumberGutterWidth(lines)
-	const splitPaneWidth = Math.max(1, Math.floor(width / 2) - lineNumberGutterWidth)
-	const unifiedPaneWidth = Math.max(1, width - lineNumberGutterWidth)
-	const contentWidth = view === "split" ? splitPaneWidth : unifiedPaneWidth
-	let count = 0
-	let inHunk = false
-	let deletions: number[] = []
-	let additions: number[] = []
-
-	const flushChangeBlock = () => {
-		if (deletions.length === 0 && additions.length === 0) return
-		if (view === "split") {
-			const rows = Math.max(deletions.length, additions.length)
-			for (let index = 0; index < rows; index++) {
-				const deletionCount = index < deletions.length ? deletions[index]! : 1
-				const additionCount = index < additions.length ? additions[index]! : 1
-				count += Math.max(deletionCount, additionCount)
-			}
-		} else {
-			for (const deletion of deletions) count += deletion
-			for (const addition of additions) count += addition
-		}
-		deletions = []
-		additions = []
-	}
-
-	for (const line of lines) {
-		if (line.startsWith("@@")) {
-			flushChangeBlock()
-			inHunk = true
-			continue
-		}
-
-		if (!inHunk) continue
-
-		const firstChar = line[0]
-		if (firstChar === "\\") continue
-
-		if (firstChar === "-") {
-			deletions.push(estimatedWrappedLineCount(line.slice(1), contentWidth, wrapMode))
-			continue
-		}
-
-		if (firstChar === "+") {
-			additions.push(estimatedWrappedLineCount(line.slice(1), contentWidth, wrapMode))
-			continue
-		}
-
-		if (firstChar === " ") {
-			flushChangeBlock()
-			count += estimatedWrappedLineCount(line.slice(1), contentWidth, wrapMode)
-		}
-	}
-
-	flushChangeBlock()
-	return Math.max(1, count)
 }
 
 const isShiftG = (key: { readonly name: string; readonly shift?: boolean }) => key.name === "G" || key.name === "g" && key.shift
@@ -709,308 +365,6 @@ const copyPullRequestMetadata = async (pullRequest: PullRequestItem) => {
 	}
 }
 
-const PlainLine = ({ text, fg = colors.text, bold = false }: { text: string; fg?: string; bold?: boolean }) => (
-	<box height={1}>
-		{bold ? (
-			<text wrapMode="none" truncate fg={fg} attributes={TextAttributes.BOLD}>
-				{text}
-			</text>
-		) : (
-			<text wrapMode="none" truncate fg={fg}>
-				{text}
-			</text>
-		)}
-	</box>
-)
-
-const TextLine = ({ children, fg = colors.text, bg }: { children: React.ReactNode; fg?: string; bg?: string | undefined }) => (
-	<box height={1}>
-		{bg ? (
-			<text wrapMode="none" truncate fg={fg} bg={bg}>
-				{children}
-			</text>
-		) : (
-			<text wrapMode="none" truncate fg={fg}>
-				{children}
-			</text>
-		)}
-	</box>
-)
-
-const SectionTitle = ({ title }: { title: string }) => (
-	<TextLine>
-		<span fg={colors.accent} attributes={TextAttributes.BOLD}>
-			{title}
-		</span>
-	</TextLine>
-)
-
-const FooterHints = ({
-	filterEditing,
-	showFilterClear,
-	detailFullView,
-	diffFullView,
-	hasSelection,
-	hasError,
-	isLoading,
-	loadingIndicator,
-	retryProgress,
-}: {
-	filterEditing: boolean
-	showFilterClear: boolean
-	detailFullView: boolean
-	diffFullView: boolean
-	hasSelection: boolean
-	hasError: boolean
-	isLoading: boolean
-	loadingIndicator: string
-	retryProgress: RetryProgress | null
-}) => {
-	if (filterEditing) {
-		return (
-			<TextLine>
-				<span fg={colors.count}>search</span>
-				<span fg={colors.muted}> typing  </span>
-				<span fg={colors.count}>↑↓</span>
-				<span fg={colors.muted}> move  </span>
-				<span fg={colors.count}>enter</span>
-				<span fg={colors.muted}> apply  </span>
-				<span fg={colors.count}>esc</span>
-				<span fg={colors.muted}> cancel  </span>
-				<span fg={colors.count}>ctrl-u</span>
-				<span fg={colors.muted}> clear  </span>
-				<span fg={colors.count}>ctrl-w</span>
-				<span fg={colors.muted}> word</span>
-			</TextLine>
-		)
-	}
-
-	if (diffFullView) {
-		return (
-			<TextLine>
-				<span fg={colors.count}>esc</span>
-				<span fg={colors.muted}> back  </span>
-				<span fg={colors.count}>v</span>
-				<span fg={colors.muted}> view  </span>
-				<span fg={colors.count}>w</span>
-				<span fg={colors.muted}> wrap  </span>
-				<span fg={colors.count}>[]</span>
-				<span fg={colors.muted}> files  </span>
-				<span fg={colors.count}>r</span>
-				<span fg={colors.muted}> reload  </span>
-				<span fg={colors.count}>o</span>
-				<span fg={colors.muted}> open  </span>
-				<span fg={colors.count}>q</span>
-				<span fg={colors.muted}> quit</span>
-			</TextLine>
-		)
-	}
-
-	if (detailFullView) {
-		return (
-			<TextLine>
-				<span fg={colors.count}>esc</span>
-				<span fg={colors.muted}> back  </span>
-				<span fg={colors.count}>o</span>
-				<span fg={colors.muted}> open  </span>
-				<span fg={colors.count}>y</span>
-				<span fg={colors.muted}> copy  </span>
-				<span fg={colors.count}>q</span>
-				<span fg={colors.muted}> quit</span>
-			</TextLine>
-		)
-	}
-
-	return (
-		<TextLine>
-			<span fg={colors.count}>/</span>
-			<span fg={colors.muted}> filter  </span>
-			{showFilterClear ? (
-				<>
-					<span fg={colors.count}>esc</span>
-					<span fg={colors.muted}> clear  </span>
-				</>
-			) : null}
-			{retryProgress ? (
-				<>
-					<span fg={colors.status.pending}>retry</span>
-					<span fg={colors.muted}> {retryProgress.attempt}/{retryProgress.max}  </span>
-				</>
-			) : isLoading ? (
-				<>
-					<span fg={colors.status.pending}>{loadingIndicator}</span>
-					<span fg={colors.muted}> loading  </span>
-				</>
-			) : null}
-			<span fg={colors.count}>r</span>
-			<span fg={colors.muted}>{hasError ? " retry  " : " ref  "}</span>
-			{hasSelection ? (
-				<>
-					<span fg={colors.count}>↑↓</span>
-					<span fg={colors.muted}> move  </span>
-				</>
-			) : null}
-			{hasSelection && detailFullView ? (
-				<>
-					<span fg={colors.count}>esc</span>
-					<span fg={colors.muted}> back  </span>
-				</>
-			) : hasSelection ? (
-				<>
-					<span fg={colors.count}>enter</span>
-					<span fg={colors.muted}> expand  </span>
-				</>
-			) : null}
-			{hasSelection ? (
-				<>
-					<span fg={colors.count}>d</span>
-					<span fg={colors.muted}> draft  </span>
-					<span fg={colors.count}>p</span>
-					<span fg={colors.muted}> diff  </span>
-					<span fg={colors.count}>l</span>
-					<span fg={colors.muted}> labels  </span>
-					<span fg={colors.count}>o</span>
-					<span fg={colors.muted}> open  </span>
-					<span fg={colors.count}>y</span>
-					<span fg={colors.muted}> copy  </span>
-				</>
-			) : null}
-			<span fg={colors.count}>q</span>
-			<span fg={colors.muted}> quit</span>
-		</TextLine>
-	)
-}
-
-const GroupTitle = ({ label, color, icon }: { label: string; color: string; icon: string }) => (
-	<TextLine>
-		<span fg={color}>{icon} </span>
-		<span fg={color} attributes={TextAttributes.BOLD}>{label}</span>
-	</TextLine>
-)
-
-const PullRequestRow = ({
-	pullRequest,
-	selected,
-	contentWidth,
-	numWidth,
-	onSelect,
-}: {
-	pullRequest: PullRequestItem
-	selected: boolean
-	contentWidth: number
-	numWidth: number
-	onSelect: () => void
-}) => {
-	const checkText = checkLabel(pullRequest)?.replace(/^checks\s+/, "") ?? ""
-	const ageText = `${daysOpen(pullRequest.createdAt)}d`
-	const { reviewWidth, checkWidth, ageWidth, numberWidth, titleWidth } = getRowLayout(contentWidth, numWidth)
-	const rowWidth = reviewWidth + 1 + numberWidth + 1 + titleWidth + checkWidth + ageWidth
-	const fillerWidth = Math.max(0, contentWidth - rowWidth)
-
-	return (
-		<box height={1} onMouseDown={onSelect}>
-			<TextLine fg={selected ? colors.selectedText : colors.text} bg={selected ? colors.selectedBg : undefined}>
-				<span fg={statusColor(pullRequest.reviewStatus)}>{fitCell(reviewIcon(pullRequest), reviewWidth)}</span>
-				<span> </span>
-				<span fg={selected ? colors.accent : colors.count}>{fitCell(`#${pullRequest.number}`, numberWidth, "right")}</span>
-				<span> </span>
-				<span>{fitCell(pullRequest.title, titleWidth)}</span>
-				<span fg={statusColor(pullRequest.checkStatus)}>{fitCell(checkText, checkWidth, "right")}</span>
-				<span fg={colors.muted}>{fitCell(ageText, ageWidth, "right")}</span>
-				{fillerWidth > 0 ? <span>{" ".repeat(fillerWidth)}</span> : null}
-			</TextLine>
-		</box>
-	)
-}
-
-const groupBy = <T,>(items: readonly T[], getKey: (item: T) => string, orderedKeys: readonly string[] = []) => {
-	const groups = new Map<string, T[]>()
-	for (const item of items) {
-		const key = getKey(item)
-		const existing = groups.get(key)
-		if (existing) {
-			existing.push(item)
-		} else {
-			groups.set(key, [item])
-		}
-	}
-
-	const order = new Map(orderedKeys.map((key, index) => [key, index]))
-	return [...groups.entries()].sort((left, right) => {
-		const leftIndex = order.get(left[0])
-		const rightIndex = order.get(right[0])
-		if (leftIndex !== undefined && rightIndex !== undefined) return leftIndex - rightIndex
-		if (leftIndex !== undefined) return -1
-		if (rightIndex !== undefined) return 1
-		return left[0].localeCompare(right[0])
-	})
-}
-
-type PullRequestGroups = Array<[string, PullRequestItem[]]>
-
-const PullRequestList = ({
-	groups,
-	selectedUrl,
-	status,
-	error,
-	contentWidth,
-	filterText,
-	showFilterBar,
-	isFilterEditing,
-	groupIcon,
-	onSelectPullRequest,
-}: {
-	groups: PullRequestGroups
-	selectedUrl: string | null
-	status: LoadStatus
-	error: string | null
-	contentWidth: number
-	filterText: string
-	showFilterBar: boolean
-	isFilterEditing: boolean
-	groupIcon: string
-	onSelectPullRequest: (url: string) => void
-}) => {
-	const itemCount = groups.reduce((count, [, pullRequests]) => count + pullRequests.length, 0)
-	const emptyText = filterText.length > 0 ? "- No matching pull requests." : "- No open pull requests."
-
-	return (
-		<box flexDirection="column">
-			<SectionTitle title="PULL REQUESTS" />
-			{showFilterBar ? (
-				<TextLine>
-					<span fg={colors.count}>/</span>
-					<span fg={colors.muted}> </span>
-					<span fg={isFilterEditing ? colors.text : colors.count}>{filterText.length > 0 ? filterText : "type to filter..."}</span>
-				</TextLine>
-			) : null}
-			{status === "loading" && itemCount === 0 ? <PlainLine text="- Loading pull requests..." fg={colors.muted} /> : null}
-			{status === "error" ? <PlainLine text={`- ${error ?? "Could not load pull requests."}`} fg={colors.error} /> : null}
-			{status === "ready" && itemCount === 0 ? <PlainLine text={emptyText} fg={colors.muted} /> : null}
-			{groups.map(([repo, pullRequests]) => {
-				const numWidth = groupNumberWidth(pullRequests)
-				return (
-					<Fragment key={repo}>
-						<box flexDirection="column">
-							<GroupTitle label={repo} color={repoColor(repo)} icon={groupIcon} />
-							{pullRequests.map((pullRequest) => (
-								<PullRequestRow
-									key={pullRequest.url}
-									pullRequest={pullRequest}
-									selected={pullRequest.url === selectedUrl}
-									contentWidth={contentWidth}
-									numWidth={numWidth}
-									onSelect={() => onSelectPullRequest(pullRequest.url)}
-								/>
-							))}
-						</box>
-					</Fragment>
-				)
-			})}
-		</box>
-	)
-}
-
 const deduplicateChecks = (checks: readonly CheckItem[]): CheckItem[] => {
 	const seen = new Map<string, CheckItem>()
 	for (const check of checks) {
@@ -1101,7 +455,9 @@ const DetailHeader = ({
 	const unique = deduplicateChecks(pullRequest.checks)
 	const checkRows = checksRowCount(unique)
 	const statsText = diffStatText(pullRequest)
-	const labelsWidth = labels.length > 0
+	const labelsWidth = !pullRequest.detailLoaded
+		? "loading details...".length
+		: labels.length > 0
 		? labels.reduce((total, label, index) => total + label.name.length + 2 + (index > 0 ? 1 : 0), 0)
 		: "no labels".length
 	const showStats = contentWidth - labelsWidth - statsText.length >= 2
@@ -1142,7 +498,7 @@ const DetailHeader = ({
 			</box>
 			<box height={1} paddingLeft={1} paddingRight={1}>
 				<TextLine>
-					{labels.length > 0 ? labels.map((label, index) => (
+					{!pullRequest.detailLoaded ? <span fg={colors.muted}>loading details...</span> : labels.length > 0 ? labels.map((label, index) => (
 						<Fragment key={label.name}>
 							{index > 0 ? <span fg={colors.muted}> </span> : null}
 							<span bg={labelColor(label)} fg={labelTextColor(labelColor(label))}> {label.name} </span>
@@ -1173,15 +529,29 @@ const DetailBody = ({
 	pullRequest,
 	contentWidth,
 	bodyLines = DETAIL_BODY_LINES,
+	loadingIndicator,
 }: {
 	pullRequest: PullRequestItem
 	contentWidth: number
 	bodyLines?: number
+	loadingIndicator: string
 }) => {
 	const previewLines = useMemo(
 		() => bodyPreview(pullRequest.body, contentWidth, bodyLines),
 		[pullRequest.body, contentWidth, bodyLines],
 	)
+
+	if (!pullRequest.detailLoaded) {
+		const topRows = Math.max(0, Math.floor((bodyLines - 1) / 2))
+		const bottomRows = Math.max(0, bodyLines - topRows - 1)
+		return (
+			<box flexDirection="column" paddingLeft={1} paddingRight={1} height={bodyLines}>
+				{Array.from({ length: topRows }, (_, index) => <BlankRow key={`top-${index}`} />)}
+				<PlainLine text={centerCell(`${loadingIndicator} Loading pull request details`, contentWidth)} fg={colors.muted} />
+				{Array.from({ length: bottomRows }, (_, index) => <BlankRow key={`bottom-${index}`} />)}
+			</box>
+		)
+	}
 
 	return (
 		<box flexDirection="column" paddingLeft={1} paddingRight={1}>
@@ -1258,6 +628,7 @@ const DetailsPane = ({
 	paneWidth = contentWidth + 2,
 	showChecks = false,
 	placeholderContent,
+	loadingIndicator,
 }: {
 	pullRequest: PullRequestItem | null
 	contentWidth: number
@@ -1265,6 +636,7 @@ const DetailsPane = ({
 	paneWidth?: number
 	showChecks?: boolean
 	placeholderContent: DetailPlaceholderContent
+	loadingIndicator: string
 }) => {
 	const titleLines = pullRequest ? wrapText(pullRequest.title, Math.max(1, paneWidth - 2)).length : 1
 	const uniqueChecks = pullRequest ? deduplicateChecks(pullRequest.checks) : []
@@ -1275,14 +647,15 @@ const DetailsPane = ({
 		() => (pullRequest ? bodyPreview(pullRequest.body, contentWidth, bodyLines) : []),
 		[pullRequest?.body, contentWidth, bodyLines],
 	)
-	const contentHeight = pullRequest ? titleLines + 2 + 1 + checksHeight + previewLines.length : bodyLines + DETAIL_PLACEHOLDER_ROWS + 1
+	const bodyHeight = pullRequest && !pullRequest.detailLoaded ? bodyLines : previewLines.length
+	const contentHeight = pullRequest ? titleLines + 2 + 1 + checksHeight + bodyHeight : bodyLines + DETAIL_PLACEHOLDER_ROWS + 1
 
 	return (
 		<box flexDirection="column" height={contentHeight}>
 			{pullRequest ? (
 				<>
 					<DetailHeader pullRequest={pullRequest} contentWidth={contentWidth} paneWidth={paneWidth} showChecks={showChecks} />
-					<DetailBody pullRequest={pullRequest} contentWidth={contentWidth} bodyLines={bodyLines} />
+					<DetailBody pullRequest={pullRequest} contentWidth={contentWidth} bodyLines={bodyLines} loadingIndicator={loadingIndicator} />
 				</>
 			) : (
 				<>
@@ -1418,115 +791,6 @@ const PullRequestDiffPane = ({
 	)
 }
 
-const LabelModal = ({
-	state,
-	currentLabels,
-	modalWidth,
-	modalHeight,
-	offsetLeft,
-	offsetTop,
-	loadingIndicator,
-}: {
-	state: LabelModalState
-	currentLabels: readonly PullRequestLabel[]
-	modalWidth: number
-	modalHeight: number
-	offsetLeft: number
-	offsetTop: number
-	loadingIndicator: string
-}) => {
-	const contentWidth = Math.max(16, modalWidth - 2)
-	const currentNames = new Set(currentLabels.map((l) => l.name.toLowerCase()))
-	const filtered = state.availableLabels.filter((label) =>
-		state.query.length === 0 || label.name.toLowerCase().includes(state.query.toLowerCase()),
-	)
-	const maxVisible = Math.max(1, modalHeight - 6)
-	const selectedIndex = filtered.length === 0 ? 0 : Math.max(0, Math.min(state.selectedIndex, filtered.length - 1))
-	const scrollStart = Math.min(
-		Math.max(0, filtered.length - maxVisible),
-		Math.max(0, selectedIndex - maxVisible + 1),
-	)
-	const visibleLabels = filtered.slice(scrollStart, scrollStart + maxVisible)
-	const title = state.repository ? `Labels  ${shortRepoName(state.repository)}` : "Labels"
-	const countText = state.loading ? "loading" : `${filtered.length}/${state.availableLabels.length}`
-	const headerGap = Math.max(1, contentWidth - title.length - countText.length)
-	const queryText = state.query.length > 0 ? state.query : "type to filter labels"
-	const queryPrefix = state.query.length > 0 ? "/ " : "/ "
-	const queryWidth = Math.max(1, contentWidth - queryPrefix.length)
-
-	return (
-		<box
-			position="absolute"
-			left={offsetLeft}
-			top={offsetTop}
-			width={modalWidth}
-			height={modalHeight}
-			flexDirection="column"
-			backgroundColor="#1a1a2e"
-		>
-			<box height={1} paddingLeft={1} paddingRight={1}>
-				<TextLine>
-					<span fg={colors.accent} attributes={TextAttributes.BOLD}>{title}</span>
-					<span fg={colors.muted}>{" ".repeat(headerGap)}</span>
-					<span fg={colors.muted}>{countText}</span>
-				</TextLine>
-			</box>
-			<box height={1} paddingLeft={1} paddingRight={1}>
-				<TextLine>
-					<span fg={colors.count}>{queryPrefix}</span>
-					<span fg={state.query.length > 0 ? colors.text : colors.muted}>
-						{fitCell(queryText, queryWidth)}
-					</span>
-				</TextLine>
-			</box>
-			<Divider width={modalWidth} />
-			<box flexDirection="column" paddingLeft={1} paddingRight={1}>
-				{state.loading ? (
-					<PlainLine text={centerCell(`${loadingIndicator} Loading labels`, contentWidth)} fg={colors.muted} />
-				) : visibleLabels.length === 0 ? (
-					<PlainLine text={centerCell(state.query.length > 0 ? "No matching labels" : "No labels found", contentWidth)} fg={colors.muted} />
-				) : (
-					visibleLabels.map((label, index) => {
-						const actualIndex = scrollStart + index
-						const isActive = currentNames.has(label.name.toLowerCase())
-						const isSelected = actualIndex === selectedIndex
-						const status = isActive ? "added" : ""
-						const statusText = status.length > 0 ? ` ${status}` : ""
-						const nameWidth = Math.max(1, contentWidth - 5 - statusText.length)
-						return (
-							<box key={label.name} height={1}>
-								<TextLine bg={isSelected ? colors.selectedBg : undefined}>
-									<span fg={isActive ? colors.status.passing : colors.muted}>{isActive ? "✓" : " "}</span>
-									<span> </span>
-									<span bg={labelColor(label)}>  </span>
-									<span> </span>
-									<span fg={isSelected ? colors.selectedText : colors.text}>{trimCell(label.name, nameWidth)}</span>
-									{statusText ? <span fg={colors.status.passing}>{statusText}</span> : null}
-								</TextLine>
-							</box>
-						)
-					})
-				)}
-			</box>
-			<box flexGrow={1} />
-			<Divider width={modalWidth} />
-			<box height={1} paddingLeft={1} paddingRight={1}>
-				<TextLine>
-					<span fg={colors.count}>↑↓</span>
-					<span fg={colors.muted}> move  </span>
-					<span fg={colors.count}>enter</span>
-					<span fg={colors.muted}> toggle  </span>
-					<span fg={colors.count}>/</span>
-					<span fg={colors.muted}> filter  </span>
-					<span fg={colors.count}>esc</span>
-					<span fg={colors.muted}> close</span>
-					{filtered.length > maxVisible ? <span fg={colors.muted}>  {selectedIndex + 1}/{filtered.length}</span> : null}
-				</TextLine>
-			</box>
-		</box>
-	)
-}
-
 export const App = () => {
 	const renderer = useRenderer()
 	const { width, height } = useTerminalDimensions()
@@ -1546,17 +810,20 @@ export const App = () => {
 	const [diffWrapMode, setDiffWrapMode] = useAtom(diffWrapModeAtom)
 	const [pullRequestDiffCache, setPullRequestDiffCache] = useAtom(pullRequestDiffCacheAtom)
 	const [labelModal, setLabelModal] = useAtom(labelModalAtom)
+	const [mergeModal, setMergeModal] = useAtom(mergeModalAtom)
 	const [labelCache, setLabelCache] = useAtom(labelCacheAtom)
 	const [pullRequestOverrides, setPullRequestOverrides] = useAtom(pullRequestOverridesAtom)
 	const retryProgress = useAtomValue(retryProgressAtom)
 	const [loadingFrame, setLoadingFrame] = useState(0)
 	const usernameResult = useAtomValue(usernameAtom)
 	const loadRepoLabels = useAtomSet(listRepoLabelsAtom, { mode: "promise" })
+	const loadPullRequestDetails = useAtomSet(listOpenPullRequestDetailsAtom, { mode: "promise" })
 	const addPullRequestLabel = useAtomSet(addPullRequestLabelAtom, { mode: "promise" })
 	const removePullRequestLabel = useAtomSet(removePullRequestLabelAtom, { mode: "promise" })
 	const toggleDraftStatus = useAtomSet(toggleDraftAtom, { mode: "promise" })
 	const getPullRequestDiff = useAtomSet(getPullRequestDiffAtom, { mode: "promise" })
-	const groupIcon = GROUP_ICON
+	const getPullRequestMergeInfo = useAtomSet(getPullRequestMergeInfoAtom, { mode: "promise" })
+	const mergePullRequest = useAtomSet(mergePullRequestAtom, { mode: "promise" })
 	const contentWidth = Math.max(60, width ?? 100)
 	const isWideLayout = (width ?? 100) >= 100
 	const splitGap = 1
@@ -1571,6 +838,7 @@ export const App = () => {
 	const noticeTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 	const pendingGTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 	const diffPrefetchTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+	const detailHydrationRef = useRef<number | null>(null)
 	const detailScrollRef = useRef<ScrollBoxRenderable | null>(null)
 	const diffScrollRef = useRef<ScrollBoxRenderable | null>(null)
 	const headerFooterWidth = Math.max(24, contentWidth - 2)
@@ -1598,7 +866,10 @@ export const App = () => {
 	}, [])
 
 	const pullRequestLoad = AsyncResult.getOrElse(pullRequestResult, () => null)
-	const pullRequests = pullRequestLoad?.data.map((pullRequest) => pullRequestOverrides[pullRequest.url] ?? pullRequest) ?? []
+	const pullRequests = useMemo(
+		() => pullRequestLoad?.data.map((pullRequest) => pullRequestOverrides[pullRequest.url] ?? pullRequest) ?? [],
+		[pullRequestLoad?.data, pullRequestOverrides],
+	)
 	const pullRequestStatus: LoadStatus = pullRequestResult.waiting && pullRequestLoad === null
 		? "loading"
 		: AsyncResult.isFailure(pullRequestResult)
@@ -1608,37 +879,29 @@ export const App = () => {
 	const pullRequestError = AsyncResult.isFailure(pullRequestResult) ? errorMessage(Cause.squash(pullRequestResult.cause)) : null
 	const username = AsyncResult.isSuccess(usernameResult) ? usernameResult.value : null
 
-	useEffect(() => {
-		if (pullRequestStatus !== "loading") return
-		const interval = globalThis.setInterval(() => {
-			setLoadingFrame((current) => (current + 1) % LOADING_FRAMES.length)
-		}, 120)
-		return () => globalThis.clearInterval(interval)
-	}, [pullRequestStatus])
-
 	const effectiveFilterQuery = (filterMode ? filterDraft : filterQuery).trim().toLowerCase()
 	const visibleFilterText = filterMode ? filterDraft : filterQuery
 
-	const filteredPullRequests = pullRequests.filter((pullRequest) => {
+	const filteredPullRequests = useMemo(() => pullRequests.filter((pullRequest) => {
 		const query = effectiveFilterQuery
 		if (query.length === 0) return true
 		return [pullRequest.title, pullRequest.repository, String(pullRequest.number)]
 			.some((value) => value.toLowerCase().includes(query))
-	})
+	}), [pullRequests, effectiveFilterQuery])
 
-	const visibleGroups = groupBy(
-		filteredPullRequests,
-		(pullRequest) => pullRequest.repository,
+	const visibleGroups = useMemo(
+		() => groupBy(filteredPullRequests, (pullRequest) => pullRequest.repository),
+		[filteredPullRequests],
 	)
-	const visiblePullRequests = visibleGroups.flatMap(([, pullRequests]) => pullRequests)
-	const groupStarts = visibleGroups.reduce<Array<number>>((starts, [, pullRequests], index) => {
+	const visiblePullRequests = useMemo(() => visibleGroups.flatMap(([, pullRequests]) => pullRequests), [visibleGroups])
+	const groupStarts = useMemo(() => visibleGroups.reduce<Array<number>>((starts, [, pullRequests], index) => {
 		if (index === 0) {
 			starts.push(0)
 			return starts
 		}
 		starts.push(starts[index - 1]! + visibleGroups[index - 1]![1].length)
 		return starts
-	}, [])
+	}, []), [visibleGroups])
 	const getCurrentGroupIndex = (current: number) => {
 		for (let index = groupStarts.length - 1; index >= 0; index--) {
 			if (groupStarts[index]! <= current) return index
@@ -1663,7 +926,6 @@ export const App = () => {
 		setPullRequestOverrides((current) => ({ ...current, [url]: transform(pullRequest) }))
 	}
 	const refreshPullRequests = (message?: string) => {
-		setPullRequestOverrides({})
 		refreshPullRequestsAtom()
 		if (message) flashNotice(message)
 	}
@@ -1682,7 +944,37 @@ export const App = () => {
 	const selectedPullRequest = visiblePullRequests[selectedIndex] ?? null
 	const selectedDiffState = selectedPullRequest ? pullRequestDiffCache[pullRequestDiffKey(selectedPullRequest)] : undefined
 	const effectiveDiffRenderView = contentWidth >= 100 ? diffRenderView : "unified"
+	const isHydratingPullRequestDetails = pullRequestStatus === "ready" && pullRequests.some((pullRequest) => !pullRequest.detailLoaded)
+	const hasActiveLoadingIndicator = pullRequestStatus === "loading" || isHydratingPullRequestDetails || labelModal.loading || mergeModal.loading || mergeModal.running || selectedDiffState?.status === "loading"
 	const loadingIndicator = LOADING_FRAMES[loadingFrame % LOADING_FRAMES.length]!
+
+	useEffect(() => {
+		if (!hasActiveLoadingIndicator) return
+		const interval = globalThis.setInterval(() => {
+			setLoadingFrame((current) => (current + 1) % LOADING_FRAMES.length)
+		}, 120)
+		return () => globalThis.clearInterval(interval)
+	}, [hasActiveLoadingIndicator])
+
+	useEffect(() => {
+		const fetchedAt = pullRequestLoad?.fetchedAt?.getTime()
+		if (pullRequestStatus !== "ready" || fetchedAt === undefined) return
+		if (detailHydrationRef.current === fetchedAt) return
+		if (!pullRequests.some((pullRequest) => !pullRequest.detailLoaded)) return
+		detailHydrationRef.current = fetchedAt
+		void loadPullRequestDetails().then((details) => {
+			setPullRequestOverrides((current) => {
+				const next = { ...current }
+				for (const detail of details) {
+					next[detail.url] = current[detail.url]?.detailLoaded ? current[detail.url]! : detail
+				}
+				return next
+			})
+		}).catch((error) => {
+			flashNotice(error instanceof Error ? error.message : String(error))
+		})
+	}, [pullRequestStatus, pullRequestLoad?.fetchedAt, pullRequests.length])
+
 	const detailPlaceholderContent = getDetailPlaceholderContent({
 		status: pullRequestStatus,
 		retryProgress,
@@ -1753,6 +1045,7 @@ export const App = () => {
 
 	const openLabelModal = () => {
 		if (!selectedPullRequest) return
+		setMergeModal(initialMergeModalState)
 		const repository = selectedPullRequest.repository
 		const cachedLabels = labelCache[repository]
 		if (cachedLabels) {
@@ -1776,6 +1069,76 @@ export const App = () => {
 			.catch((error) => {
 				setLabelModal((current) => current.repository === repository ? { ...current, loading: false } : current)
 				flashNotice(error instanceof Error ? error.message : String(error))
+			})
+	}
+
+	const openMergeModal = () => {
+		if (!selectedPullRequest) return
+		const repository = selectedPullRequest.repository
+		const number = selectedPullRequest.number
+		setLabelModal(initialLabelModalState)
+		setMergeModal({
+			open: true,
+			repository,
+			number,
+			selectedIndex: 0,
+			loading: true,
+			running: false,
+			info: null,
+			error: null,
+		})
+		void getPullRequestMergeInfo({ repository, number })
+			.then((info) => {
+				setMergeModal((current) => current.repository === repository && current.number === number
+					? { ...current, loading: false, info, selectedIndex: 0 }
+					: current)
+			})
+			.catch((error) => {
+				setMergeModal((current) => current.repository === repository && current.number === number
+					? { ...current, loading: false, error: errorMessage(error) }
+					: current)
+			})
+	}
+
+	const confirmMergeAction = () => {
+		if (!mergeModal.info || mergeModal.loading || mergeModal.running) return
+		const options = mergeModalOptions(mergeModal.info)
+		const option = options[mergeModal.selectedIndex]
+		if (!option) return
+
+		const { repository, number } = mergeModal.info
+		const targetPullRequest = pullRequests.find((pullRequest) => pullRequest.repository === repository && pullRequest.number === number)
+		const previousPullRequest = targetPullRequest ?? null
+		const previousMergeInfo = mergeModal.info
+
+		if (targetPullRequest && option.action === "auto") {
+			updatePullRequest(targetPullRequest.url, (pullRequest) => ({ ...pullRequest, autoMergeEnabled: true }))
+			setMergeModal((current) => ({
+				...current,
+				info: current.info ? { ...current.info, autoMergeEnabled: true } : current.info,
+			}))
+		} else if (targetPullRequest && option.action === "disable-auto") {
+			updatePullRequest(targetPullRequest.url, (pullRequest) => ({ ...pullRequest, autoMergeEnabled: false }))
+			setMergeModal((current) => ({
+				...current,
+				info: current.info ? { ...current.info, autoMergeEnabled: false } : current.info,
+			}))
+		}
+
+		setMergeModal((current) => ({ ...current, running: true, error: null }))
+		void mergePullRequest({ repository, number, action: option.action })
+			.then(() => {
+				setMergeModal(initialMergeModalState)
+				if (option.action === "squash" || option.action === "admin") {
+					refreshPullRequests(`${mergeActionPastTense(option.action)} #${number}`)
+				} else {
+					flashNotice(`${mergeActionPastTense(option.action)} #${number}`)
+				}
+			})
+			.catch((error) => {
+				if (previousPullRequest) updatePullRequest(previousPullRequest.url, () => previousPullRequest)
+				setMergeModal((current) => ({ ...current, running: false, info: previousMergeInfo, error: errorMessage(error) }))
+				flashNotice(errorMessage(error))
 			})
 	}
 
@@ -1817,11 +1180,42 @@ export const App = () => {
 
 	useKeyboard((key) => {
 		if (key.name === "q" || (key.ctrl && key.name === "c")) {
+			if (mergeModal.open) {
+				setMergeModal(initialMergeModalState)
+				return
+			}
 			if (labelModal.open) {
 				setLabelModal(initialLabelModalState)
 				return
 			}
 			renderer.destroy()
+			return
+		}
+
+		if (mergeModal.open) {
+			const options = mergeModalOptions(mergeModal.info)
+			if (key.name === "escape") {
+				setMergeModal(initialMergeModalState)
+				return
+			}
+			if ((key.name === "return" || key.name === "enter") && options.length > 0) {
+				confirmMergeAction()
+				return
+			}
+			if (key.name === "up" || key.name === "k") {
+				setMergeModal((current) => ({
+					...current,
+					selectedIndex: Math.max(0, current.selectedIndex - 1),
+				}))
+				return
+			}
+			if (key.name === "down" || key.name === "j") {
+				setMergeModal((current) => ({
+					...current,
+					selectedIndex: Math.min(Math.max(0, options.length - 1), current.selectedIndex + 1),
+				}))
+				return
+			}
 			return
 		}
 
@@ -2191,6 +1585,10 @@ export const App = () => {
 			openLabelModal()
 			return
 		}
+		if (key.name === "m" || key.name === "M") {
+			if (selectedPullRequest) openMergeModal()
+			return
+		}
 		if (key.name === "o" && selectedPullRequest) {
 			void Bun.spawn({ cmd: ["open", selectedPullRequest.url], stdout: "ignore", stderr: "ignore" })
 			flashNotice(`Opened #${selectedPullRequest.number} in browser`)
@@ -2235,7 +1633,6 @@ export const App = () => {
 		filterText: visibleFilterText,
 		showFilterBar: filterMode || filterQuery.length > 0,
 		isFilterEditing: filterMode,
-		groupIcon,
 		onSelectPullRequest: selectPullRequestByUrl,
 	} as const
 
@@ -2244,6 +1641,10 @@ export const App = () => {
 	const labelModalHeight = Math.min(20, (height ?? 24) - 4)
 	const labelModalLeft = Math.floor((contentWidth - labelModalWidth) / 2)
 	const labelModalTop = Math.floor(((height ?? 24) - labelModalHeight) / 2)
+	const mergeModalWidth = Math.min(68, Math.max(46, contentWidth - 12))
+	const mergeModalHeight = Math.min(16, (height ?? 24) - 4)
+	const mergeModalLeft = Math.floor((contentWidth - mergeModalWidth) / 2)
+	const mergeModalTop = Math.floor(((height ?? 24) - mergeModalHeight) / 2)
 
 	return (
 		<box flexGrow={1} flexDirection="column">
@@ -2279,6 +1680,7 @@ export const App = () => {
 							paneWidth={contentWidth}
 							showChecks
 							placeholderContent={detailPlaceholderContent}
+							loadingIndicator={loadingIndicator}
 						/>
 					</scrollbox>
 				</box>
@@ -2295,7 +1697,7 @@ export const App = () => {
 							<>
 								<DetailHeader pullRequest={selectedPullRequest} contentWidth={rightContentWidth} paneWidth={rightPaneWidth} showChecks />
 								<scrollbox flexGrow={1}>
-									<DetailBody pullRequest={selectedPullRequest} contentWidth={rightContentWidth} bodyLines={wideDetailLines} />
+									<DetailBody pullRequest={selectedPullRequest} contentWidth={rightContentWidth} bodyLines={wideDetailLines} loadingIndicator={loadingIndicator} />
 								</scrollbox>
 							</>
 						) : (
@@ -2312,12 +1714,13 @@ export const App = () => {
 							bodyLines={fullscreenBodyLines}
 							paneWidth={contentWidth}
 							placeholderContent={detailPlaceholderContent}
+							loadingIndicator={loadingIndicator}
 						/>
 					</scrollbox>
 				</box>
 			) : (
 				<>
-					<DetailsPane pullRequest={selectedPullRequest} contentWidth={rightContentWidth} paneWidth={contentWidth} placeholderContent={detailPlaceholderContent} />
+					<DetailsPane pullRequest={selectedPullRequest} contentWidth={rightContentWidth} paneWidth={contentWidth} placeholderContent={detailPlaceholderContent} loadingIndicator={loadingIndicator} />
 					<Divider width={contentWidth} />
 					<box flexGrow={1} flexDirection="column">
 						<scrollbox flexGrow={1}>
@@ -2359,6 +1762,16 @@ export const App = () => {
 					modalHeight={labelModalHeight}
 					offsetLeft={labelModalLeft}
 					offsetTop={labelModalTop}
+					loadingIndicator={loadingIndicator}
+				/>
+			) : null}
+			{mergeModal.open ? (
+				<MergeModal
+					state={mergeModal}
+					modalWidth={mergeModalWidth}
+					modalHeight={mergeModalHeight}
+					offsetLeft={mergeModalLeft}
+					offsetTop={mergeModalTop}
 					loadingIndicator={loadingIndicator}
 				/>
 			) : null}

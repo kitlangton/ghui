@@ -49,7 +49,12 @@ export class CommandRunner extends Context.Service<CommandRunner, {
 			)
 
 			const run = Effect.fn("CommandRunner.run")(function*(command: string, args: readonly string[]) {
-				const result = yield* runProcess(command, args)
+				const result = yield* runProcess(command, args).pipe(Effect.withSpan("ghui.command.runProcess", {
+					attributes: {
+						"process.command": command,
+						"process.argv.count": args.length,
+					},
+				}))
 				if (result.exitCode !== 0) {
 					const detail = result.stderr.trim() || result.stdout.trim() || `exit code ${result.exitCode}`
 					return yield* new CommandError({ command, args: [...args], detail, cause: detail })

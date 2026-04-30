@@ -1,0 +1,28 @@
+export const colors = {
+	text: "#ede7da",
+	muted: "#9f9788",
+	separator: "#6f685d",
+	accent: "#f4a51c",
+	inlineCode: "#d7c5a1",
+	error: "#f97316",
+	selectedBg: "#1d2430",
+	selectedText: "#f8fafc",
+	count: "#d7c5a1",
+	status: {
+		draft: "#f59e0b",
+		approved: "#7dd3a3",
+		changes: "#f87171",
+		review: "#93c5fd",
+		none: "#9f9788",
+		passing: "#7dd3a3",
+		pending: "#f4a51c",
+		failing: "#f87171",
+	},
+	repos: {
+		opencode: "#60a5fa",
+		"effect-smol": "#34d399",
+		"opencode-console": "#f472b6",
+		opencontrol: "#f59e0b",
+		default: "#93c5fd",
+	},
+} as const

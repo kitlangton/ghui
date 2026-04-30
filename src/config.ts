@@ -1,9 +1,18 @@
-const parsePositiveInt = (value: string | undefined, fallback: number) => {
-	const parsed = Number.parseInt(value ?? "", 10)
-	return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback
-}
+import { Config, Effect } from "effect"
 
-export const config = {
-	author: process.env.GHUI_AUTHOR?.trim() || "@me",
-	prFetchLimit: parsePositiveInt(process.env.GHUI_PR_FETCH_LIMIT, 200),
-} as const
+const positiveIntOr = (fallback: number) => (value: number) => Number.isFinite(value) && value > 0 ? value : fallback
+
+const appConfig = Config.all({
+	author: Config.string("GHUI_AUTHOR").pipe(
+		Config.withDefault("@me"),
+		Config.map((value) => value.trim() || "@me"),
+	),
+	prFetchLimit: Config.int("GHUI_PR_FETCH_LIMIT").pipe(
+		Config.withDefault(200),
+		Config.map(positiveIntOr(200)),
+	),
+})
+
+export const config = Effect.runSync(Effect.gen(function*() {
+	return yield* appConfig
+}))

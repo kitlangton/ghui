@@ -681,7 +681,7 @@ export const App = () => {
 		const filteredThemes = filterThemeDefinitions(themeModalRef.current.query)
 		if (filteredThemes.length === 0) return
 		const currentIndex = Math.max(0, filteredThemes.findIndex((theme) => theme.id === themeIdRef.current))
-		const selectedIndex = Math.max(0, Math.min(filteredThemes.length - 1, currentIndex + delta))
+		const selectedIndex = (currentIndex + delta + filteredThemes.length) % filteredThemes.length
 		if (selectedIndex === currentIndex) return
 		const theme = filteredThemes[selectedIndex]
 		if (theme) previewTheme(theme.id)

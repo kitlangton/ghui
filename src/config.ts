@@ -2,6 +2,11 @@ import { Config, Effect } from "effect"
 
 const positiveIntOr = (fallback: number) => (value: number) => Number.isFinite(value) && value > 0 ? value : fallback
 
+const defaultCachePath = () => {
+	const base = process.env.XDG_CACHE_HOME?.trim() || `${process.env.HOME ?? "."}/.cache`
+	return `${base}/ghui/cache.sqlite`
+}
+
 const appConfig = Config.all({
 	author: Config.string("GHUI_AUTHOR").pipe(
 		Config.withDefault("@me"),
@@ -10,6 +15,10 @@ const appConfig = Config.all({
 	prFetchLimit: Config.int("GHUI_PR_FETCH_LIMIT").pipe(
 		Config.withDefault(200),
 		Config.map(positiveIntOr(200)),
+	),
+	cachePath: Config.string("GHUI_CACHE_PATH").pipe(
+		Config.withDefault(defaultCachePath()),
+		Config.map((value) => value.trim() || defaultCachePath()),
 	),
 })
 

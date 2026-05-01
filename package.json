@@ -35,7 +35,7 @@
 		"ghui": "bin/ghui.js"
 	},
 	"scripts": {
-		"dev": "bun --watch src/index.tsx",
+		"dev": "bun --watch bin/ghui.js",
 		"start": "bun run src/index.tsx",
 		"test": "bun test test",
 		"typecheck": "tsc --noEmit"

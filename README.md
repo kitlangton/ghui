@@ -21,6 +21,16 @@ Run it from anywhere:
 ghui
 ```
 
+CLI commands:
+
+```bash
+ghui --help       # show usage
+ghui -h           # show usage
+ghui -v           # print installed version
+ghui --version    # print installed version
+ghui upgrade      # install the latest npm release globally
+```
+
 <img width="1420" height="856" alt="image" src="https://github.com/user-attachments/assets/5e560a4a-5887-4baa-a6d4-e1f4f0410c70" />
 
 ## Local Development

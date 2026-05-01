@@ -115,3 +115,32 @@ export interface PullRequestMergeInfo {
 	readonly checkSummary: string | null
 	readonly autoMergeEnabled: boolean
 }
+
+export type PullRequestCommentKey = `${string}#${number}`
+
+export const pullRequestCommentKey = (pullRequest: Pick<PullRequestItem, "repository" | "number">): PullRequestCommentKey =>
+	`${pullRequest.repository}#${pullRequest.number}`
+
+export type PullRequestCommentKind = "issue" | "thread"
+
+export interface PullRequestCommentContext {
+	readonly path: string
+	readonly line: number | null
+	readonly originalLine: number | null
+	readonly resolved?: boolean | null
+}
+
+export interface PullRequestComment {
+	readonly id: string
+	readonly databaseId: number | null
+	readonly kind: PullRequestCommentKind
+	readonly author: string
+	readonly body: string
+	readonly createdAt: Date
+	readonly updatedAt: Date
+	readonly htmlUrl: string
+	readonly context: PullRequestCommentContext | null
+	readonly threadId: string | null
+	readonly parentId: string | null
+	readonly depth: number
+}

@@ -1,4 +1,4 @@
-import type { DiffRenderable, ScrollBoxRenderable } from "@opentui/core"
+import { TextAttributes, type DiffRenderable, type ScrollBoxRenderable } from "@opentui/core"
 import { useAtom, useAtomRefresh, useAtomSet, useAtomValue } from "@effect/atom-react"
 import { useKeyboard, useRenderer, useTerminalDimensions } from "@opentui/react"
 import { Cause, Effect, Layer, Schedule } from "effect"
@@ -6,24 +6,26 @@ import * as AsyncResult from "effect/unstable/reactivity/AsyncResult"
 import * as Atom from "effect/unstable/reactivity/Atom"
 import { useEffect, useMemo, useRef, useState } from "react"
 import { config } from "./config.js"
-import { pullRequestQueueLabels, pullRequestQueueModes, type CreatePullRequestCommentInput, type DiffCommentSide, type LoadStatus, type PullRequestItem, type PullRequestLabel, type PullRequestMergeAction, type PullRequestQueueMode, type PullRequestReviewComment } from "./domain.js"
+import { pullRequestQueueLabels, pullRequestQueueModes, type CreatePullRequestCommentInput, type DiffCommentSide, type LoadStatus, pullRequestCommentKey, type PullRequestComment, type PullRequestItem, type PullRequestLabel, type PullRequestMergeAction, type PullRequestQueueMode, type PullRequestReviewComment } from "./domain.js"
 import { formatShortDate, formatTimestamp } from "./date.js"
 import { availableMergeActions, mergeInfoFromPullRequest } from "./mergeActions.js"
 import { Observability } from "./observability.js"
 import { GitHubService } from "./services/GitHubService.js"
+import { SqliteCacheService } from "./services/SqliteCacheService.js"
 import { loadStoredThemeId, saveStoredThemeId } from "./themeStore.js"
 import { colors, filterThemeDefinitions, setActiveTheme, themeDefinitions, type ThemeId } from "./ui/colors.js"
 import { backspace as editorBackspace, deleteForward as editorDeleteForward, deleteToLineEnd, deleteToLineStart, deleteWordBackward, deleteWordForward, insertText, moveLeft as editorMoveLeft, moveLineEnd, moveLineStart, moveRight as editorMoveRight, moveVertically, moveWordBackward, moveWordForward, type CommentEditorValue } from "./ui/commentEditor.js"
 import { buildStackedDiffFiles, diffCommentAnchorKey, diffCommentLocationKey, getStackedDiffCommentAnchors, nearestDiffCommentAnchorIndex, PullRequestDiffState, pullRequestDiffKey, safeDiffFileIndex, scrollTopForVisibleLine, splitPatchFiles, stackedDiffFileAtLine, type DiffCommentAnchor, type DiffView, type DiffWrapMode, type StackedDiffCommentAnchor } from "./ui/diff.js"
-import { DetailBody, DetailHeader, DetailPlaceholder, DetailsPane, getDetailBodyHeight, getDetailHeaderHeight, getDetailJunctionRows, getDetailsPaneHeight, LoadingPane, type DetailPlaceholderContent } from "./ui/DetailsPane.js"
+import { bodyPreview, DetailBody, DetailHeader, DetailPlaceholder, DetailsPane, getDetailBodyHeight, getDetailHeaderHeight, getDetailJunctionRows, getDetailsPaneHeight, LoadingPane, type DetailPlaceholderContent } from "./ui/DetailsPane.js"
 import { FooterHints, initialRetryProgress, RetryProgress } from "./ui/FooterHints.js"
-import { Divider, fitCell, PlainLine, SeparatorColumn } from "./ui/primitives.js"
+import { Divider, fitCell, PlainLine, SeparatorColumn, TextLine } from "./ui/primitives.js"
 import { CloseModal, CommentModal, CommentThreadModal, initialCloseModalState, initialCommentModalState, initialCommentThreadModalState, initialLabelModalState, initialMergeModalState, initialModal, initialThemeModalState, LabelModal, MergeModal, Modal, ThemeModal, type CloseModalState, type CommentModalState, type CommentThreadModalState, type LabelModalState, type MergeModalState, type ModalState, type ModalTag, type ThemeModalState } from "./ui/modals.js"
 import { groupBy, reviewLabel } from "./ui/pullRequests.js"
 import { PullRequestDiffPane } from "./ui/PullRequestDiffPane.js"
 import { PullRequestList } from "./ui/PullRequestList.js"
 
 const githubRuntime = Atom.runtime(GitHubService.layer.pipe(Layer.provideMerge(Observability.layer)))
+const sqliteCache = SqliteCacheService.open()
 const initialThemeId = await Effect.runPromise(loadStoredThemeId)
 
 
@@ -178,6 +180,9 @@ const getPullRequestDiffAtom = githubRuntime.fn<{ readonly repository: string; r
 const listPullRequestCommentsAtom = githubRuntime.fn<{ readonly repository: string; readonly number: number }>()((input) =>
 	GitHubService.use((github) => github.listPullRequestComments(input.repository, input.number))
 )
+const listPullRequestConversationCommentsAtom = githubRuntime.fn<{ readonly repository: string; readonly number: number }>()((input) =>
+	GitHubService.use((github) => github.listPullRequestConversationComments(input.repository, input.number))
+)
 const getPullRequestMergeInfoAtom = githubRuntime.fn<{ readonly repository: string; readonly number: number }>()((input) =>
 	GitHubService.use((github) => github.getPullRequestMergeInfo(input.repository, input.number))
 )
@@ -289,6 +294,38 @@ const copyPullRequestMetadata = async (pullRequest: PullRequestItem) => {
 const isShiftG = (key: { readonly name: string; readonly shift?: boolean }) => key.name === "G" || key.name === "g" && key.shift
 
 const isThemeKey = (key: { readonly name: string; readonly ctrl?: boolean; readonly meta?: boolean }) => !key.ctrl && !key.meta && key.name.toLowerCase() === "t"
+
+interface ConversationCommentState {
+	readonly status: "idle" | "loading" | "ready" | "error"
+	readonly comments: readonly PullRequestComment[]
+	readonly error: string | null
+}
+
+const isResolvedComment = (comment: PullRequestComment) => comment.context?.resolved === true
+
+const ConversationComment = ({ comment, contentWidth }: { comment: PullRequestComment; contentWidth: number }) => {
+	const context = comment.context ? ` ${comment.context.path}${comment.context.line ? `:${comment.context.line}` : ""}${isResolvedComment(comment) ? " resolved" : ""}` : ""
+	const suffix = ` ${formatShortDate(comment.createdAt)} ${formatTimestamp(comment.createdAt)}${context}`
+	const preview = bodyPreview(comment.body, Math.max(16, contentWidth - 4), 8)
+	return (
+		<box flexDirection="column">
+			<TextLine width={contentWidth}>
+				<span fg={colors.accent} attributes={TextAttributes.BOLD}>{comment.author}</span>
+				<span fg={colors.muted}>{fitCell(suffix, Math.max(0, contentWidth - comment.author.length))}</span>
+			</TextLine>
+			{preview.map((line, lineIndex) => (
+				<TextLine key={`${comment.id}-${lineIndex}`} width={contentWidth}>
+					<span fg={colors.muted}>  </span>
+					{line.segments.map((segment, segmentIndex) =>
+						segment.bold
+							? <span key={segmentIndex} fg={segment.fg} attributes={TextAttributes.BOLD}>{segment.text}</span>
+							: <span key={segmentIndex} fg={segment.fg}>{segment.text}</span>
+					)}
+				</TextLine>
+			))}
+		</box>
+	)
+}
 
 const nextQueueMode = (mode: PullRequestQueueMode, delta: 1 | -1) => {
 	const index = pullRequestQueueModes.indexOf(mode)
@@ -471,6 +508,7 @@ export const App = () => {
 	const [refreshCompletionMessage, setRefreshCompletionMessage] = useState<string | null>(null)
 	const [refreshStartedAt, setRefreshStartedAt] = useState<number | null>(null)
 	const [terminalFocused, setTerminalFocused] = useState(true)
+	const [conversationCommentsByKey, setConversationCommentsByKey] = useState<Record<string, ConversationCommentState>>({})
 	const usernameResult = useAtomValue(usernameAtom)
 	const loadRepoLabels = useAtomSet(listRepoLabelsAtom, { mode: "promise" })
 	const loadPullRequestDetails = useAtomSet(listOpenPullRequestDetailsAtom, { mode: "promise" })
@@ -479,6 +517,7 @@ export const App = () => {
 	const toggleDraftStatus = useAtomSet(toggleDraftAtom, { mode: "promise" })
 	const getPullRequestDiff = useAtomSet(getPullRequestDiffAtom, { mode: "promise" })
 	const listPullRequestComments = useAtomSet(listPullRequestCommentsAtom, { mode: "promise" })
+	const listPullRequestConversationComments = useAtomSet(listPullRequestConversationCommentsAtom, { mode: "promise" })
 	const getPullRequestMergeInfo = useAtomSet(getPullRequestMergeInfoAtom, { mode: "promise" })
 	const mergePullRequest = useAtomSet(mergePullRequestAtom, { mode: "promise" })
 	const closePullRequest = useAtomSet(closePullRequestAtom, { mode: "promise" })
@@ -589,6 +628,8 @@ export const App = () => {
 	)
 	const visiblePullRequests = useMemo(() => visibleGroups.flatMap(([, pullRequests]) => pullRequests), [visibleGroups])
 	const selectedPullRequest = visiblePullRequests[selectedIndex] ?? null
+	const selectedConversationKey = selectedPullRequest ? pullRequestCommentKey(selectedPullRequest) : null
+	const selectedConversationState = selectedConversationKey ? conversationCommentsByKey[selectedConversationKey] ?? { status: "idle", comments: [], error: null } : { status: "idle", comments: [], error: null }
 	const selectedDiffState = selectedPullRequest ? pullRequestDiffCache[pullRequestDiffKey(selectedPullRequest)] : undefined
 	const effectiveDiffRenderView = contentWidth >= 100 ? diffRenderView : "unified"
 	const readyDiffFiles = selectedDiffState?._tag === "Ready" ? selectedDiffState.files : []
@@ -755,6 +796,32 @@ export const App = () => {
 		setDiffScrollTop(0)
 		setDiffCommentAnchorIndex(0)
 	}, [selectedIndex])
+
+
+	useEffect(() => {
+		if (!selectedPullRequest || !selectedConversationKey) return
+		const { repository, number } = selectedPullRequest
+		const cachedComments = sqliteCache?.readComments(repository, number) ?? null
+		setConversationCommentsByKey((current) => current[selectedConversationKey]
+			? current
+			: { ...current, [selectedConversationKey]: { status: cachedComments ? "ready" : "loading", comments: cachedComments ?? [], error: null } })
+		let cancelled = false
+		void listPullRequestConversationComments({ repository, number })
+			.then((comments) => {
+				if (cancelled) return
+				setConversationCommentsByKey((current) => ({ ...current, [selectedConversationKey]: { status: "ready", comments, error: null } }))
+				sqliteCache?.writeComments(repository, number, comments)
+			})
+			.catch((error) => {
+				if (cancelled) return
+				const message = errorMessage(error)
+				setConversationCommentsByKey((current) => ({
+					...current,
+					[selectedConversationKey]: { status: "error", comments: current[selectedConversationKey]?.comments ?? cachedComments ?? [], error: message },
+				}))
+			})
+		return () => { cancelled = true }
+	}, [selectedConversationKey, selectedPullRequest?.url])
 
 	useEffect(() => {
 		setDiffCommentAnchorIndex((current) => {
@@ -2086,6 +2153,8 @@ export const App = () => {
 	const wideDetailHeaderHeight = getDetailHeaderHeight(selectedPullRequest, rightPaneWidth, true)
 	const wideDetailBodyViewportHeight = Math.max(1, wideBodyHeight - wideDetailHeaderHeight)
 	const wideDetailBodyScrollable = getDetailBodyHeight(selectedPullRequest, rightContentWidth, wideDetailLines) > wideDetailBodyViewportHeight
+	const commentsPaneHeight = Math.max(4, Math.floor(wideBodyHeight * 0.35))
+	const commentsVisible = selectedConversationState.status !== "idle" || selectedConversationState.comments.length > 0
 
 	const prListProps = {
 		groups: visibleGroups,
@@ -2189,6 +2258,19 @@ export const App = () => {
 								<scrollbox flexGrow={1} verticalScrollbarOptions={{ visible: wideDetailBodyScrollable }}>
 									<DetailBody pullRequest={selectedPullRequest} contentWidth={rightContentWidth} bodyLines={wideDetailLines} loadingIndicator={loadingIndicator} themeId={themeId} />
 								</scrollbox>
+								{commentsVisible ? (
+									<>
+										<Divider width={rightPaneWidth} />
+										<box height={commentsPaneHeight} flexDirection="column" paddingLeft={sectionPadding} paddingRight={sectionPadding}>
+											<PlainLine text={fitCell(selectedConversationState.status === "loading" ? `${loadingIndicator} Comments` : `Comments ${selectedConversationState.comments.length}`, rightContentWidth)} fg={colors.count} bold />
+											{selectedConversationState.status === "error" ? <PlainLine text={fitCell(selectedConversationState.error ?? "Could not load comments", rightContentWidth)} fg={colors.error} /> : null}
+											{selectedConversationState.status !== "loading" && selectedConversationState.comments.length === 0 ? <PlainLine text={fitCell("No conversation comments", rightContentWidth)} fg={colors.muted} /> : null}
+											<scrollbox flexGrow={1}>
+												{selectedConversationState.comments.map((comment) => <ConversationComment key={`${selectedConversationKey}:${comment.id}`} comment={comment} contentWidth={rightContentWidth} />)}
+											</scrollbox>
+										</box>
+									</>
+								) : null}
 							</>
 						) : (
 							<DetailPlaceholder content={detailPlaceholderContent} paneWidth={rightPaneWidth} />

@@ -1,6 +1,6 @@
 import { Context, Effect, Layer, Schema } from "effect"
 import { config } from "../config.js"
-import { DiffCommentSide, pullRequestQueueSearchQualifier, type CheckItem, type CreatePullRequestCommentInput, type Mergeable, type PullRequestItem, type PullRequestMergeAction, type PullRequestMergeInfo, type PullRequestQueueMode, type PullRequestReviewComment, type ReviewStatus } from "../domain.js"
+import { DiffCommentSide, pullRequestQueueSearchQualifier, type CheckItem, type CreatePullRequestCommentInput, type Mergeable, type PullRequestComment, type PullRequestItem, type PullRequestMergeAction, type PullRequestMergeInfo, type PullRequestQueueMode, type PullRequestReviewComment, type ReviewStatus } from "../domain.js"
 import { getMergeActionDefinition } from "../mergeActions.js"
 import { CommandRunner, type CommandError, type JsonParseError } from "./CommandRunner.js"
 
@@ -168,6 +168,47 @@ query PullRequests($searchQuery: String!, $first: Int!, $after: String) {
   }
 }
 `
+
+interface GitHubIssueComment {
+	readonly id: number
+	readonly user?: { readonly login?: string | null } | null
+	readonly body?: string | null
+	readonly created_at: string
+	readonly updated_at: string
+	readonly html_url: string
+}
+
+interface GitHubReviewThreadsResponse {
+	readonly data?: {
+		readonly repository?: {
+			readonly pullRequest?: {
+				readonly reviewThreads?: {
+					readonly nodes?: readonly GitHubReviewThread[] | null
+				} | null
+			} | null
+		} | null
+	} | null
+}
+
+interface GitHubReviewThread {
+	readonly id: string
+	readonly isResolved?: boolean | null
+	readonly comments?: { readonly nodes?: readonly GitHubThreadComment[] | null } | null
+}
+
+interface GitHubThreadComment {
+	readonly id: string
+	readonly databaseId?: number | null
+	readonly author?: { readonly login?: string | null } | null
+	readonly body?: string | null
+	readonly createdAt: string
+	readonly updatedAt: string
+	readonly url: string
+	readonly path?: string | null
+	readonly line?: number | null
+	readonly originalLine?: number | null
+	readonly replyTo?: { readonly id?: string | null } | null
+}
 
 const pullRequestSummarySearchQuery = `
 query PullRequests($searchQuery: String!, $first: Int!, $after: String) {
@@ -343,6 +384,62 @@ const searchQuery = (mode: PullRequestQueueMode, author: string) => `${pullReque
 const sortNewestFirst = (pullRequests: readonly PullRequestItem[]) =>
 	[...pullRequests].sort((left, right) => right.createdAt.getTime() - left.createdAt.getTime())
 
+const parseIssueComment = (comment: GitHubIssueComment): PullRequestComment => ({
+	id: `issue:${comment.id}`,
+	databaseId: comment.id,
+	kind: "issue",
+	author: comment.user?.login ?? "unknown",
+	body: comment.body ?? "",
+	createdAt: new Date(comment.created_at),
+	updatedAt: new Date(comment.updated_at),
+	htmlUrl: comment.html_url,
+	context: null,
+	threadId: null,
+	parentId: null,
+	depth: 0,
+})
+
+const parseThreadComment = (thread: GitHubReviewThread, comment: GitHubThreadComment, index: number): PullRequestComment => ({
+	id: `thread:${comment.id}`,
+	databaseId: comment.databaseId ?? null,
+	kind: "thread",
+	author: comment.author?.login ?? "unknown",
+	body: comment.body ?? "",
+	createdAt: new Date(comment.createdAt),
+	updatedAt: new Date(comment.updatedAt),
+	htmlUrl: comment.url,
+	context: comment.path
+		? { path: comment.path, line: comment.line ?? null, originalLine: comment.originalLine ?? null, resolved: thread.isResolved ?? null }
+		: null,
+	threadId: thread.id,
+	parentId: comment.replyTo?.id ? `thread:${comment.replyTo.id}` : null,
+	depth: index === 0 ? 0 : 1,
+})
+
+const mergeComments = (comments: readonly PullRequestComment[]) => {
+	const byKey = new Map<string, PullRequestComment>()
+	for (const comment of comments) {
+		// REST review comments and GraphQL review-thread comments can overlap.
+		// Use databaseId when present so the same GitHub comment is rendered once.
+		const key = comment.databaseId ? `db:${comment.databaseId}` : comment.id
+		if (!byKey.has(key)) byKey.set(key, comment)
+	}
+
+	const groups = new Map<string, PullRequestComment[]>()
+	for (const comment of byKey.values()) {
+		const key = comment.threadId ?? comment.id
+		groups.set(key, [...(groups.get(key) ?? []), comment])
+	}
+
+	return [...groups.values()]
+		.map((group) => group.sort((left, right) => {
+			if (left.depth !== right.depth) return left.depth - right.depth
+			return left.createdAt.getTime() - right.createdAt.getTime()
+		}))
+		.sort((left, right) => left[0]!.createdAt.getTime() - right[0]!.createdAt.getTime())
+		.flat()
+}
+
 const parsePullRequestComment = (comment: RawPullRequestComment): PullRequestReviewComment | null => {
 	const line = comment.line ?? comment.original_line
 	if (!comment.path || !line || (comment.side !== "LEFT" && comment.side !== "RIGHT")) return null
@@ -399,6 +496,7 @@ export class GitHubService extends Context.Service<GitHubService, {
 	readonly mergePullRequest: (repository: string, number: number, action: PullRequestMergeAction) => Effect.Effect<void, CommandError>
 	readonly closePullRequest: (repository: string, number: number) => Effect.Effect<void, CommandError>
 	readonly createPullRequestComment: (input: CreatePullRequestCommentInput) => Effect.Effect<PullRequestReviewComment, GitHubError>
+	readonly listPullRequestConversationComments: (repository: string, number: number) => Effect.Effect<readonly PullRequestComment[], GitHubError>
 	readonly toggleDraftStatus: (repository: string, number: number, isDraft: boolean) => Effect.Effect<void, CommandError>
 	readonly listRepoLabels: (repository: string) => Effect.Effect<readonly { readonly name: string; readonly color: string | null }[], GitHubError>
 	readonly addPullRequestLabel: (repository: string, number: number, label: string) => Effect.Effect<void, CommandError>
@@ -504,6 +602,30 @@ export class GitHubService extends Context.Service<GitHubService, {
 				yield* command.run("gh", ["pr", "ready", String(number), "--repo", repository, ...(isDraft ? [] : ["--undo"])])
 			})
 
+			const listPullRequestConversationComments = Effect.fn("GitHubService.listPullRequestConversationComments")(function*(repository: string, number: number) {
+				const [owner, name] = repository.split("/")
+				const comments = yield* command.runJson<readonly GitHubIssueComment[]>("gh", [
+					"api", `repos/${repository}/issues/${number}/comments`, "--paginate",
+				])
+				let reviewThreads: GitHubReviewThreadsResponse = {}
+				if (owner && name) {
+					reviewThreads = yield* command.runJson<GitHubReviewThreadsResponse>("gh", [
+						"api", "graphql",
+						"-f", "query=query($owner:String!,$name:String!,$number:Int!){repository(owner:$owner,name:$name){pullRequest(number:$number){reviewThreads(first:100){nodes{id isResolved comments(first:100){nodes{id databaseId author{login} body createdAt updatedAt url path line originalLine replyTo{id}}}}}}}}",
+						"-F", `owner=${owner}`,
+						"-F", `name=${name}`,
+						"-F", `number=${number}`,
+					]).pipe(Effect.catch(() => Effect.succeed({} as GitHubReviewThreadsResponse)))
+				}
+				const threadComments = reviewThreads.data?.repository?.pullRequest?.reviewThreads?.nodes?.flatMap((thread) =>
+					(thread.comments?.nodes ?? []).map((comment, index) => parseThreadComment(thread, comment, index)),
+				) ?? []
+				return mergeComments([
+					...comments.map(parseIssueComment),
+					...threadComments,
+				])
+			})
+
 			const listRepoLabels = Effect.fn("GitHubService.listRepoLabels")(function*(repository: string) {
 				const labels = yield* command.runSchema(RepoLabelsResponseSchema, "gh", [
 					"label", "list", "--repo", repository, "--json", "name,color", "--limit", "100",
@@ -529,6 +651,7 @@ export class GitHubService extends Context.Service<GitHubService, {
 				mergePullRequest,
 				closePullRequest,
 				createPullRequestComment,
+				listPullRequestConversationComments,
 				toggleDraftStatus,
 				listRepoLabels,
 				addPullRequestLabel,

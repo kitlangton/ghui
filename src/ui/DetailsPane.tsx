@@ -7,7 +7,7 @@ import { diffStatText } from "./diff.js"
 import { centerCell, Divider, fitCell, PlainLine, TextLine } from "./primitives.js"
 import { labelColor, labelTextColor, reviewLabel, shortRepoName, statusColor } from "./pullRequests.js"
 
-interface PreviewLine {
+export interface PreviewLine {
 	readonly segments: ReadonlyArray<{
 		readonly text: string
 		readonly fg: string
@@ -92,7 +92,7 @@ const wrapPreviewSegments = (segments: PreviewLine["segments"], width: number, i
 	return lines
 }
 
-const bodyPreview = (body: string, width: number, limit = DETAIL_BODY_LINES): Array<PreviewLine> => {
+export const bodyPreview = (body: string, width: number, limit = DETAIL_BODY_LINES): Array<PreviewLine> => {
 	const sourceLines = body.replace(/\r/g, "").split("\n")
 	const preview: Array<PreviewLine> = []
 	let inCodeBlock = false

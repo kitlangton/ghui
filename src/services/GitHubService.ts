@@ -415,7 +415,7 @@ const parsePullRequest = (item: RawPullRequestNode): PullRequestItem => {
 
 const searchQuery = (mode: PullRequestQueueMode, repository: string | null) => {
 	const sort = mode === "repository" ? "sort:updated-desc" : "sort:created-desc"
-	return `${pullRequestQueueSearchQualifier(mode, repository)} is:pr is:open ${sort}`
+	return `${pullRequestQueueSearchQualifier(mode, repository)} is:pr is:open archived:false ${sort}`
 }
 
 const pullRequestPage = <Item>(connection: PullRequestConnection<Item>, parse: (node: Item) => PullRequestItem): PullRequestPage => ({

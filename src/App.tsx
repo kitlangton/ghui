@@ -1883,7 +1883,7 @@ export const App = () => {
 				setFilterMode(false)
 				return
 			}
-			if (key.name === "enter") {
+			if (key.name === "return" || key.name === "enter") {
 				setFilterQuery(filterDraft)
 				setFilterMode(false)
 				return

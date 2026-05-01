@@ -6,6 +6,10 @@ export interface CommandResult {
 	readonly exitCode: number
 }
 
+export interface RunOptions {
+	readonly stdin?: string
+}
+
 export class CommandError extends Schema.TaggedErrorClass<CommandError>()("CommandError", {
 	command: Schema.String,
 	args: Schema.Array(Schema.String),
@@ -26,7 +30,7 @@ const readStream = async (stream: ReadableStream | null | undefined) => {
 }
 
 export class CommandRunner extends Context.Service<CommandRunner, {
-	readonly run: (command: string, args: readonly string[]) => Effect.Effect<CommandResult, CommandError>
+	readonly run: (command: string, args: readonly string[], options?: RunOptions) => Effect.Effect<CommandResult, CommandError>
 	readonly runJson: <A>(command: string, args: readonly string[]) => Effect.Effect<A, CommandError | JsonParseError>
 	readonly runSchema: <S extends Schema.Top>(schema: S, command: string, args: readonly string[]) =>
 		Effect.Effect<S["Type"], CommandError | JsonParseError | Schema.SchemaError, S["DecodingServices"]>
@@ -34,14 +38,19 @@ export class CommandRunner extends Context.Service<CommandRunner, {
 	static readonly layer = Layer.effect(
 		CommandRunner,
 		Effect.gen(function*() {
-			const runProcess = Effect.fn("CommandRunner.runProcess")((command: string, args: readonly string[]) =>
+			const runProcess = Effect.fn("CommandRunner.runProcess")((command: string, args: readonly string[], stdin: string | undefined) =>
 				Effect.tryPromise({
 					async try() {
 						const proc = Bun.spawn({
 							cmd: [command, ...args],
+							stdin: stdin === undefined ? "ignore" : "pipe",
 							stdout: "pipe",
 							stderr: "pipe",
 						})
+						if (stdin !== undefined && proc.stdin) {
+							proc.stdin.write(stdin)
+							proc.stdin.end()
+						}
 
 						const [exitCode, stdout, stderr] = await Promise.all([proc.exited, readStream(proc.stdout), readStream(proc.stderr)])
 						return { stdout, stderr, exitCode }
@@ -50,8 +59,8 @@ export class CommandRunner extends Context.Service<CommandRunner, {
 				})
 			)
 
-			const run = Effect.fn("CommandRunner.run")(function*(command: string, args: readonly string[]) {
-				const result = yield* runProcess(command, args).pipe(Effect.withSpan("ghui.command.runProcess", {
+			const run = Effect.fn("CommandRunner.run")(function*(command: string, args: readonly string[], options?: RunOptions) {
+				const result = yield* runProcess(command, args, options?.stdin).pipe(Effect.withSpan("ghui.command.runProcess", {
 					attributes: {
 						"process.command": command,
 						"process.argv.count": args.length,

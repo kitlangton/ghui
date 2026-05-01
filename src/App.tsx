@@ -10,6 +10,8 @@ import { pullRequestQueueLabels, pullRequestQueueModes, type CreatePullRequestCo
 import { formatShortDate, formatTimestamp } from "./date.js"
 import { availableMergeActions, mergeInfoFromPullRequest } from "./mergeActions.js"
 import { Observability } from "./observability.js"
+import { BrowserOpener } from "./services/BrowserOpener.js"
+import { Clipboard } from "./services/Clipboard.js"
 import { GitHubService } from "./services/GitHubService.js"
 import { loadStoredThemeId, saveStoredThemeId } from "./themeStore.js"
 import { colors, filterThemeDefinitions, setActiveTheme, themeDefinitions, type ThemeId } from "./ui/colors.js"
@@ -23,7 +25,9 @@ import { groupBy, reviewLabel } from "./ui/pullRequests.js"
 import { PullRequestDiffPane } from "./ui/PullRequestDiffPane.js"
 import { PullRequestList } from "./ui/PullRequestList.js"
 
-const githubRuntime = Atom.runtime(GitHubService.layer.pipe(Layer.provideMerge(Observability.layer)))
+const githubRuntime = Atom.runtime(
+	Layer.mergeAll(GitHubService.layer, Clipboard.layer, BrowserOpener.layer).pipe(Layer.provideMerge(Observability.layer)),
+)
 const initialThemeId = await Effect.runPromise(loadStoredThemeId)
 
 
@@ -188,6 +192,8 @@ const closePullRequestAtom = githubRuntime.fn<{ readonly repository: string; rea
 	GitHubService.use((github) => github.closePullRequest(input.repository, input.number))
 )
 const createPullRequestCommentAtom = githubRuntime.fn<CreatePullRequestCommentInput>()((input) => GitHubService.use((github) => github.createPullRequestComment(input)))
+const copyToClipboardAtom = githubRuntime.fn<string>()((text) => Clipboard.use((clipboard) => clipboard.copy(text)))
+const openInBrowserAtom = githubRuntime.fn<PullRequestItem>()((pullRequest) => BrowserOpener.use((browser) => browser.openPullRequest(pullRequest)))
 
 const centeredOffset = (outer: number, inner: number) => Math.floor((outer - inner) / 2)
 
@@ -210,80 +216,16 @@ const pullRequestFilterScore = (pullRequest: PullRequestItem, query: string) => 
 	return scores.length > 0 ? Math.min(...scores) : null
 }
 
-const clipboardCommands = (): readonly (readonly string[])[] => {
-	if (process.platform === "darwin") return [["pbcopy"]]
-	if (process.platform === "linux") {
-		return [
-			...(process.env.WAYLAND_DISPLAY ? [["wl-copy"]] : []),
-			["xclip", "-selection", "clipboard"],
-			["xsel", "--clipboard", "--input"],
-		]
-	}
-	return []
-}
-
-const copyToClipboard = async (text: string) => {
-	const commands = clipboardCommands()
-	let lastError = ""
-
-	for (const command of commands) {
-		let proc: Bun.Subprocess<"pipe", "ignore", "pipe">
-		try {
-			proc = Bun.spawn({
-				cmd: [...command],
-				stdin: "pipe",
-				stdout: "ignore",
-				stderr: "pipe",
-			})
-		} catch (error) {
-			lastError = errorMessage(error)
-			continue
-		}
-
-		proc.stdin.write(text)
-		proc.stdin.end()
-
-		const exitCode = await proc.exited
-		if (exitCode === 0) return
-
-		const stderr = await Bun.readableStreamToText(proc.stderr)
-		lastError = stderr.trim()
-	}
-
-	const installHint = process.platform === "linux" ? " Install wl-clipboard, xclip, or xsel." : ""
-	throw new Error(lastError || `Clipboard is not available.${installHint}`)
-}
-
-const openPullRequestInBrowser = async (pullRequest: PullRequestItem) => {
-	const proc = Bun.spawn({
-		cmd: ["gh", "pr", "view", String(pullRequest.number), "--repo", pullRequest.repository, "--web"],
-		stdout: "ignore",
-		stderr: "pipe",
-	})
-
-	const exitCode = await proc.exited
-	if (exitCode === 0) return
-
-	const stderr = await Bun.readableStreamToText(proc.stderr)
-	throw new Error(stderr.trim() || "Could not open PR in browser")
-}
-
-const copyPullRequestMetadata = async (pullRequest: PullRequestItem) => {
+const pullRequestMetadataText = (pullRequest: PullRequestItem) => {
 	const lines = [
 		pullRequest.title,
 		`${pullRequest.repository} #${pullRequest.number}`,
 		pullRequest.url,
 	]
-
 	const review = reviewLabel(pullRequest)
-	if (review) {
-		lines.push(`review: ${review}`)
-	}
-	if (pullRequest.checkSummary) {
-		lines.push(pullRequest.checkSummary)
-	}
-
-	await copyToClipboard(lines.join("\n"))
+	if (review) lines.push(`review: ${review}`)
+	if (pullRequest.checkSummary) lines.push(pullRequest.checkSummary)
+	return lines.join("\n")
 }
 
 const isShiftG = (key: { readonly name: string; readonly shift?: boolean }) => key.name === "G" || key.name === "g" && key.shift
@@ -483,6 +425,8 @@ export const App = () => {
 	const mergePullRequest = useAtomSet(mergePullRequestAtom, { mode: "promise" })
 	const closePullRequest = useAtomSet(closePullRequestAtom, { mode: "promise" })
 	const createPullRequestComment = useAtomSet(createPullRequestCommentAtom, { mode: "promise" })
+	const copyToClipboard = useAtomSet(copyToClipboardAtom, { mode: "promise" })
+	const openInBrowser = useAtomSet(openInBrowserAtom, { mode: "promise" })
 	const terminalWidth = width ?? 100
 	const terminalHeight = height ?? 24
 	const contentWidth = Math.max(1, terminalWidth)
@@ -1161,14 +1105,14 @@ export const App = () => {
 	}
 
 	const openSelectedPullRequestInBrowser = (pullRequest: PullRequestItem) => {
-		void openPullRequestInBrowser(pullRequest)
+		void openInBrowser(pullRequest)
 			.then(() => flashNotice(`Opened #${pullRequest.number} in browser`))
 			.catch((error) => flashNotice(errorMessage(error)))
 	}
 
 	const copySelectedPullRequestMetadata = () => {
 		if (!selectedPullRequest) return
-		void copyPullRequestMetadata(selectedPullRequest)
+		void copyToClipboard(pullRequestMetadataText(selectedPullRequest))
 			.then(() => flashNotice(`Copied #${selectedPullRequest.number} metadata`))
 			.catch((error) => flashNotice(errorMessage(error)))
 	}

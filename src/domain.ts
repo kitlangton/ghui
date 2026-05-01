@@ -43,7 +43,22 @@ export type Mergeable = "mergeable" | "conflicting" | "unknown"
 export const DiffCommentSide = Schema.Literals(["LEFT", "RIGHT"])
 export type DiffCommentSide = Schema.Schema.Type<typeof DiffCommentSide>
 
-export type PullRequestMergeAction = "squash" | "auto" | "admin" | "disable-auto"
+export const PullRequestMergeMethod = Schema.Literals(["merge", "squash", "rebase"])
+export type PullRequestMergeMethod = Schema.Schema.Type<typeof PullRequestMergeMethod>
+
+export const PullRequestMergeAction = Schema.Literals([
+	"merge",
+	"squash",
+	"rebase",
+	"auto-merge",
+	"auto-squash",
+	"auto-rebase",
+	"admin-merge",
+	"admin-squash",
+	"admin-rebase",
+	"disable-auto",
+])
+export type PullRequestMergeAction = Schema.Schema.Type<typeof PullRequestMergeAction>
 
 export const pullRequestReviewEvents = ["COMMENT", "APPROVE", "REQUEST_CHANGES"] as const
 export type PullRequestReviewEvent = (typeof pullRequestReviewEvents)[number]
@@ -147,4 +162,6 @@ export interface PullRequestMergeInfo {
 	readonly checkStatus: CheckRollupStatus
 	readonly checkSummary: string | null
 	readonly autoMergeEnabled: boolean
+	readonly viewerCanMergeAsAdmin: boolean
+	readonly allowedMethods: readonly PullRequestMergeMethod[]
 }

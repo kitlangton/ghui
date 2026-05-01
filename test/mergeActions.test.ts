@@ -13,19 +13,38 @@ const cleanInfo: PullRequestMergeInfo = {
 	checkStatus: "passing",
 	checkSummary: "checks 5/5",
 	autoMergeEnabled: false,
+	viewerCanMergeAsAdmin: false,
+	allowedMethods: ["merge", "squash", "rebase"],
 }
 
 describe("mergeActions ordering", () => {
-	test("source-of-truth order is squash, auto, disable-auto, admin", () => {
-		expect(mergeActions.map((action) => action.action)).toEqual(["squash", "auto", "disable-auto", "admin"])
+	test("source-of-truth order reflects all method-specific actions", () => {
+		expect(mergeActions.map((action) => action.action)).toEqual([
+			"merge",
+			"squash",
+			"rebase",
+			"auto-merge",
+			"auto-squash",
+			"auto-rebase",
+			"disable-auto",
+			"admin-merge",
+			"admin-squash",
+			"admin-rebase",
+		])
 	})
 
 	test("source-of-truth optimistic UI effects match action behavior", () => {
 		expect(Object.fromEntries(mergeActions.map((action) => [action.action, action.optimisticState ?? action.optimisticAutoMergeEnabled ?? null]))).toEqual({
+			merge: null,
 			squash: "merged",
-			auto: true,
+			rebase: null,
+			"auto-merge": true,
+			"auto-squash": true,
+			"auto-rebase": true,
 			"disable-auto": false,
-			admin: "merged",
+			"admin-merge": null,
+			"admin-squash": "merged",
+			"admin-rebase": null,
 		})
 	})
 })
@@ -35,12 +54,53 @@ describe("availableMergeActions", () => {
 		expect(availableMergeActions(null)).toEqual([])
 	})
 
-	test("clean PR offers squash, auto, admin (not disable-auto)", () => {
-		expect(availableMergeActions(cleanInfo).map((a) => a.action)).toEqual(["squash", "auto", "admin"])
+	test("clean PR offers all allowed manual and auto methods", () => {
+		expect(availableMergeActions(cleanInfo).map((a) => a.action)).toEqual([
+			"merge",
+			"squash",
+			"rebase",
+			"auto-merge",
+			"auto-squash",
+			"auto-rebase",
+		])
 	})
 
-	test("auto-merge enabled offers squash, disable-auto, admin (not auto)", () => {
-		expect(availableMergeActions({ ...cleanInfo, autoMergeEnabled: true }).map((a) => a.action)).toEqual(["squash", "disable-auto", "admin"])
+	test("clean PR includes admin actions only when viewer can merge as admin", () => {
+		expect(availableMergeActions({ ...cleanInfo, viewerCanMergeAsAdmin: true }).map((a) => a.action)).toEqual([
+			"merge",
+			"squash",
+			"rebase",
+			"auto-merge",
+			"auto-squash",
+			"auto-rebase",
+			"admin-merge",
+			"admin-squash",
+			"admin-rebase",
+		])
+	})
+
+	test("allowedMethods filters manual, auto, and admin actions", () => {
+		expect(availableMergeActions({
+			...cleanInfo,
+			viewerCanMergeAsAdmin: true,
+			allowedMethods: ["merge", "rebase"],
+		}).map((a) => a.action)).toEqual([
+			"merge",
+			"rebase",
+			"auto-merge",
+			"auto-rebase",
+			"admin-merge",
+			"admin-rebase",
+		])
+	})
+
+	test("auto-merge enabled swaps auto actions for disable-auto", () => {
+		expect(availableMergeActions({ ...cleanInfo, autoMergeEnabled: true }).map((a) => a.action)).toEqual([
+			"merge",
+			"squash",
+			"rebase",
+			"disable-auto",
+		])
 	})
 
 	test("conflicting branch offers nothing", () => {
@@ -51,16 +111,37 @@ describe("availableMergeActions", () => {
 		expect(availableMergeActions({ ...cleanInfo, isDraft: true }).map((a) => a.action)).toEqual([])
 	})
 
-	test("changes-requested hides squash but admin still works", () => {
-		expect(availableMergeActions({ ...cleanInfo, reviewStatus: "changes" }).map((a) => a.action)).toEqual(["auto", "admin"])
+	test("changes-requested hides clean merges but still allows auto and admin when eligible", () => {
+		expect(availableMergeActions({ ...cleanInfo, reviewStatus: "changes", viewerCanMergeAsAdmin: true }).map((a) => a.action)).toEqual([
+			"auto-merge",
+			"auto-squash",
+			"auto-rebase",
+			"admin-merge",
+			"admin-squash",
+			"admin-rebase",
+		])
 	})
 
-	test("pending checks hide squash but admin still works", () => {
-		expect(availableMergeActions({ ...cleanInfo, checkStatus: "pending" }).map((a) => a.action)).toEqual(["auto", "admin"])
+	test("pending checks hides clean merges but still allows auto and admin when eligible", () => {
+		expect(availableMergeActions({ ...cleanInfo, checkStatus: "pending", viewerCanMergeAsAdmin: true }).map((a) => a.action)).toEqual([
+			"auto-merge",
+			"auto-squash",
+			"auto-rebase",
+			"admin-merge",
+			"admin-squash",
+			"admin-rebase",
+		])
 	})
 
-	test("failing checks hide squash but admin still works", () => {
-		expect(availableMergeActions({ ...cleanInfo, checkStatus: "failing" }).map((a) => a.action)).toEqual(["auto", "admin"])
+	test("failing checks hides clean merges but still allows auto and admin when eligible", () => {
+		expect(availableMergeActions({ ...cleanInfo, checkStatus: "failing", viewerCanMergeAsAdmin: true }).map((a) => a.action)).toEqual([
+			"auto-merge",
+			"auto-squash",
+			"auto-rebase",
+			"admin-merge",
+			"admin-squash",
+			"admin-rebase",
+		])
 	})
 
 	test("closed PR offers nothing", () => {

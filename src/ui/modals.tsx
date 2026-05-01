@@ -634,7 +634,11 @@ export const MergeModal = ({
 			? shortRepoName(repo)
 			: ""
 	const optionRows = Math.max(1, Math.floor(optionAreaHeight / 2))
-	const visibleOptions = options.slice(0, optionRows)
+	const scrollStart = Math.min(
+		Math.max(0, options.length - optionRows),
+		Math.max(0, selectedIndex - optionRows + 1),
+	)
+	const visibleOptions = options.slice(scrollStart, scrollStart + optionRows)
 	const loadingTopRows = Math.max(0, Math.floor((optionAreaHeight - 1) / 2))
 	const loadingBottomRows = Math.max(0, optionAreaHeight - loadingTopRows - 1)
 
@@ -653,6 +657,7 @@ export const MergeModal = ({
 						{ key: "↑↓", label: "move" },
 						{ key: "enter", label: "confirm" },
 						{ key: "esc", label: "close" },
+						{ key: `${selectedIndex + 1}/${options.length}`, label: "", when: options.length > optionRows, keyFg: colors.muted },
 					]}
 				/>
 			}
@@ -669,7 +674,8 @@ export const MergeModal = ({
 				<PlainLine text={centerCell(mergeUnavailableReason(state.info), rowWidth)} fg={colors.muted} />
 			) : (
 				visibleOptions.map((option, index) => {
-					const isSelected = index === selectedIndex
+					const actualIndex = scrollStart + index
+					const isSelected = actualIndex === selectedIndex
 					const titleColor = option.danger ? colors.error : isSelected ? colors.selectedText : colors.text
 					const titleWidth = Math.max(1, rowWidth - 1)
 					const descriptionWidth = Math.max(1, rowWidth - 1)

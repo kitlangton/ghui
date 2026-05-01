@@ -178,6 +178,8 @@ export const MockGitHubService = {
 						checkStatus: "passing",
 						checkSummary: "10/10",
 						autoMergeEnabled: false,
+						viewerCanMergeAsAdmin: false,
+						allowedMethods: ["merge", "squash", "rebase"],
 					} satisfies PullRequestMergeInfo),
 				mergePullRequest: () => Effect.void,
 				closePullRequest: () => Effect.void,

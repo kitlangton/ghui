@@ -11,6 +11,7 @@ import {
 	type PullRequestItem,
 	type PullRequestMergeAction,
 	type PullRequestMergeInfo,
+	type PullRequestMergeMethod,
 	type PullRequestPage,
 	type PullRequestQueueMode,
 	type PullRequestReviewComment,
@@ -128,6 +129,10 @@ const MergeInfoResponseSchema = Schema.Struct({
 	mergeable: Schema.String,
 	reviewDecision: NullableString,
 	autoMergeRequest: Schema.NullOr(Schema.Unknown),
+	viewerCanMergeAsAdmin: Schema.Boolean,
+	mergeCommitAllowed: Schema.Boolean,
+	squashMergeAllowed: Schema.Boolean,
+	rebaseMergeAllowed: Schema.Boolean,
 	statusCheckRollup: Schema.Array(RawCheckContextSchema),
 })
 
@@ -543,6 +548,18 @@ const REVIEW_EVENT_CLI_FLAG = {
 	REQUEST_CHANGES: "--request-changes",
 } as const satisfies Record<SubmitPullRequestReviewInput["event"], string>
 
+const allowedMergeMethods = (info: {
+	readonly mergeCommitAllowed: boolean
+	readonly squashMergeAllowed: boolean
+	readonly rebaseMergeAllowed: boolean
+}): readonly PullRequestMergeMethod[] => {
+	const methods: PullRequestMergeMethod[] = []
+	if (info.mergeCommitAllowed) methods.push("merge")
+	if (info.squashMergeAllowed) methods.push("squash")
+	if (info.rebaseMergeAllowed) methods.push("rebase")
+	return methods
+}
+
 export class GitHubService extends Context.Service<
 	GitHubService,
 	{
@@ -714,7 +731,7 @@ export class GitHubService extends Context.Service<
 					"--repo",
 					repository,
 					"--json",
-					"number,title,state,isDraft,mergeable,reviewDecision,autoMergeRequest,statusCheckRollup",
+					"number,title,state,isDraft,mergeable,reviewDecision,autoMergeRequest,viewerCanMergeAsAdmin,mergeCommitAllowed,squashMergeAllowed,rebaseMergeAllowed,statusCheckRollup",
 				])
 				const checkInfo = getCheckInfoFromContexts(info.statusCheckRollup)
 
@@ -729,6 +746,8 @@ export class GitHubService extends Context.Service<
 					checkStatus: checkInfo.checkStatus,
 					checkSummary: checkInfo.checkSummary,
 					autoMergeEnabled: info.autoMergeRequest !== null,
+					viewerCanMergeAsAdmin: info.viewerCanMergeAsAdmin,
+					allowedMethods: allowedMergeMethods(info),
 				} satisfies PullRequestMergeInfo
 			})
 

@@ -729,6 +729,7 @@ export const App = () => {
 
 	useEffect(() => {
 		setDiffFileIndex(0)
+		setDiffScrollTop(0)
 		setDiffCommentAnchorIndex(0)
 	}, [selectedIndex])
 
@@ -927,6 +928,7 @@ export const App = () => {
 		setDetailFullView(false)
 		setDiffCommentMode(false)
 		setDiffFileIndex(0)
+		setDiffScrollTop(0)
 		setDiffRenderView(contentWidth >= 100 ? "split" : "unified")
 		diffScrollRef.current?.scrollTo({ x: 0, y: 0 })
 		loadPullRequestDiff(selectedPullRequest, { includeComments: true })
@@ -940,25 +942,25 @@ export const App = () => {
 	const scrollToDiffFile = (index: number) => {
 		const stackedFile = stackedDiffFiles[index]
 		diffScrollRef.current?.scrollTo({ x: 0, y: stackedFile?.headerLine ?? 0 })
+		syncDiffScrollState()
 	}
 
-	const syncDiffFileIndexToScroll = () => {
+	const syncDiffScrollState = () => {
 		const scrollTop = diffScrollRef.current?.scrollTop
 		if (scrollTop === undefined || stackedDiffFiles.length === 0) return
-		const nextIndex = stackedDiffFiles.reduce((current, file) => file.headerLine <= scrollTop + 1 ? file.index : current, 0)
+		setDiffScrollTop((current) => current === scrollTop ? current : scrollTop)
+		const nextIndex = stackedDiffFiles.reduce((current, file) => file.headerLine <= scrollTop ? file.index : current, 0)
 		setDiffFileIndex((current) => current === nextIndex ? current : nextIndex)
 	}
 
 	const scrollDiffBy = (y: number) => {
 		diffScrollRef.current?.scrollBy({ x: 0, y })
-		syncDiffFileIndexToScroll()
+		syncDiffScrollState()
 	}
 
 	const scrollDiffTo = (y: number) => {
 		diffScrollRef.current?.scrollTo({ x: 0, y })
-		if (y <= 0) setDiffFileIndex(0)
-		else if (y === Number.MAX_SAFE_INTEGER) setDiffFileIndex(Math.max(0, readyDiffFiles.length - 1))
-		else syncDiffFileIndexToScroll()
+		syncDiffScrollState()
 	}
 
 	const clearPendingGTimeout = () => {
@@ -996,9 +998,18 @@ export const App = () => {
 		const scroll = diffScrollRef.current
 		if (!scroll) return
 		const viewportHeight = Math.max(1, wideBodyHeight - (selectedDiffCommentThread.length > 0 ? 6 : 3))
-		const nextTop = scrollTopForVisibleLine(scroll.scrollTop, viewportHeight, line)
-		if (nextTop !== scroll.scrollTop) scroll.scrollTo({ x: 0, y: nextTop })
+		const nextTop = scrollTopForVisibleLine(scroll.scrollTop, viewportHeight, line, DIFF_STICKY_HEADER_LINES)
+		if (nextTop !== scroll.scrollTop) {
+			scroll.scrollTo({ x: 0, y: nextTop })
+			syncDiffScrollState()
+		}
 	}
+
+	useEffect(() => {
+		if (!diffFullView) return
+		const interval = globalThis.setInterval(syncDiffScrollState, 80)
+		return () => globalThis.clearInterval(interval)
+	}, [diffFullView, stackedDiffFiles])
 
 	const jumpDiffFile = (delta: 1 | -1) => {
 		if (readyDiffFiles.length === 0) return
@@ -1015,7 +1026,7 @@ export const App = () => {
 	const enterDiffCommentMode = () => {
 		const scrollTop = diffScrollRef.current?.scrollTop ?? 0
 		suppressNextDiffCommentScrollRef.current = true
-		setDiffCommentAnchorIndex(nearestDiffCommentAnchorIndex(diffCommentAnchors, scrollTop))
+		setDiffCommentAnchorIndex(nearestDiffCommentAnchorIndex(diffCommentAnchors, scrollTop + DIFF_STICKY_HEADER_LINES))
 		setDiffCommentMode(true)
 	}
 
@@ -2101,6 +2112,7 @@ export const App = () => {
 					diffState={selectedDiffState}
 					stackedFiles={stackedDiffFiles}
 					fileIndex={diffFileIndex}
+					scrollTop={diffScrollTop}
 					view={effectiveDiffRenderView}
 					wrapMode={diffWrapMode}
 					paneWidth={contentWidth}
@@ -2111,7 +2123,6 @@ export const App = () => {
 					commentMode={diffCommentMode}
 					selectedCommentAnchor={selectedDiffCommentAnchor}
 					selectedCommentThread={selectedDiffCommentThread}
-					commentCount={selectedDiffCommentCount}
 					themeId={themeId}
 				/>
 			) : isWideLayout && detailFullView ? (
@@ -2131,10 +2142,10 @@ export const App = () => {
 					</scrollbox>
 				</box>
 			) : isWideLayout ? (
-				<box flexGrow={1} flexDirection="row">
+				<box key="wide-main" flexGrow={1} flexDirection="row">
 					<box width={leftPaneWidth} height={wideBodyHeight} flexDirection="column" paddingLeft={sectionPadding} paddingRight={sectionPadding}>
 						<scrollbox height={wideBodyHeight} flexGrow={0}>
-							<PullRequestList {...prListProps} contentWidth={leftContentWidth} />
+							<PullRequestList key={`wide-${leftContentWidth}`} {...prListProps} contentWidth={leftContentWidth} />
 						</scrollbox>
 					</box>
 					<SeparatorColumn height={wideBodyHeight} junctionRows={detailJunctions} />
@@ -2167,13 +2178,13 @@ export const App = () => {
 					</scrollbox>
 				</box>
 			) : (
-				<box height={wideBodyHeight} flexDirection="column">
-					<DetailsPane pullRequest={selectedPullRequest} viewerUsername={username} contentWidth={rightContentWidth} paneWidth={contentWidth} placeholderContent={detailPlaceholderContent} loadingIndicator={loadingIndicator} themeId={themeId} />
+				<box key="narrow-main" height={wideBodyHeight} flexDirection="column">
+					<DetailsPane pullRequest={selectedPullRequest} viewerUsername={username} contentWidth={fullscreenContentWidth} paneWidth={contentWidth} placeholderContent={detailPlaceholderContent} loadingIndicator={loadingIndicator} themeId={themeId} />
 					<Divider width={contentWidth} />
 					<box flexGrow={1} flexDirection="column">
 						<scrollbox flexGrow={1}>
 							<box paddingLeft={sectionPadding} paddingRight={sectionPadding}>
-								<PullRequestList {...prListProps} contentWidth={leftContentWidth} />
+								<PullRequestList key={`narrow-${fullscreenContentWidth}`} {...prListProps} contentWidth={fullscreenContentWidth} />
 							</box>
 						</scrollbox>
 					</box>

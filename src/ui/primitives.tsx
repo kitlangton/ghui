@@ -29,8 +29,8 @@ export const PlainLine = ({ text, fg = colors.text, bold = false }: { text: stri
 	</box>
 )
 
-export const TextLine = ({ children, fg = colors.text, bg }: { children: React.ReactNode; fg?: string; bg?: string | undefined }) => (
-	<box height={1}>
+export const TextLine = ({ children, fg = colors.text, bg, width }: { children: React.ReactNode; fg?: string; bg?: string | undefined; width?: number }) => (
+	<box height={1} {...(width === undefined ? {} : { width })}>
 		{bg ? (
 			<text wrapMode="none" truncate fg={fg} bg={bg}>
 				{children}

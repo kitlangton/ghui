@@ -2,7 +2,7 @@ import type { DiffRenderable, ScrollBoxRenderable } from "@opentui/core"
 import { useMemo, type Ref } from "react"
 import type { PullRequestItem, PullRequestReviewComment } from "../domain.js"
 import { colors, type ThemeId } from "./colors.js"
-import { createDiffSyntaxStyle, diffFileStats, diffFileStatText, diffStatText, safeDiffFileIndex, type DiffCommentAnchor, type PullRequestDiffState, type StackedDiffFilePatch } from "./diff.js"
+import { createDiffSyntaxStyle, diffFileStats, diffFileStatText, diffStatText, safeDiffFileIndex, type PullRequestDiffState, type StackedDiffCommentAnchor, type StackedDiffFilePatch } from "./diff.js"
 import { LoadingPane, StatusCard } from "./DetailsPane.js"
 import { Divider, fitCell, PlainLine, TextLine } from "./primitives.js"
 import { shortRepoName } from "./pullRequests.js"
@@ -38,16 +38,31 @@ const FileStats = ({ file }: { file: StackedDiffFilePatch["file"] }) => {
 	)
 }
 
-const FileHeader = ({ file, index, count, width }: { file: StackedDiffFilePatch["file"]; index: number; count: number; width: number }) => {
+const FileHeader = ({
+	file,
+	index,
+	count,
+	width,
+	suffix = "",
+	suffixColor = colors.muted,
+}: {
+	file: StackedDiffFilePatch["file"]
+	index: number
+	count: number
+	width: number
+	suffix?: string
+	suffixColor?: string
+}) => {
 	const counter = `${index + 1}/${count}`
 	const statsText = diffFileStatText(file)
-	const nameWidth = Math.max(1, width - counter.length - statsText.length - 5)
+	const nameWidth = Math.max(1, width - counter.length - statsText.length - suffix.length - 5)
 	return (
 		<TextLine>
 			<span fg={colors.muted}>{counter} </span>
 			<span fg={colors.text}>{fitCell(file.name, nameWidth)}</span>
 			{statsText ? <span fg={colors.muted}>  </span> : null}
 			<FileStats file={file} />
+			{suffix ? <span fg={suffixColor}>{suffix}</span> : null}
 		</TextLine>
 	)
 }
@@ -57,6 +72,7 @@ export const PullRequestDiffPane = ({
 	diffState,
 	stackedFiles,
 	fileIndex,
+	scrollTop,
 	view,
 	wrapMode,
 	paneWidth,
@@ -73,6 +89,7 @@ export const PullRequestDiffPane = ({
 	diffState: PullRequestDiffState | undefined
 	stackedFiles: readonly StackedDiffFilePatch[]
 	fileIndex: number
+	scrollTop: number
 	view: "unified" | "split"
 	wrapMode: "none" | "word"
 	paneWidth: number
@@ -81,9 +98,8 @@ export const PullRequestDiffPane = ({
 	scrollRef: Ref<ScrollBoxRenderable>
 	setDiffRef: (index: number, diff: DiffRenderable | null) => void
 	commentMode: boolean
-	selectedCommentAnchor: DiffCommentAnchor | null
+	selectedCommentAnchor: StackedDiffCommentAnchor | null
 	selectedCommentThread: readonly PullRequestReviewComment[]
-	commentCount: number
 	themeId: ThemeId
 }) => {
 	const readyFiles = diffState?._tag === "Ready" ? diffState.files : []
@@ -133,16 +149,7 @@ export const PullRequestDiffPane = ({
 		return <LoadingPane content={{ title: "No diff", hint: "This PR has no patch contents" }} width={paneWidth} height={height} />
 	}
 
-	const fileCounter = `${safeIndex + 1}/${readyFiles.length}`
-	const currentFileStatsText = file ? diffFileStatText(file) : ""
 	const selectedSideLabel = selectedCommentAnchor?.side === "RIGHT" ? "right" : selectedCommentAnchor?.side === "LEFT" ? "left" : null
-	const commentLabel = commentMode && selectedCommentAnchor
-		? `  ${selectedSideLabel} ${selectedCommentAnchor.side === "RIGHT" ? "+" : "-"}${selectedCommentAnchor.line}`
-		: commentMode ? "  c no lines" : ""
-	const commentLabelColor = commentMode && selectedCommentAnchor?.side === "LEFT"
-		? colors.status.failing
-		: commentMode ? colors.status.passing : colors.status.passing
-	const fileNameWidth = Math.max(8, headerWidth - fileCounter.length - currentFileStatsText.length - commentLabel.length - 4)
 	const commentPeek = commentMode && selectedCommentAnchor && selectedCommentThread.length > 0
 		? selectedCommentThread[selectedCommentThread.length - 1]!
 		: null
@@ -151,6 +158,16 @@ export const PullRequestDiffPane = ({
 	const commentPeekMeta = commentPeek && selectedCommentAnchor
 		? `${selectedSideLabel ?? "line"} ${selectedCommentAnchor.side === "RIGHT" ? "+" : "-"}${selectedCommentAnchor.line}  ${commentPeek.author}  ${commentPeekCount}  enter thread  a comment`
 		: ""
+	const stickyScrollTop = Math.max(0, Math.floor(scrollTop))
+	const stickyIndex = stackedFiles.reduce((current, stackedFile) => stackedFile.headerLine <= stickyScrollTop ? stackedFile.index : current, 0)
+	const stickyFile = stackedFiles[stickyIndex]
+	const incomingStickyFile = stickyFile ? stackedFiles[stickyFile.index + 1] : undefined
+	const incomingHeaderDistance = incomingStickyFile ? incomingStickyFile.headerLine - stickyScrollTop : Number.POSITIVE_INFINITY
+	const incomingFile = incomingHeaderDistance === 1 ? incomingStickyFile : undefined
+	const stickyCommentLabelFor = (stackedFile: StackedDiffFilePatch | undefined) => commentMode && selectedCommentAnchor && selectedCommentAnchor.fileIndex === stackedFile?.index
+		? `  ${selectedCommentAnchor.side === "RIGHT" ? "right" : "left"} ${selectedCommentAnchor.side === "RIGHT" ? "+" : "-"}${selectedCommentAnchor.line}`
+		: commentMode ? "  c no lines" : ""
+	const stickyCommentColor = selectedCommentAnchor?.side === "LEFT" ? colors.status.failing : colors.status.passing
 
 	return (
 		<box height={height} flexDirection="column">
@@ -160,15 +177,6 @@ export const PullRequestDiffPane = ({
 					<span fg={colors.muted}> {shortRepoName(pullRequest.repository)}</span>
 					<span fg={colors.muted}>{" ".repeat(headerGap)}</span>
 					<DiffStats pullRequest={pullRequest} />
-				</TextLine>
-			</box>
-			<box height={1} paddingLeft={1} paddingRight={1}>
-				<TextLine>
-					<span fg={colors.text}>{fitCell(file.name, fileNameWidth)}</span>
-					<span fg={colors.muted}>  {fileCounter}</span>
-					{currentFileStatsText ? <span fg={colors.muted}>  </span> : null}
-					<FileStats file={file} />
-					{commentLabel ? <span fg={commentLabelColor}>{commentLabel}</span> : null}
 				</TextLine>
 			</box>
 			<Divider width={paneWidth} />
@@ -206,6 +214,25 @@ export const PullRequestDiffPane = ({
 					</box>
 				))}
 			</scrollbox>
+			{stickyFile ? (
+				<box position="absolute" top={2} left={0} width={paneWidth} height={2} zIndex={10} flexDirection="column" backgroundColor={colors.background}>
+					{incomingFile ? (
+						<>
+							<Divider width={paneWidth} />
+							<box height={1} paddingLeft={1} paddingRight={1} backgroundColor={colors.background}>
+								<FileHeader file={incomingFile.file} index={incomingFile.index} count={readyFiles.length} width={paneWidth} suffix={stickyCommentLabelFor(incomingFile)} suffixColor={stickyCommentColor} />
+							</box>
+						</>
+					) : (
+						<>
+							<box height={1} paddingLeft={1} paddingRight={1} backgroundColor={colors.background}>
+								<FileHeader file={stickyFile.file} index={stickyFile.index} count={readyFiles.length} width={paneWidth} suffix={stickyCommentLabelFor(stickyFile)} suffixColor={stickyCommentColor} />
+							</box>
+							<Divider width={paneWidth} />
+						</>
+					)}
+				</box>
+			) : null}
 			{commentPeek ? (
 				<>
 					<Divider width={paneWidth} />

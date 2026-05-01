@@ -17,3 +17,7 @@
 - Create release: `gh release create vX.Y.Z --target main --title "vX.Y.Z" --notes "..."`.
 - Check publish run: `gh run list --workflow publish.yml --limit 5`.
 - Check npm version: `npm view @kitlangton/ghui version`.
+
+## Future Work
+
+- PR details: show top-level PR conversation/comments in expanded detail view, likely as a compact section beneath the summary and before tests/notes when present.

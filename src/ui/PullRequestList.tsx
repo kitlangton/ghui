@@ -77,8 +77,8 @@ const PullRequestRow = ({
 	const checkColor = isMerged ? colors.status.passing : isClosed ? colors.muted : statusColor(pullRequest.checkStatus)
 
 	return (
-		<box height={1} onMouseDown={onSelect}>
-			<TextLine fg={rowTextColor} bg={selected ? colors.selectedBg : undefined}>
+		<box width={contentWidth} height={1} onMouseDown={onSelect}>
+			<TextLine width={contentWidth} fg={rowTextColor} bg={selected ? colors.selectedBg : undefined}>
 				<span fg={indicatorColor}>{fitCell(reviewIcon(pullRequest), reviewWidth)}</span>
 				<span> </span>
 				<span fg={numberColor}><MatchedCell text={`#${pullRequest.number}`} width={numberWidth} query={filterText} align="right" /></span>
@@ -117,7 +117,7 @@ export const PullRequestList = ({
 	const emptyText = filterText.length > 0 ? "- No matching pull requests." : "- No open pull requests."
 
 	return (
-		<box flexDirection="column">
+		<box width={contentWidth} flexDirection="column">
 			<SectionTitle title="PULL REQUESTS" />
 			{showFilterBar ? (
 				<TextLine>
@@ -138,11 +138,11 @@ export const PullRequestList = ({
 							<PullRequestRow
 								key={pullRequest.url}
 								pullRequest={pullRequest}
-							selected={pullRequest.url === selectedUrl}
-							contentWidth={contentWidth}
-							numWidth={numWidth}
-							filterText={filterText}
-							onSelect={() => onSelectPullRequest(pullRequest.url)}
+								selected={pullRequest.url === selectedUrl}
+								contentWidth={contentWidth}
+								numWidth={numWidth}
+								filterText={filterText}
+								onSelect={() => onSelectPullRequest(pullRequest.url)}
 							/>
 						))}
 					</box>

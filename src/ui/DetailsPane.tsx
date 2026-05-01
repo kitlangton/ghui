@@ -1,5 +1,6 @@
-import { TextAttributes } from "@opentui/core"
-import { Fragment, useMemo } from "react"
+import { TextAttributes, type BoxRenderable, type MouseEvent } from "@opentui/core"
+import { useRenderer } from "@opentui/react"
+import { Fragment, useEffect, useMemo, useState } from "react"
 import { formatRelativeDate } from "../date.js"
 import type { CheckItem, PullRequestItem } from "../domain.js"
 import { colors, type ThemeId } from "./colors.js"
@@ -13,6 +14,8 @@ interface PreviewLine {
 		readonly text: string
 		readonly fg: string
 		readonly bold?: boolean
+		readonly underline?: boolean
+		readonly url?: string
 	}>
 }
 
@@ -29,6 +32,8 @@ const pullRequestReferencePattern = /(#[0-9]+)/g
 const codeFencePattern = /^```\s*([a-zA-Z0-9_-]+)?/
 const codeTokenPattern = /(\/\/.*|`(?:\\.|[^`])*`|"(?:\\.|[^"])*"|'(?:\\.|[^'])*'|\b(?:async|await|break|case|catch|class|const|continue|default|else|export|extends|finally|for|from|function|if|import|interface|let|new|return|switch|throw|try|type|var|while|yield)\b|\b(?:true|false|null|undefined)\b|\b\d+(?:\.\d+)?\b)/g
 const codeFenceLine = (line: string) => line.trim().replace(/\\`/g, "`").match(codeFencePattern)
+const linkOrUrlPattern = /\[([^\]]+)\]\(([^)\s]+)\)|(https?:\/\/[^\s<>()\[\]"'`]+)/g
+const trailingUrlPunctuation = /[.,;:!?)>\]}"'`]+$/
 
 export const wrapText = (text: string, width: number): string[] => {
 	if (text.length === 0 || width <= 0) return [""]
@@ -48,21 +53,51 @@ export const wrapText = (text: string, width: number): string[] => {
 	return lines.length > 0 ? lines : [""]
 }
 
+const parseReferenceSegments = (text: string, fg: string, bold: boolean): PreviewLine["segments"] =>
+	text
+		.split(pullRequestReferencePattern)
+		.filter((segment) => segment.length > 0)
+		.map((segment) => ({
+			text: segment,
+			fg: segment.match(/^#[0-9]+$/) ? colors.count : fg,
+			bold,
+		}))
+
+const parseLinkSegments = (text: string, fg: string, bold: boolean): PreviewLine["segments"] => {
+	const segments: Array<PreviewLine["segments"][number]> = []
+	let cursor = 0
+	for (const match of text.matchAll(linkOrUrlPattern)) {
+		if (match.index > cursor) {
+			segments.push(...parseReferenceSegments(text.slice(cursor, match.index), fg, bold))
+		}
+		if (match[1] !== undefined && match[2] !== undefined) {
+			segments.push({ text: match[1], fg: colors.link, bold, underline: true, url: match[2] })
+		} else if (match[3] !== undefined) {
+			const raw = match[3]
+			const trail = raw.match(trailingUrlPunctuation)?.[0] ?? ""
+			const url = trail.length > 0 ? raw.slice(0, raw.length - trail.length) : raw
+			if (url.length > 0) {
+				segments.push({ text: url, fg: colors.link, bold, underline: true, url })
+			}
+			if (trail.length > 0) {
+				segments.push({ text: trail, fg, bold })
+			}
+		}
+		cursor = match.index + match[0].length
+	}
+	if (cursor < text.length) {
+		segments.push(...parseReferenceSegments(text.slice(cursor), fg, bold))
+	}
+	return segments
+}
+
 const parseInlineSegments = (text: string, fg: string, bold = false): PreviewLine["segments"] => {
 	const parts = text.split(/(`[^`]+`)/g).filter((part) => part.length > 0)
 	return parts.flatMap((part) => {
 		if (part.startsWith("`") && part.endsWith("`")) {
 			return [{ text: part.slice(1, -1), fg: colors.inlineCode, bold }]
 		}
-
-		return part
-			.split(pullRequestReferencePattern)
-			.filter((segment) => segment.length > 0)
-			.map((segment) => ({
-				text: segment,
-				fg: segment.match(/^#[0-9]+$/) ? colors.count : fg,
-				bold,
-			}))
+		return parseLinkSegments(part, fg, bold)
 	})
 }
 
@@ -118,6 +153,32 @@ const wrapPreviewSegments = (segments: PreviewLine["segments"], width: number, i
 	}
 
 	return lines
+}
+
+interface UrlPosition {
+	readonly url: string
+	readonly lineIndex: number
+	readonly startCol: number
+	readonly endCol: number
+}
+
+const computeUrlPositions = (lines: readonly PreviewLine[]): readonly UrlPosition[] => {
+	const positions: UrlPosition[] = []
+	lines.forEach((line, lineIndex) => {
+		let col = 0
+		for (const segment of line.segments) {
+			if (segment.url !== undefined) {
+				positions.push({
+					url: segment.url,
+					lineIndex,
+					startCol: col,
+					endCol: col + segment.text.length,
+				})
+			}
+			col += segment.text.length
+		}
+	})
+	return positions
 }
 
 const bodyPreview = (body: string, width: number, limit = DETAIL_BODY_LINES): Array<PreviewLine> => {
@@ -406,10 +467,21 @@ export const DetailBody = ({
 	loadingIndicator: string
 	themeId: ThemeId
 }) => {
+	const renderer = useRenderer()
+	const [hoveredUrl, setHoveredUrl] = useState<string | null>(null)
+
 	const previewLines = useMemo(
 		() => bodyPreview(pullRequest.body, contentWidth, bodyLineLimit),
 		[pullRequest.body, contentWidth, bodyLineLimit, themeId],
 	)
+
+	const urlPositions = useMemo(() => computeUrlPositions(previewLines), [previewLines])
+
+	useEffect(() => {
+		if (urlPositions.length === 0) return
+		renderer.setMousePointer(hoveredUrl !== null ? "pointer" : "default")
+		return () => renderer.setMousePointer("default")
+	}, [hoveredUrl, urlPositions.length, renderer])
 
 	if (!pullRequest.detailLoaded) {
 		const topRows = Math.max(0, Math.floor((bodyLines - 1) / 2))
@@ -423,21 +495,53 @@ export const DetailBody = ({
 		)
 	}
 
+	const handleMouseMove = function (this: BoxRenderable, event: MouseEvent) {
+		if (urlPositions.length === 0) return
+		const localX = event.x - this.x - 1
+		const localY = event.y - this.y
+		const hit = urlPositions.find(
+			(position) =>
+				position.lineIndex === localY &&
+				localX >= position.startCol &&
+				localX < position.endCol,
+		)
+		const next = hit?.url ?? null
+		if (next !== hoveredUrl) {
+			setHoveredUrl(next)
+		}
+	}
+
+	const handleMouseOut = () => {
+		if (hoveredUrl !== null) setHoveredUrl(null)
+	}
+
 	return (
-		<box flexDirection="column" paddingLeft={1} paddingRight={1} height={previewLines.length}>
+		<box
+			flexDirection="column"
+			paddingLeft={1}
+			paddingRight={1}
+			height={previewLines.length}
+			onMouseMove={handleMouseMove}
+			onMouseOut={handleMouseOut}
+		>
 			{previewLines.map((line, index) => (
 				<TextLine key={`${pullRequest.url}-${index}`}>
-					{line.segments.map((segment, segmentIndex) => (
-						("bold" in segment && segment.bold === true) ? (
-							<span key={segmentIndex} fg={segment.fg} attributes={TextAttributes.BOLD}>
-								{segment.text}
-							</span>
-						) : (
-							<span key={segmentIndex} fg={segment.fg}>
+					{line.segments.map((segment, segmentIndex) => {
+						const isHoveredLink = segment.url === hoveredUrl && hoveredUrl !== null
+						const attrs =
+							(segment.bold ? TextAttributes.BOLD : 0) |
+							(segment.underline ? TextAttributes.UNDERLINE : 0)
+						return (
+							<span
+								key={segmentIndex}
+								fg={isHoveredLink ? colors.accent : segment.fg}
+								{...(attrs !== 0 ? { attributes: attrs } : {})}
+								{...(segment.url ? { link: { url: segment.url } } : {})}
+							>
 								{segment.text}
 							</span>
 						)
-					))}
+					})}
 				</TextLine>
 			))}
 		</box>

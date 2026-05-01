@@ -1,10 +1,10 @@
 import type { DiffRenderable, ScrollBoxRenderable } from "@opentui/core"
-import { useAtom, useAtomRefresh, useAtomSet, useAtomValue } from "@effect/atom-react"
+import { RegistryContext, useAtom, useAtomRefresh, useAtomSet, useAtomValue } from "@effect/atom-react"
 import { useKeyboard, useRenderer, useTerminalDimensions } from "@opentui/react"
 import { Cause, Effect, Layer, Schedule } from "effect"
 import * as AsyncResult from "effect/unstable/reactivity/AsyncResult"
 import * as Atom from "effect/unstable/reactivity/Atom"
-import { useEffect, useMemo, useRef, useState } from "react"
+import { useContext, useEffect, useMemo, useRef, useState } from "react"
 import { config } from "./config.js"
 import { pullRequestQueueLabels, pullRequestQueueModes, type CreatePullRequestCommentInput, type DiffCommentSide, type LoadStatus, type PullRequestItem, type PullRequestLabel, type PullRequestMergeAction, type PullRequestQueueMode, type PullRequestReviewComment } from "./domain.js"
 import { formatShortDate, formatTimestamp } from "./date.js"
@@ -247,6 +247,17 @@ const selectedPullRequestAtom = Atom.make((get) => {
 	return pullRequests[index] ?? null
 })
 
+const selectedDiffKeyAtom = Atom.make((get) => {
+	const pullRequest = get(selectedPullRequestAtom)
+	return pullRequest ? pullRequestDiffKey(pullRequest) : null
+})
+
+const selectedDiffStateAtom = Atom.make((get) => {
+	const key = get(selectedDiffKeyAtom)
+	if (!key) return undefined
+	return get(pullRequestDiffCacheAtom)[key]
+})
+
 const listRepoLabelsAtom = githubRuntime.fn<string>()((repository) =>
 	GitHubService.use((github) => github.listRepoLabels(repository))
 )
@@ -432,11 +443,12 @@ const getDetailPlaceholderContent = ({
 export const App = () => {
 	const renderer = useRenderer()
 	const { width, height } = useTerminalDimensions()
+	const registry = useContext(RegistryContext)
 	const pullRequestResult = useAtomValue(pullRequestsAtom)
 	const refreshPullRequestsAtom = useAtomRefresh(pullRequestsAtom)
 	const [queueMode, setQueueMode] = useAtom(queueModeAtom)
-	const [queueLoadCache, setQueueLoadCache] = useAtom(queueLoadCacheAtom)
-	const [queueSelection, setQueueSelection] = useAtom(queueSelectionAtom)
+	const setQueueLoadCache = useAtomSet(queueLoadCacheAtom)
+	const setQueueSelection = useAtomSet(queueSelectionAtom)
 	const [selectedIndex, setSelectedIndex] = useAtom(selectedIndexAtom)
 	const [notice, setNotice] = useAtom(noticeAtom)
 	const [filterQuery, setFilterQuery] = useAtom(filterQueryAtom)
@@ -453,8 +465,8 @@ export const App = () => {
 	const [diffCommentMode, setDiffCommentMode] = useAtom(diffCommentModeAtom)
 	const [diffCommentAnchorIndex, setDiffCommentAnchorIndex] = useAtom(diffCommentAnchorIndexAtom)
 	const [diffCommentThreads, setDiffCommentThreads] = useAtom(diffCommentThreadsAtom)
-	const [diffCommentsLoaded, setDiffCommentsLoaded] = useAtom(diffCommentsLoadedAtom)
-	const [pullRequestDiffCache, setPullRequestDiffCache] = useAtom(pullRequestDiffCacheAtom)
+	const setDiffCommentsLoaded = useAtomSet(diffCommentsLoadedAtom)
+	const setPullRequestDiffCache = useAtomSet(pullRequestDiffCacheAtom)
 	const [activeModal, setActiveModal] = useAtom(activeModalAtom)
 	const [themeId, setThemeId] = useAtom(themeIdAtom)
 	const closeActiveModal = () => setActiveModal(initialModal)
@@ -491,7 +503,7 @@ export const App = () => {
 	const themeModalRef = useRef(themeModal)
 	themeIdRef.current = themeId
 	themeModalRef.current = themeModal
-	const [labelCache, setLabelCache] = useAtom(labelCacheAtom)
+	const setLabelCache = useAtomSet(labelCacheAtom)
 	const setPullRequestOverrides = useAtomSet(pullRequestOverridesAtom)
 	const setRecentlyCompletedPullRequests = useAtomSet(recentlyCompletedPullRequestsAtom)
 	const retryProgress = useAtomValue(retryProgressAtom)
@@ -584,11 +596,11 @@ export const App = () => {
 	const visibleGroups = useAtomValue(visibleGroupsAtom)
 	const visiblePullRequests = useAtomValue(visiblePullRequestsAtom)
 	const selectedPullRequest = useAtomValue(selectedPullRequestAtom)
-	const selectedDiffState = selectedPullRequest ? pullRequestDiffCache[pullRequestDiffKey(selectedPullRequest)] : undefined
+	const selectedDiffKey = useAtomValue(selectedDiffKeyAtom)
+	const selectedDiffState = useAtomValue(selectedDiffStateAtom)
 	const effectiveDiffRenderView = contentWidth >= 100 ? diffRenderView : "unified"
 	const readyDiffFiles = selectedDiffState?._tag === "Ready" ? selectedDiffState.files : []
 	const stackedDiffFiles = useMemo(() => buildStackedDiffFiles(readyDiffFiles, effectiveDiffRenderView, diffWrapMode, contentWidth), [readyDiffFiles, effectiveDiffRenderView, diffWrapMode, contentWidth])
-	const selectedDiffKey = selectedPullRequest ? pullRequestDiffKey(selectedPullRequest) : null
 	const diffCommentAnchors = useMemo(
 		() => diffFullView ? getStackedDiffCommentAnchors(stackedDiffFiles, effectiveDiffRenderView, diffWrapMode, contentWidth) : [],
 		[diffFullView, stackedDiffFiles, effectiveDiffRenderView, diffWrapMode, contentWidth],
@@ -645,7 +657,7 @@ export const App = () => {
 		refreshGenerationRef.current += 1
 		setQueueSelection((current) => ({ ...current, [queueMode]: selectedIndex }))
 		setQueueMode(mode)
-		setSelectedIndex(queueSelection[mode] ?? 0)
+		setSelectedIndex(registry.get(queueSelectionAtom)[mode] ?? 0)
 		setRecentlyCompletedPullRequests({})
 		detailHydrationRef.current = null
 		setDetailFullView(false)
@@ -675,9 +687,9 @@ export const App = () => {
 			didMountQueueModeRef.current = true
 			return
 		}
-		if (queueLoadCache[queueMode]) return
+		if (registry.get(queueLoadCacheAtom)[queueMode]) return
 		refreshPullRequestsAtom()
-	}, [queueMode, queueLoadCache, refreshPullRequestsAtom])
+	}, [queueMode, refreshPullRequestsAtom, registry])
 
 	useEffect(() => {
 		if (!refreshCompletionMessage || refreshStartedAt === null) return
@@ -851,7 +863,7 @@ export const App = () => {
 
 	const loadPullRequestComments = (pullRequest: PullRequestItem, force = false) => {
 		const key = pullRequestDiffKey(pullRequest)
-		const previousLoadState = diffCommentsLoaded[key]
+		const previousLoadState = registry.get(diffCommentsLoadedAtom)[key]
 		if (!force && previousLoadState) return
 		setDiffCommentsLoaded((current) => ({ ...current, [key]: "loading" }))
 		void listPullRequestComments({ repository: pullRequest.repository, number: pullRequest.number })
@@ -894,7 +906,7 @@ export const App = () => {
 		const force = options.force ?? false
 		const includeComments = options.includeComments ?? false
 		const key = pullRequestDiffKey(pullRequest)
-		const existing = pullRequestDiffCache[key]
+		const existing = registry.get(pullRequestDiffCacheAtom)[key]
 		if (includeComments) loadPullRequestComments(pullRequest, force)
 		if (!force && existing && (existing._tag === "Ready" || existing._tag === "Loading")) return
 
@@ -1279,7 +1291,7 @@ export const App = () => {
 	const openLabelModal = () => {
 		if (!selectedPullRequest) return
 		const repository = selectedPullRequest.repository
-		const cachedLabels = labelCache[repository]
+		const cachedLabels = registry.get(labelCacheAtom)[repository]
 		if (cachedLabels) {
 			setLabelModal({
 				repository,

@@ -67,7 +67,6 @@ export const PullRequestDiffPane = ({
 	commentMode,
 	selectedCommentAnchor,
 	selectedCommentThread,
-	commentCount,
 	themeId,
 }: {
 	pullRequest: PullRequestItem | null
@@ -139,7 +138,7 @@ export const PullRequestDiffPane = ({
 	const selectedSideLabel = selectedCommentAnchor?.side === "RIGHT" ? "right" : selectedCommentAnchor?.side === "LEFT" ? "left" : null
 	const commentLabel = commentMode && selectedCommentAnchor
 		? `  ${selectedSideLabel} ${selectedCommentAnchor.side === "RIGHT" ? "+" : "-"}${selectedCommentAnchor.line}`
-		: commentMode ? "  c no lines" : commentCount > 0 ? `  ● ${commentCount}` : ""
+		: commentMode ? "  c no lines" : ""
 	const commentLabelColor = commentMode && selectedCommentAnchor?.side === "LEFT"
 		? colors.status.failing
 		: commentMode ? colors.status.passing : colors.status.passing

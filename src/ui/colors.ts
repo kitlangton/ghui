@@ -12,6 +12,7 @@ export type ThemeId =
 	| "solarized-dark"
 	| "everforest"
 	| "opencode"
+	| "vague"
 
 export interface ColorPalette {
 	readonly background: string
@@ -566,6 +567,45 @@ const everforestColors: ColorPalette = {
 	},
 }
 
+const vagueColors: ColorPalette = {
+	background: "#141415",
+	modalBackground: "#1c1c24",
+	text: "#cdcdcd",
+	muted: "#606079",
+	separator: "#252530",
+	accent: "#6e94b2",
+	inlineCode: "#e8b589",
+	error: "#d8647e",
+	selectedBg: "#333738",
+	selectedText: "#cdcdcd",
+	count: "#e0a363",
+	status: {
+		draft: "#f3be7c",
+		approved: "#7fa563",
+		changes: "#d8647e",
+		review: "#7e98e8",
+		none: "#606079",
+		passing: "#7fa563",
+		pending: "#f3be7c",
+		failing: "#d8647e",
+	},
+	repos: {
+		opencode: "#6e94b2",
+		"effect-smol": "#7fa563",
+		"opencode-console": "#bb9dbd",
+		opencontrol: "#e0a363",
+		default: "#b4d4cf",
+	},
+	diff: {
+		addedBg: "#293125",
+		removedBg: "#3b242a",
+		contextBg: "transparent",
+		lineNumberBg: "#1c1c24",
+		addedLineNumberBg: "#253020",
+		removedLineNumberBg: "#352126",
+	},
+}
+
 export const themeDefinitions: readonly ThemeDefinition[] = [
 	{ id: "ghui", name: "GHUI", description: "Warm parchment accents on a deep slate background", colors: ghuiColors },
 	{ id: "tokyo-night", name: "Tokyo Night", description: "Cool indigo surfaces with neon editor accents", colors: tokyoNightColors },
@@ -580,6 +620,7 @@ export const themeDefinitions: readonly ThemeDefinition[] = [
 	{ id: "solarized-dark", name: "Solarized Dark", description: "Low-contrast blue-green base with calibrated accents", colors: solarizedDarkColors },
 	{ id: "everforest", name: "Everforest", description: "Soft green-gray forest tones with warm highlights", colors: everforestColors },
 	{ id: "opencode", name: "OpenCode", description: "Charcoal panels with peach, violet, and blue highlights", colors: opencodeColors },
+	{ id: "vague", name: "Vague", description: "Muted low-contrast charcoal with soft editor accents", colors: vagueColors },
 ] as const
 
 let activeTheme = themeDefinitions[0]!

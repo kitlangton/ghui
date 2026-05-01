@@ -11,6 +11,7 @@ export type ThemeId =
 	| "monokai"
 	| "solarized-dark"
 	| "everforest"
+	| "vesper"
 	| "opencode"
 	| "vague"
 
@@ -567,6 +568,45 @@ const everforestColors: ColorPalette = {
 	},
 }
 
+const vesperColors: ColorPalette = {
+	background: "#101010",
+	modalBackground: "#1A1A1A",
+	text: "#FFFFFF",
+	muted: "#A0A0A0",
+	separator: "#282828",
+	accent: "#FFC799",
+	inlineCode: "#99FFE4",
+	error: "#FF8080",
+	selectedBg: "#232323",
+	selectedText: "#FFFFFF",
+	count: "#FFC799",
+	status: {
+		draft: "#FFC799",
+		approved: "#99FFE4",
+		changes: "#FF8080",
+		review: "#B0B0B0",
+		none: "#7E7E7E",
+		passing: "#99FFE4",
+		pending: "#FFC799",
+		failing: "#FF8080",
+	},
+	repos: {
+		opencode: "#FFC799",
+		"effect-smol": "#99FFE4",
+		"opencode-console": "#FFD1A8",
+		opencontrol: "#FFC799",
+		default: "#B0B0B0",
+	},
+	diff: {
+		addedBg: "#17312d",
+		removedBg: "#351f1f",
+		contextBg: "transparent",
+		lineNumberBg: "#101010",
+		addedLineNumberBg: "#142b28",
+		removedLineNumberBg: "#2f1c1c",
+	},
+}
+
 const vagueColors: ColorPalette = {
 	background: "#141415",
 	modalBackground: "#1c1c24",
@@ -619,6 +659,7 @@ export const themeDefinitions: readonly ThemeDefinition[] = [
 	{ id: "monokai", name: "Monokai", description: "Classic dark olive with electric syntax colors", colors: monokaiColors },
 	{ id: "solarized-dark", name: "Solarized Dark", description: "Low-contrast blue-green base with calibrated accents", colors: solarizedDarkColors },
 	{ id: "everforest", name: "Everforest", description: "Soft green-gray forest tones with warm highlights", colors: everforestColors },
+	{ id: "vesper", name: "Vesper", description: "Minimal black surfaces with peach and aqua accents", colors: vesperColors },
 	{ id: "opencode", name: "OpenCode", description: "Charcoal panels with peach, violet, and blue highlights", colors: opencodeColors },
 	{ id: "vague", name: "Vague", description: "Muted low-contrast charcoal with soft editor accents", colors: vagueColors },
 ] as const

@@ -1,6 +1,6 @@
-import type { DiffRenderable, ScrollBoxRenderable } from "@opentui/core"
+import type { DiffRenderable, MouseEvent, ScrollBoxRenderable } from "@opentui/core"
 import { useMemo, type Ref } from "react"
-import type { PullRequestItem, PullRequestReviewComment } from "../domain.js"
+import type { DiffCommentSide, PullRequestItem, PullRequestReviewComment } from "../domain.js"
 import { colors, type ThemeId } from "./colors.js"
 import { createDiffSyntaxStyle, diffFileStats, diffFileStatsText, diffStatText, stackedDiffFileAtLine, type DiffFileStats, type DiffView, type DiffWrapMode, type PullRequestDiffState, type StackedDiffCommentAnchor, type StackedDiffFilePatch } from "./diff.js"
 import { LoadingPane, StatusCard } from "./DetailsPane.js"
@@ -82,6 +82,7 @@ export const PullRequestDiffPane = ({
 	commentMode,
 	selectedCommentAnchor,
 	selectedCommentThread,
+	onSelectCommentLine,
 	themeId,
 }: {
 	pullRequest: PullRequestItem | null
@@ -98,6 +99,7 @@ export const PullRequestDiffPane = ({
 	commentMode: boolean
 	selectedCommentAnchor: StackedDiffCommentAnchor | null
 	selectedCommentThread: readonly PullRequestReviewComment[]
+	onSelectCommentLine: (renderLine: number, side: DiffCommentSide | null) => void
 	themeId: ThemeId
 }) => {
 	const readyFiles = diffState?._tag === "Ready" ? diffState.files : []
@@ -167,6 +169,18 @@ export const PullRequestDiffPane = ({
 		return `  ${selectedCommentAnchor.side === "RIGHT" ? "right" : "left"} ${selectedCommentAnchor.side === "RIGHT" ? "+" : "-"}${selectedCommentAnchor.line}`
 	}
 	const stickyCommentColor = selectedCommentAnchor?.side === "LEFT" ? colors.status.failing : colors.status.passing
+	const handleDiffMouseDown = function (this: ScrollBoxRenderable, event: MouseEvent) {
+		if (event.button !== 0) return
+		const localY = event.y - this.viewport.y
+		if (localY < 0 || localY >= this.viewport.height) return
+		const localX = event.x - this.viewport.x
+		const side = view === "split"
+			? localX < Math.floor(paneWidth / 2) ? "LEFT" : "RIGHT"
+			: null
+		onSelectCommentLine(Math.max(0, Math.floor(this.scrollTop + localY)), side)
+		event.preventDefault()
+		event.stopPropagation()
+	}
 
 	return (
 		<box height={height} flexDirection="column">
@@ -179,7 +193,7 @@ export const PullRequestDiffPane = ({
 				</TextLine>
 			</box>
 			<Divider width={paneWidth} />
-			<scrollbox ref={scrollRef} focused={!commentMode} flexGrow={1} scrollY scrollX={false}>
+			<scrollbox ref={scrollRef} focused={!commentMode} flexGrow={1} scrollY scrollX={false} onMouseDown={handleDiffMouseDown}>
 				{stackedFiles.map((stackedFile) => (
 					<box key={`${pullRequest.url}-${stackedFile.index}-${view}-${wrapMode}`} flexDirection="column" flexShrink={0}>
 						{stackedFile.index > 0 ? <Divider width={paneWidth} /> : null}

@@ -321,6 +321,30 @@ const originalDiffLineColor = (anchor: DiffCommentAnchor): DiffLineColorConfig =
 	return { gutter: colors.diff.lineNumberBg, content: colors.diff.contextBg }
 }
 
+const mixHexColor = (color: string, base: string, amount: number) => {
+	const parse = (hex: string) => {
+		const normalized = hex.replace(/^#/, "")
+		if (!/^[0-9a-fA-F]{6}$/.test(normalized)) return null
+		return {
+			r: Number.parseInt(normalized.slice(0, 2), 16),
+			g: Number.parseInt(normalized.slice(2, 4), 16),
+			b: Number.parseInt(normalized.slice(4, 6), 16),
+		}
+	}
+	const left = parse(color)
+	const right = parse(base)
+	if (!left || !right) return color
+	const channel = (key: "r" | "g" | "b") => Math.round(left[key] * amount + right[key] * (1 - amount)).toString(16).padStart(2, "0")
+	return `#${channel("r")}${channel("g")}${channel("b")}`
+}
+
+const diffCommentGutterColor = (anchor: DiffCommentAnchor, kind: "selected" | "thread") => {
+	const accent = kind === "thread"
+		? colors.status.pending
+		: anchor.side === "RIGHT" ? colors.status.passing : colors.status.failing
+	return mixHexColor(accent, originalDiffLineColor(anchor).gutter, 0.45)
+}
+
 const diffSideTargets = (diff: DiffRenderable, anchor: DiffCommentAnchor, view: DiffView) => {
 	const withSides = diff as unknown as DiffRenderableRuntimeSides
 	if (view === "split") {
@@ -770,12 +794,12 @@ export const App = () => {
 		if (selectedDiffKey) {
 			for (const anchor of diffCommentAnchors) {
 				if ((diffCommentThreads[`${selectedDiffKey}:${diffCommentAnchorKey(anchor)}`]?.length ?? 0) > 0) {
-					applyLineColor(anchor, colors.selectedBg)
+					applyLineColor(anchor, diffCommentGutterColor(anchor, "thread"))
 				}
 			}
 		}
 		if (diffCommentMode && selectedDiffCommentAnchor) {
-			applyLineColor(selectedDiffCommentAnchor, colors.selectedBg, true)
+			applyLineColor(selectedDiffCommentAnchor, diffCommentGutterColor(selectedDiffCommentAnchor, "selected"), true)
 			if (suppressNextDiffCommentScrollRef.current) {
 				suppressNextDiffCommentScrollRef.current = false
 			} else {

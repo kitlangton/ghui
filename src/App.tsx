@@ -11,12 +11,12 @@ import { formatShortDate, formatTimestamp } from "./date.js"
 import { availableMergeActions, mergeInfoFromPullRequest } from "./mergeActions.js"
 import { Observability } from "./observability.js"
 import { GitHubService } from "./services/GitHubService.js"
-import { colors } from "./ui/colors.js"
+import { colors, setActiveTheme, themeDefinitions, type ThemeId } from "./ui/colors.js"
 import { pullRequestDiffKey, splitPatchFiles, type PullRequestDiffState } from "./ui/diff.js"
 import { DetailBody, DetailHeader, DetailPlaceholder, DetailsPane, getDetailBodyHeight, getDetailHeaderHeight, getDetailJunctionRows, getDetailsPaneHeight, LoadingPane, type DetailPlaceholderContent } from "./ui/DetailsPane.js"
 import { FooterHints, type RetryProgress } from "./ui/FooterHints.js"
 import { Divider, fitCell, PlainLine, SeparatorColumn } from "./ui/primitives.js"
-import { initialLabelModalState, initialMergeModalState, LabelModal, MergeModal } from "./ui/modals.js"
+import { initialLabelModalState, initialMergeModalState, initialThemeModalState, LabelModal, MergeModal, ThemeModal } from "./ui/modals.js"
 import { groupBy, reviewLabel } from "./ui/pullRequests.js"
 import { PullRequestDiffPane } from "./ui/PullRequestDiffPane.js"
 import { PullRequestList } from "./ui/PullRequestList.js"
@@ -81,6 +81,8 @@ const pullRequestDiffCacheAtom = Atom.make<Record<string, PullRequestDiffState>>
 
 const labelModalAtom = Atom.make(initialLabelModalState).pipe(Atom.keepAlive)
 const mergeModalAtom = Atom.make(initialMergeModalState).pipe(Atom.keepAlive)
+const themeIdAtom = Atom.make<ThemeId>("ghui").pipe(Atom.keepAlive)
+const themeModalAtom = Atom.make(initialThemeModalState).pipe(Atom.keepAlive)
 const labelCacheAtom = Atom.make<Record<string, readonly PullRequestLabel[]>>({}).pipe(Atom.keepAlive)
 const pullRequestOverridesAtom = Atom.make<Record<string, PullRequestItem>>({}).pipe(Atom.keepAlive)
 const usernameAtom = githubRuntime.atom(
@@ -196,6 +198,8 @@ const copyPullRequestMetadata = async (pullRequest: PullRequestItem) => {
 
 const isShiftG = (key: { readonly name: string; readonly shift?: boolean }) => key.name === "G" || key.name === "g" && key.shift
 
+const isShiftT = (key: { readonly name: string; readonly shift?: boolean }) => key.name === "T" || key.name === "t" && key.shift
+
 const getDetailPlaceholderContent = ({
 	status,
 	retryProgress,
@@ -257,6 +261,9 @@ export const App = () => {
 	const [pullRequestDiffCache, setPullRequestDiffCache] = useAtom(pullRequestDiffCacheAtom)
 	const [labelModal, setLabelModal] = useAtom(labelModalAtom)
 	const [mergeModal, setMergeModal] = useAtom(mergeModalAtom)
+	const [themeId, setThemeId] = useAtom(themeIdAtom)
+	const [themeModal, setThemeModal] = useAtom(themeModalAtom)
+	setActiveTheme(themeId)
 	const [labelCache, setLabelCache] = useAtom(labelCacheAtom)
 	const [pullRequestOverrides, setPullRequestOverrides] = useAtom(pullRequestOverridesAtom)
 	const retryProgress = useAtomValue(retryProgressAtom)
@@ -305,6 +312,10 @@ export const App = () => {
 			setNotice((current) => (current === message ? null : current))
 		}, 2500)
 	}
+
+	useEffect(() => {
+		renderer.setBackgroundColor(colors.background)
+	}, [renderer, themeId])
 
 	useEffect(() => () => {
 		if (noticeTimeoutRef.current !== null) {
@@ -541,9 +552,38 @@ export const App = () => {
 			.catch((error) => flashNotice(errorMessage(error)))
 	}
 
+	const openThemeModal = () => {
+		setLabelModal(initialLabelModalState)
+		setMergeModal(initialMergeModalState)
+		setThemeModal({
+			open: true,
+			selectedIndex: Math.max(0, themeDefinitions.findIndex((theme) => theme.id === themeId)),
+			initialThemeId: themeId,
+		})
+	}
+
+	const closeThemeModal = (confirm: boolean) => {
+		const selectedTheme = themeDefinitions[themeModal.selectedIndex]
+		if (!confirm) {
+			setThemeId(themeModal.initialThemeId)
+		} else if (selectedTheme) {
+			flashNotice(`Theme: ${selectedTheme.name}`)
+		}
+		setThemeModal(initialThemeModalState)
+	}
+
+	const moveThemeSelection = (delta: number) => {
+		const selectedIndex = Math.max(0, Math.min(themeDefinitions.length - 1, themeModal.selectedIndex + delta))
+		if (selectedIndex === themeModal.selectedIndex) return
+		const theme = themeDefinitions[selectedIndex]
+		if (theme && theme.id !== themeId) setThemeId(theme.id)
+		setThemeModal((current) => ({ ...current, selectedIndex }))
+	}
+
 	const openLabelModal = () => {
 		if (!selectedPullRequest) return
 		setMergeModal(initialMergeModalState)
+		setThemeModal(initialThemeModalState)
 		const repository = selectedPullRequest.repository
 		const cachedLabels = labelCache[repository]
 		if (cachedLabels) {
@@ -572,6 +612,7 @@ export const App = () => {
 
 	const openMergeModal = () => {
 		if (!selectedPullRequest) return
+		setThemeModal(initialThemeModalState)
 		const repository = selectedPullRequest.repository
 		const number = selectedPullRequest.number
 		const seededInfo = mergeInfoFromPullRequest(selectedPullRequest)
@@ -673,6 +714,10 @@ export const App = () => {
 
 	useKeyboard((key) => {
 		if (key.name === "q" || (key.ctrl && key.name === "c")) {
+			if (themeModal.open) {
+				closeThemeModal(false)
+				return
+			}
 			if (mergeModal.open) {
 				setMergeModal(initialMergeModalState)
 				return
@@ -682,6 +727,26 @@ export const App = () => {
 				return
 			}
 			renderer.destroy()
+			return
+		}
+
+		if (themeModal.open) {
+			if (key.name === "escape") {
+				closeThemeModal(false)
+				return
+			}
+			if (key.name === "return" || key.name === "enter") {
+				closeThemeModal(true)
+				return
+			}
+			if (key.name === "up" || key.name === "k") {
+				moveThemeSelection(-1)
+				return
+			}
+			if (key.name === "down" || key.name === "j") {
+				moveThemeSelection(1)
+				return
+			}
 			return
 		}
 
@@ -967,6 +1032,11 @@ export const App = () => {
 			}
 		}
 
+		if (isShiftT(key)) {
+			openThemeModal()
+			return
+		}
+
 		if (key.name === "/") {
 			setFilterDraft(filterQuery)
 			setFilterMode(true)
@@ -1151,10 +1221,14 @@ export const App = () => {
 	const mergeModalHeight = Math.min(16, (height ?? 24) - 4)
 	const mergeModalLeft = Math.floor((contentWidth - mergeModalWidth) / 2)
 	const mergeModalTop = Math.floor(((height ?? 24) - mergeModalHeight) / 2)
+	const themeModalWidth = Math.min(58, Math.max(38, contentWidth - 12))
+	const themeModalHeight = Math.min(10, (height ?? 24) - 4)
+	const themeModalLeft = Math.floor((contentWidth - themeModalWidth) / 2)
+	const themeModalTop = Math.floor(((height ?? 24) - themeModalHeight) / 2)
 
 	return (
-		<box flexGrow={1} flexDirection="column">
-			<box paddingLeft={1} paddingRight={1} flexDirection="column">
+		<box flexGrow={1} flexDirection="column" backgroundColor={colors.background}>
+			<box paddingLeft={1} paddingRight={1} flexDirection="column" backgroundColor={colors.panel}>
 				<PlainLine text={headerLine} fg={colors.muted} bold />
 			</box>
 			{isWideLayout && !detailFullView && !diffFullView && !isInitialLoading ? (
@@ -1175,6 +1249,7 @@ export const App = () => {
 					height={wideBodyHeight}
 					loadingIndicator={loadingIndicator}
 					scrollRef={diffScrollRef}
+					themeId={themeId}
 				/>
 			) : isWideLayout && detailFullView ? (
 				<box flexGrow={1} flexDirection="column">
@@ -1243,7 +1318,7 @@ export const App = () => {
 			) : (
 				<Divider width={contentWidth} />
 			)}
-			<box paddingLeft={1} paddingRight={1}>
+			<box paddingLeft={1} paddingRight={1} backgroundColor={colors.panel}>
 				{footerNotice ? (
 					<PlainLine text={footerNotice} fg={colors.count} />
 				) : (
@@ -1279,6 +1354,16 @@ export const App = () => {
 					offsetLeft={mergeModalLeft}
 					offsetTop={mergeModalTop}
 					loadingIndicator={loadingIndicator}
+				/>
+			) : null}
+			{themeModal.open ? (
+				<ThemeModal
+					state={themeModal}
+					activeThemeId={themeId}
+					modalWidth={themeModalWidth}
+					modalHeight={themeModalHeight}
+					offsetLeft={themeModalLeft}
+					offsetTop={themeModalTop}
 				/>
 			) : null}
 		</box>

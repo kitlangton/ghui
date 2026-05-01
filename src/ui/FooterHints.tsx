@@ -86,6 +86,8 @@ export const FooterHints = ({
 		<TextLine>
 			<span fg={colors.count}>/</span>
 			<span fg={colors.muted}> filter  </span>
+			<span fg={colors.count}>T</span>
+			<span fg={colors.muted}> theme  </span>
 			{showFilterClear ? (
 				<>
 					<span fg={colors.count}>esc</span>

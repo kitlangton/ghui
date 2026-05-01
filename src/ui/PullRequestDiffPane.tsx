@@ -1,8 +1,8 @@
 import type { ScrollBoxRenderable } from "@opentui/core"
 import { useMemo, type Ref } from "react"
 import type { PullRequestItem } from "../domain.js"
-import { colors } from "./colors.js"
-import { diffStatText, diffSyntaxStyle, patchRenderableLineCount, type PullRequestDiffState } from "./diff.js"
+import { colors, type ThemeId } from "./colors.js"
+import { createDiffSyntaxStyle, diffStatText, patchRenderableLineCount, type PullRequestDiffState } from "./diff.js"
 import { LoadingPane, StatusCard } from "./DetailsPane.js"
 import { Divider, fitCell, PlainLine, TextLine } from "./primitives.js"
 import { shortRepoName } from "./pullRequests.js"
@@ -37,6 +37,7 @@ export const PullRequestDiffPane = ({
 	height,
 	loadingIndicator,
 	scrollRef,
+	themeId,
 }: {
 	pullRequest: PullRequestItem | null
 	diffState: PullRequestDiffState | undefined
@@ -47,6 +48,7 @@ export const PullRequestDiffPane = ({
 	height: number
 	loadingIndicator: string
 	scrollRef: Ref<ScrollBoxRenderable>
+	themeId: ThemeId
 }) => {
 	const readyFiles = diffState?.status === "ready" ? diffState.files : []
 	const safeIndex = readyFiles.length > 0 ? Math.max(0, Math.min(fileIndex, readyFiles.length - 1)) : 0
@@ -55,6 +57,7 @@ export const PullRequestDiffPane = ({
 		() => file ? patchRenderableLineCount(file.patch, view, wrapMode, paneWidth) : 1,
 		[file?.patch, view, wrapMode, paneWidth],
 	)
+	const syntaxStyle = useMemo(() => createDiffSyntaxStyle(), [themeId])
 
 	if (!pullRequest) {
 		return <LoadingPane content={{ title: "No pull request selected", hint: "Press esc to go back" }} width={paneWidth} height={height} />
@@ -125,18 +128,18 @@ export const PullRequestDiffPane = ({
 					view={view}
 					syncScroll
 					filetype={file.filetype ?? "text"}
-					syntaxStyle={diffSyntaxStyle}
+					syntaxStyle={syntaxStyle}
 					showLineNumbers
 					wrapMode={wrapMode}
-					addedBg="#17351f"
-					removedBg="#3a1e22"
-					contextBg="transparent"
+					addedBg={colors.diff.addedBg}
+					removedBg={colors.diff.removedBg}
+					contextBg={colors.diff.contextBg}
 					addedSignColor={colors.status.passing}
 					removedSignColor={colors.status.failing}
 					lineNumberFg={colors.muted}
-					lineNumberBg="#151515"
-					addedLineNumberBg="#12301a"
-					removedLineNumberBg="#35171b"
+					lineNumberBg={colors.diff.lineNumberBg}
+					addedLineNumberBg={colors.diff.addedLineNumberBg}
+					removedLineNumberBg={colors.diff.removedLineNumberBg}
 					selectionBg={colors.selectedBg}
 					selectionFg={colors.selectedText}
 					height={diffHeight}

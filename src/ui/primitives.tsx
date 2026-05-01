@@ -77,7 +77,7 @@ export const ModalFrame = ({
 	width,
 	height,
 	junctionRows = [],
-	backgroundColor = "#1a1a2e",
+	backgroundColor = colors.modalBackground,
 }: {
 	children: React.ReactNode
 	left: number

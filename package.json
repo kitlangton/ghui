@@ -47,6 +47,9 @@
 		"format": "oxfmt src/ test/",
 		"format:check": "oxfmt --check src/ test/"
 	},
+	"workspaces": [
+		"packages/*"
+	],
 	"dependencies": {
 		"@effect/atom-react": "4.0.0-beta.59",
 		"@opentui/core": "0.2.1",

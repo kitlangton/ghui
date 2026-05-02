@@ -22,11 +22,20 @@
         "typescript": "6.0.2",
       },
     },
+    "packages/keymap": {
+      "name": "@ghui/keymap",
+      "version": "0.0.0",
+      "peerDependencies": {
+        "react": "*",
+      },
+    },
   },
   "packages": {
     "@effect/atom-react": ["@effect/atom-react@4.0.0-beta.59", "", { "peerDependencies": { "effect": "^4.0.0-beta.59", "react": "^19.2.4", "scheduler": "*" } }, "sha512-VkznQz5c+Z/BLxX+hQNPzPOyUnLQjnbppFSNP7tbPru7HKR4ihzCDC6Xjbx87156MOrZ+JOa6shTMbmvGT5W0w=="],
 
     "@effect/language-service": ["@effect/language-service@0.85.1", "", { "bin": { "effect-language-service": "cli.js" } }, "sha512-EXnJjIy6zQ3nUO/MZ+ynWUb8B895KZPotd1++oTs9JjDkplwM7cb6zo8Zq2zU6piwq+KflO7amXbEfj1UMpHkw=="],
+
+    "@ghui/keymap": ["@ghui/keymap@workspace:packages/keymap"],
 
     "@msgpackr-extract/msgpackr-extract-darwin-arm64": ["@msgpackr-extract/msgpackr-extract-darwin-arm64@3.0.3", "", { "os": "darwin", "cpu": "arm64" }, "sha512-QZHtlVgbAdy2zAqNA9Gu1UpIuI8Xvsd1v8ic6B2pZmeFnFcMWiPLfWXh7TVw4eGEZ/C9TH281KwhVoeQUKbyjw=="],
 

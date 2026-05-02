@@ -1,0 +1,18 @@
+{
+	"name": "@ghui/keymap",
+	"version": "0.0.0",
+	"private": true,
+	"type": "module",
+	"description": "Experimental keymap library — bindings as data, state as input.",
+	"exports": {
+		".": "./src/index.ts",
+		"./react": "./src/react.ts"
+	},
+	"scripts": {
+		"test": "bun test test",
+		"typecheck": "tsc --noEmit"
+	},
+	"peerDependencies": {
+		"react": "*"
+	}
+}

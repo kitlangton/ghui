@@ -9,7 +9,7 @@ import * as AtomRegistry from "effect/unstable/reactivity/AtomRegistry"
 import { useContext, useEffect, useMemo, useRef, useState } from "react"
 import { buildAppCommands } from "./appCommands.js"
 import type { AppCommand } from "./commands.js"
-import { clampCommandIndex, commandEnabled, filterCommands, sortCommandsByScope } from "./commands.js"
+import { clampCommandIndex, commandEnabled, defineCommand, filterCommands, sortCommandsByScope } from "./commands.js"
 import { config } from "./config.js"
 import { type CreatePullRequestCommentInput, type DiffCommentSide, type ListPullRequestPageInput, type LoadStatus, type PullRequestItem, type PullRequestLabel, type PullRequestMergeAction, type PullRequestReviewComment } from "./domain.js"
 import { formatShortDate, formatTimestamp } from "./date.js"
@@ -1740,7 +1740,26 @@ export const App = () => {
 		const command = appCommands.find((entry) => entry.id === id)
 		return command ? runCommand(command, options) : false
 	}
-	const commandPaletteCommands = commandPaletteActive ? sortCommandsByScope(filterCommands(appCommands.filter((command) => command.id !== "command.open" && commandEnabled(command)), commandPalette.query)) : []
+	const dynamicPaletteCommands: readonly AppCommand[] = (() => {
+		if (!commandPaletteActive) return []
+		const repository = parseRepositoryInput(commandPalette.query)
+		if (!repository || repository === selectedRepository) return []
+		return [defineCommand({
+			id: `view.repository.dynamic:${repository}`,
+			title: `Open ${repository}`,
+			scope: "View",
+			subtitle: "Switch to this repository",
+			run: () => switchViewTo({ _tag: "Repository", repository }),
+		})]
+	})()
+	// Dynamic commands always pin to the top of the palette; they came directly from the
+	// user's typed input so they shouldn't be filtered by fuzzy score against themselves.
+	const commandPaletteCommands = commandPaletteActive
+		? [
+			...dynamicPaletteCommands,
+			...sortCommandsByScope(filterCommands(appCommands.filter((command) => command.id !== "command.open" && commandEnabled(command)), commandPalette.query)),
+		]
+		: []
 	const selectedCommandIndex = clampCommandIndex(commandPalette.selectedIndex, commandPaletteCommands)
 	const selectedCommand = commandPaletteCommands[selectedCommandIndex] ?? null
 

@@ -88,6 +88,17 @@ export const buildAppCommands = ({
 		? "Already loading more pull requests."
 		: hasMorePullRequests ? null : "No more pull requests loaded by this view."
 
+	const forSelected = (
+		command: Omit<AppCommand, "subtitle" | "disabledReason"> & { readonly requireOpen?: boolean },
+	): AppCommand => {
+		const { requireOpen, ...rest } = command
+		return defineCommand({
+			...rest,
+			subtitle: selectedPullRequestLabel,
+			disabledReason: requireOpen ? noOpenPullRequestReason : noPullRequestReason,
+		})
+	}
+
 	return [
 		defineCommand({
 			id: "command.open",
@@ -160,13 +171,11 @@ export const buildAppCommands = ({
 			keywords: ["next page", "pagination", "more"],
 			run: actions.loadMorePullRequests,
 		}),
-		defineCommand({
+		forSelected({
 			id: "detail.open",
 			title: "Open pull request details",
 			scope: "Pull request",
-			subtitle: selectedPullRequestLabel,
 			shortcut: "enter",
-			disabledReason: noPullRequestReason,
 			run: actions.openDetails,
 		}),
 		defineCommand({
@@ -178,13 +187,11 @@ export const buildAppCommands = ({
 			disabledReason: detailFullView ? null : "Details view is not open.",
 			run: actions.closeDetails,
 		}),
-		defineCommand({
+		forSelected({
 			id: "diff.open",
 			title: "Open stacked diff",
 			scope: "Diff",
-			subtitle: selectedPullRequestLabel,
 			shortcut: "d",
-			disabledReason: noPullRequestReason,
 			keywords: ["files", "patch"],
 			run: actions.openDiffView,
 		}),
@@ -263,61 +270,50 @@ export const buildAppCommands = ({
 			keywords: ["review", "reply"],
 			run: actions.openDiffCommentModal,
 		}),
-		defineCommand({
+		forSelected({
 			id: "pull.toggle-draft",
 			title: selectedPullRequest?.reviewStatus === "draft" ? "Mark ready for review" : "Mark as draft",
 			scope: "Pull request",
-			subtitle: selectedPullRequestLabel,
 			shortcut: "s",
-			disabledReason: noPullRequestReason,
 			keywords: ["state", "ready"],
 			run: actions.togglePullRequestDraftStatus,
 		}),
-		defineCommand({
+		forSelected({
 			id: "pull.labels",
 			title: "Manage labels",
 			scope: "Pull request",
-			subtitle: selectedPullRequestLabel,
 			shortcut: "l",
-			disabledReason: noPullRequestReason,
 			run: actions.openLabelModal,
 		}),
-		defineCommand({
+		forSelected({
 			id: "pull.merge",
 			title: "Merge pull request",
 			scope: "Pull request",
-			subtitle: selectedPullRequestLabel,
 			shortcut: "m",
-			disabledReason: noPullRequestReason,
 			keywords: ["auto merge", "squash"],
 			run: actions.openMergeModal,
 		}),
-		defineCommand({
+		forSelected({
 			id: "pull.close",
 			title: "Close pull request",
 			scope: "Pull request",
-			subtitle: selectedPullRequestLabel,
 			shortcut: "x",
-			disabledReason: noOpenPullRequestReason,
+			requireOpen: true,
 			run: actions.openCloseModal,
 		}),
-		defineCommand({
+		forSelected({
 			id: "pull.open-browser",
 			title: "Open pull request in browser",
 			scope: "Pull request",
-			subtitle: selectedPullRequestLabel,
 			shortcut: "o",
-			disabledReason: noPullRequestReason,
 			keywords: ["github", "web"],
 			run: actions.openPullRequestInBrowser,
 		}),
-		defineCommand({
+		forSelected({
 			id: "pull.copy-metadata",
 			title: "Copy pull request metadata",
 			scope: "Pull request",
-			subtitle: selectedPullRequestLabel,
 			shortcut: "y",
-			disabledReason: noPullRequestReason,
 			keywords: ["clipboard", "url", "title"],
 			run: actions.copyPullRequestMetadata,
 		}),

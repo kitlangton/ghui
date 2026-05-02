@@ -62,6 +62,8 @@ export interface CreatePullRequestCommentInput {
 	readonly path: string
 	readonly line: number
 	readonly side: DiffCommentSide
+	readonly startLine?: number
+	readonly startSide?: DiffCommentSide
 	readonly body: string
 }
 

@@ -69,6 +69,7 @@ export const buildPullRequestListRows = ({
 	loadedCount,
 	hasMore,
 	isLoadingMore,
+	loadingIndicator = "-",
 }: {
 	readonly groups: PullRequestGroups
 	readonly status: LoadStatus
@@ -78,6 +79,7 @@ export const buildPullRequestListRows = ({
 	readonly loadedCount: number
 	readonly hasMore: boolean
 	readonly isLoadingMore: boolean
+	readonly loadingIndicator?: string
 }): readonly PullRequestListRow[] => {
 	const itemCount = groups.reduce((count, [, pullRequests]) => count + pullRequests.length, 0)
 	const rows: PullRequestListRow[] = [{ _tag: "title" }]
@@ -90,7 +92,7 @@ export const buildPullRequestListRows = ({
 		for (const pullRequest of pullRequests) rows.push({ _tag: "pull-request", pullRequest, groupPullRequests: pullRequests })
 	}
 	if (status === "ready" && itemCount > 0 && (hasMore || isLoadingMore)) {
-		rows.push({ _tag: "load-more", text: isLoadingMore ? `- Loading more pull requests... (${loadedCount} loaded)` : `- ${loadedCount} loaded, more available` })
+		rows.push({ _tag: "load-more", text: isLoadingMore ? `${loadingIndicator} Loading more pull requests... (${loadedCount} loaded)` : `- ${loadedCount} loaded, more available` })
 	}
 	return rows
 }
@@ -152,6 +154,7 @@ export const PullRequestList = ({
 	loadedCount,
 	hasMore,
 	isLoadingMore,
+	loadingIndicator,
 	onSelectPullRequest,
 }: {
 	groups: PullRequestGroups
@@ -165,9 +168,10 @@ export const PullRequestList = ({
 	loadedCount: number
 	hasMore: boolean
 	isLoadingMore: boolean
+	loadingIndicator: string
 	onSelectPullRequest: (url: string) => void
 }) => {
-	const rows = buildPullRequestListRows({ groups, status, error, filterText, showFilterBar, loadedCount, hasMore, isLoadingMore })
+	const rows = buildPullRequestListRows({ groups, status, error, filterText, showFilterBar, loadedCount, hasMore, isLoadingMore, loadingIndicator })
 
 	return (
 		<box width={contentWidth} flexDirection="column">

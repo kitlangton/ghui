@@ -214,6 +214,12 @@ export const diffCommentLocationKey = (location: Pick<PullRequestReviewComment, 
 
 export const diffCommentAnchorKey = diffCommentLocationKey
 
+export const diffCommentSideLabel = (anchor: Pick<DiffCommentAnchor, "side">) => anchor.side === "RIGHT" ? "right" : "left"
+
+export const diffCommentLineLabel = (anchor: Pick<DiffCommentAnchor, "side" | "line">) => `${anchor.side === "RIGHT" ? "+" : "-"}${anchor.line}`
+
+export const diffCommentAnchorLabel = (anchor: Pick<DiffCommentAnchor, "side" | "line">) => `${diffCommentSideLabel(anchor)} ${diffCommentLineLabel(anchor)}`
+
 type PendingDiffCommentAnchor = Omit<DiffCommentAnchor, "renderLine">
 
 const diffContentWidth = (lines: readonly string[], view: DiffView, width: number) => {

@@ -80,8 +80,9 @@ export const CommandPalette = ({
 	const visibleRows = rows.slice(scrollTop, scrollTop + listHeight)
 	const bottomPaddingRows = Math.max(0, listHeight - visibleRows.length)
 	const countText = commands.length === 1 ? "1 command" : `${commands.length} commands`
-	const queryText = query.length > 0 ? query : "type a command, state, or shortcut"
-	const queryWidth = Math.max(1, contentWidth - 2)
+	const queryWidth = Math.max(1, contentWidth)
+	const placeholder = "Search word"
+	const queryText = trimCell(query, Math.max(0, queryWidth - 1))
 	const emptyTopRows = Math.max(0, Math.floor((listHeight - 1) / 2))
 	const emptyBottomRows = Math.max(0, listHeight - emptyTopRows - 1)
 	useEffect(() => {
@@ -94,12 +95,21 @@ export const CommandPalette = ({
 			top={offsetTop}
 			width={modalWidth}
 			height={modalHeight}
-			title="Command Palette"
+			title="Commands"
 			headerRight={{ text: countText }}
 			subtitle={
 				<TextLine>
-					<span fg={colors.count}>› </span>
-					<span fg={query.length > 0 ? colors.text : colors.muted}>{fitCell(queryText, queryWidth)}</span>
+					{query.length > 0 ? (
+						<>
+							<span fg={colors.text}>{queryText}</span>
+							<span bg={colors.accent} fg={colors.background}> </span>
+						</>
+					) : (
+						<>
+							<span bg={colors.accent} fg={colors.background}>{placeholder[0]}</span>
+							<span fg={colors.muted}>{fitCell(placeholder.slice(1), Math.max(0, queryWidth - 1))}</span>
+						</>
+					)}
 				</TextLine>
 			}
 			footer={<HintRow items={[{ key: "↑↓", label: "select" }, { key: "enter", label: "run" }, { key: "ctrl-u", label: "clear" }, { key: "ctrl-w", label: "word" }, { key: "esc", label: "close" }]} />}

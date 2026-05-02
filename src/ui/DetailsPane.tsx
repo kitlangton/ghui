@@ -26,6 +26,9 @@ export const DETAIL_PLACEHOLDER_ROWS = 4
 export const DETAIL_BODY_SCROLL_LIMIT = 1_000
 
 const pullRequestReferencePattern = /(#[0-9]+)/g
+const codeFencePattern = /^```\s*([a-zA-Z0-9_-]+)?/
+const codeTokenPattern = /(\/\/.*|`(?:\\.|[^`])*`|"(?:\\.|[^"])*"|'(?:\\.|[^'])*'|\b(?:async|await|break|case|catch|class|const|continue|default|else|export|extends|finally|for|from|function|if|import|interface|let|new|return|switch|throw|try|type|var|while|yield)\b|\b(?:true|false|null|undefined)\b|\b\d+(?:\.\d+)?\b)/g
+const codeFenceLine = (line: string) => line.trim().replace(/\\`/g, "`").match(codeFencePattern)
 
 export const wrapText = (text: string, width: number): string[] => {
 	if (text.length === 0 || width <= 0) return [""]
@@ -61,6 +64,29 @@ const parseInlineSegments = (text: string, fg: string, bold = false): PreviewLin
 				bold,
 			}))
 	})
+}
+
+const parseCodeSegments = (text: string): PreviewLine["segments"] => {
+	const segments: Array<PreviewLine["segments"][number]> = []
+	let index = 0
+	for (const match of text.matchAll(codeTokenPattern)) {
+		const start = match.index ?? 0
+		if (start > index) segments.push({ text: text.slice(index, start), fg: colors.text })
+		const token = match[0]
+		const fg = token.startsWith("//")
+			? colors.muted
+			: token.startsWith("`") || token.startsWith("\"") || token.startsWith("'")
+				? colors.inlineCode
+				: /^\d/.test(token)
+					? colors.status.review
+					: token === "true" || token === "false" || token === "null" || token === "undefined"
+						? colors.status.review
+						: colors.accent
+		segments.push({ text: token, fg, bold: fg === colors.accent })
+		index = start + token.length
+	}
+	if (index < text.length) segments.push({ text: text.slice(index), fg: colors.text })
+	return segments.length > 0 ? segments : [{ text: "", fg: colors.muted }]
 }
 
 const wrapPreviewSegments = (segments: PreviewLine["segments"], width: number, indent = ""): Array<PreviewLine> => {
@@ -102,11 +128,13 @@ const bodyPreview = (body: string, width: number, limit = DETAIL_BODY_LINES): Ar
 	for (const rawLine of sourceLines) {
 		if (preview.length >= limit) break
 
-		const line = rawLine.trim()
-		if (line.startsWith("```")) {
+		const fence = codeFenceLine(rawLine)
+		if (fence) {
 			inCodeBlock = !inCodeBlock
 			continue
 		}
+
+		const line = inCodeBlock ? rawLine.replace(/\t/g, "  ") : rawLine.trim()
 		if (line.length === 0) continue
 
 		let text = line
@@ -142,11 +170,9 @@ const bodyPreview = (body: string, width: number, limit = DETAIL_BODY_LINES): Ar
 			text = `> ${line.replace(/^>\s+/, "")}`
 			fg = colors.muted
 			indent = "  "
-		} else if (inCodeBlock) {
-			fg = colors.muted
 		}
 
-		const wrapped = wrapPreviewSegments(parseInlineSegments(text, fg, bold), Math.max(16, width), indent)
+		const wrapped = wrapPreviewSegments(inCodeBlock ? parseCodeSegments(text) : parseInlineSegments(text, fg, bold), Math.max(16, width), indent)
 		for (const wrappedLine of wrapped) {
 			preview.push(wrappedLine)
 			if (preview.length >= limit) break
@@ -204,9 +230,10 @@ const ChecksSection = ({ checks, contentWidth }: { checks: readonly CheckItem[];
 	const unique = deduplicateChecks(checks)
 	if (unique.length === 0) return null
 
-	const colWidth = Math.floor((contentWidth - 1) / 2)
+	const columns = 2
+	const colWidth = Math.floor((contentWidth - 1) / columns)
 	const nameCol = Math.max(4, colWidth - 2)
-	const rows = Math.ceil(unique.length / 2)
+	const rows = Math.ceil(unique.length / columns)
 
 	return (
 		<box flexDirection="column">
@@ -214,23 +241,22 @@ const ChecksSection = ({ checks, contentWidth }: { checks: readonly CheckItem[];
 				<span fg={colors.count} attributes={TextAttributes.BOLD}>Checks</span>
 			</TextLine>
 			{Array.from({ length: rows }, (_, rowIndex) => {
-				const left = unique[rowIndex * 2]
-				const right = unique[rowIndex * 2 + 1]
 				return (
 					<TextLine key={rowIndex}>
-						{left ? (
-							<>
-								<span fg={checkColor(left)}>{checkIcon(left)} </span>
-								<span fg={colors.text}>{fitCell(left.name, nameCol)}</span>
-							</>
-						) : null}
-						{right ? (
-							<>
-								<span fg={colors.muted}> </span>
-								<span fg={checkColor(right)}>{checkIcon(right)} </span>
-								<span fg={colors.text}>{right.name}</span>
-							</>
-						) : null}
+						{Array.from({ length: columns }, (_, columnIndex) => {
+							const check = unique[rowIndex * columns + columnIndex]
+							return (
+								<Fragment key={columnIndex}>
+									{columnIndex > 0 ? <span fg={colors.muted}> </span> : null}
+									{check ? (
+										<>
+											<span fg={checkColor(check)}>{checkIcon(check)} </span>
+											<span fg={colors.text}>{fitCell(check.name, nameCol)}</span>
+										</>
+									) : <span>{" ".repeat(colWidth)}</span>}
+								</Fragment>
+							)
+						})}
 					</TextLine>
 				)
 			})}

@@ -1,7 +1,7 @@
 import type { DiffRenderable, PasteEvent, ScrollBoxRenderable } from "@opentui/core"
 import { RegistryContext, useAtom, useAtomRefresh, useAtomSet, useAtomValue } from "@effect/atom-react"
 import { useAppCommandRegistry } from "./keyboard/useAppCommandRegistry.js"
-import { scrollBindings, useScopedBindings } from "./keyboard/useScopedBindings.js"
+import { scrollBindings, useScopedBindings, type ScopedBindingAction } from "./keyboard/useScopedBindings.js"
 import { useKeyboard, useRenderer, useTerminalDimensions } from "@opentui/react"
 import { Cause, Effect, Layer, Schedule } from "effect"
 import * as AsyncResult from "effect/unstable/reactivity/AsyncResult"
@@ -26,8 +26,8 @@ import { GitHubService } from "./services/GitHubService.js"
 import { loadStoredThemeId, saveStoredThemeId } from "./themeStore.js"
 import { colors, filterThemeDefinitions, mixHex, setActiveTheme, themeDefinitions, type ThemeId } from "./ui/colors.js"
 import { backspace as editorBackspace, deleteForward as editorDeleteForward, deleteToLineEnd, deleteToLineStart, deleteWordBackward, deleteWordForward, insertText, moveLeft as editorMoveLeft, moveLineEnd, moveLineStart, moveRight as editorMoveRight, moveVertically, moveWordBackward, moveWordForward, type CommentEditorValue } from "./ui/commentEditor.js"
-import { buildStackedDiffFiles, diffCommentLocationKey, getStackedDiffCommentAnchors, nearestDiffCommentAnchorIndex, PullRequestDiffState, pullRequestDiffKey, safeDiffFileIndex, scrollTopForVisibleLine, splitPatchFiles, stackedDiffFileAtLine, type DiffCommentAnchor, type DiffView, type DiffWrapMode, type StackedDiffCommentAnchor } from "./ui/diff.js"
-import { DETAIL_BODY_SCROLL_LIMIT, DetailBody, DetailHeader, DetailPlaceholder, DetailsPane, getDetailHeaderHeight, getDetailJunctionRows, getDetailsPaneHeight, getScrollableDetailBodyHeight, LoadingPane, type DetailPlaceholderContent } from "./ui/DetailsPane.js"
+import { buildStackedDiffFiles, diffCommentAnchorLabel, diffCommentLineLabel, diffCommentLocationKey, diffCommentSideLabel, getStackedDiffCommentAnchors, PullRequestDiffState, pullRequestDiffKey, safeDiffFileIndex, scrollTopForVisibleLine, splitPatchFiles, stackedDiffFileAtLine, type DiffCommentAnchor, type DiffCommentKind, type DiffView, type DiffWrapMode, type StackedDiffCommentAnchor } from "./ui/diff.js"
+import { DETAIL_BODY_SCROLL_LIMIT, DetailBody, DetailHeader, DetailPlaceholder, DetailsPane, getDetailHeaderHeight, getDetailJunctionRows, getScrollableDetailBodyHeight, LoadingPane, type DetailPlaceholderContent } from "./ui/DetailsPane.js"
 import { FooterHints, initialRetryProgress, RetryProgress } from "./ui/FooterHints.js"
 import { Divider, fitCell, PlainLine, SeparatorColumn } from "./ui/primitives.js"
 import { CommandPalette } from "./ui/CommandPalette.js"
@@ -97,6 +97,11 @@ interface AppliedDiffLineColorState {
 	readonly entries: readonly AppliedDiffLineColor[]
 }
 
+interface DiffCommentRangeSelection {
+	readonly start: StackedDiffCommentAnchor
+	readonly end: StackedDiffCommentAnchor
+}
+
 interface DetailHydration {
 	readonly token: symbol
 	notifyError: boolean
@@ -115,6 +120,23 @@ const DETAIL_PREFETCH_BEHIND = 1
 const DETAIL_PREFETCH_AHEAD = 3
 const DETAIL_PREFETCH_CONCURRENCY = 3
 const DETAIL_PREFETCH_DELAY_MS = 120
+const MAX_KEYMAP_COUNT_PREFIX = 99
+
+const countSequence = (count: number, key: string) => `${String(count).split("").join(" ")} ${key}`
+
+const countedVerticalBindings = (
+	moveUp: (count: number) => void,
+	moveDown: (count: number) => void,
+): Record<string, ScopedBindingAction> => {
+	const bindings: Record<string, ScopedBindingAction> = {}
+	for (let count = 1; count <= MAX_KEYMAP_COUNT_PREFIX; count++) {
+		bindings[countSequence(count, "k")] = () => moveUp(count)
+		bindings[countSequence(count, "up")] = () => moveUp(count)
+		bindings[countSequence(count, "j")] = () => moveDown(count)
+		bindings[countSequence(count, "down")] = () => moveDown(count)
+	}
+	return bindings
+}
 
 const appendPullRequestPage = (existing: readonly PullRequestItem[], incoming: readonly PullRequestItem[]) => {
 	const seen = new Set(existing.map((pullRequest) => pullRequest.url))
@@ -187,8 +209,8 @@ const diffFileIndexAtom = Atom.make(0)
 const diffScrollTopAtom = Atom.make(0)
 const diffRenderViewAtom = Atom.make<DiffView>("split")
 const diffWrapModeAtom = Atom.make<DiffWrapMode>("none")
-const diffCommentModeAtom = Atom.make(false)
 const diffCommentAnchorIndexAtom = Atom.make(0)
+const diffCommentRangeStartIndexAtom = Atom.make<number | null>(null)
 const diffCommentThreadsAtom = Atom.make<Record<string, readonly PullRequestReviewComment[]>>({}).pipe(Atom.keepAlive)
 const diffCommentsLoadedAtom = Atom.make<Record<string, "loading" | "ready">>({}).pipe(Atom.keepAlive)
 const pullRequestDiffCacheAtom = Atom.make<Record<string, PullRequestDiffState>>({}).pipe(Atom.keepAlive)
@@ -383,8 +405,11 @@ const parsePullRequestDiffAtomKey = (key: string) => parsePullRequestRevisionAto
 
 
 
+const diffCommentThreadMapKey = (diffKey: string, location: Pick<PullRequestReviewComment, "path" | "side" | "line">) =>
+	`${diffKey}:${diffCommentLocationKey(location)}`
+
 const diffCommentThreadKey = (pullRequest: PullRequestItem, comment: Pick<PullRequestReviewComment, "path" | "side" | "line">) =>
-	`${pullRequestDiffKey(pullRequest)}:${diffCommentLocationKey(comment)}`
+	diffCommentThreadMapKey(pullRequestDiffKey(pullRequest), comment)
 
 const groupDiffCommentThreads = (pullRequest: PullRequestItem, comments: readonly PullRequestReviewComment[]) => {
 	const threads: Record<string, PullRequestReviewComment[]> = {}
@@ -409,12 +434,42 @@ const originalDiffLineColor = (anchor: DiffCommentAnchor): DiffLineColorConfig =
 	return { gutter: colors.diff.lineNumberBg, content: colors.diff.contextBg }
 }
 
-const diffCommentGutterColor = (anchor: DiffCommentAnchor, kind: "selected" | "thread") => {
-	const accent = kind === "thread"
-		? colors.status.pending
-		: anchor.side === "RIGHT" ? colors.status.passing : colors.status.failing
-	return mixHex(originalDiffLineColor(anchor).gutter, accent, 0.45)
+const selectedDiffCommentAccentByKind = {
+	addition: () => colors.status.passing,
+	deletion: () => colors.status.failing,
+	context: () => colors.muted,
+} satisfies Record<DiffCommentKind, () => string>
+
+const selectedDiffCommentAccent = (kind: DiffCommentKind) => selectedDiffCommentAccentByKind[kind]()
+
+const mixDiffLineContentColor = (base: string, accent: string, amount: number) =>
+	mixHex(base === "transparent" ? colors.background : base, accent, amount)
+
+const diffCommentLineColor = (anchor: DiffCommentAnchor, kind: "selected" | "range" | "thread"): DiffLineColorConfig => {
+	const original = originalDiffLineColor(anchor)
+	const accent = kind === "thread" ? colors.status.pending : selectedDiffCommentAccent(anchor.kind)
+	if (kind === "thread") return { ...original, gutter: mixHex(original.gutter, accent, 0.45) }
+	return {
+		gutter: mixHex(original.gutter, accent, kind === "selected" ? 0.68 : 0.42),
+		content: mixDiffLineContentColor(original.content, accent, kind === "selected" ? 0.2 : 0.1),
+	}
 }
+
+const sameDiffCommentTarget = (left: DiffCommentAnchor, right: DiffCommentAnchor) =>
+	left.path === right.path && left.side === right.side
+
+const diffCommentRangeSelection = (start: StackedDiffCommentAnchor | null, end: StackedDiffCommentAnchor | null): DiffCommentRangeSelection | null => {
+	if (!start || !end || !sameDiffCommentTarget(start, end)) return null
+	return start.line <= end.line ? { start, end } : { start: end, end: start }
+}
+
+const diffCommentRangeContains = (range: DiffCommentRangeSelection, anchor: StackedDiffCommentAnchor) =>
+	sameDiffCommentTarget(range.start, anchor) && anchor.line >= range.start.line && anchor.line <= range.end.line
+
+const diffCommentRangeLabel = (range: DiffCommentRangeSelection) =>
+	range.start.line === range.end.line
+		? diffCommentAnchorLabel(range.end)
+		: `${diffCommentSideLabel(range.end)} ${diffCommentLineLabel(range.start)}-${diffCommentLineLabel(range.end)}`
 
 const diffSideTargets = (diff: DiffRenderable, anchor: DiffCommentAnchor, view: DiffView) => {
 	const withSides = diff as unknown as DiffRenderableRuntimeSides
@@ -493,8 +548,8 @@ export const App = () => {
 	const [diffScrollTop, setDiffScrollTop] = useAtom(diffScrollTopAtom)
 	const [diffRenderView, setDiffRenderView] = useAtom(diffRenderViewAtom)
 	const [diffWrapMode, setDiffWrapMode] = useAtom(diffWrapModeAtom)
-	const [diffCommentMode, setDiffCommentMode] = useAtom(diffCommentModeAtom)
 	const [diffCommentAnchorIndex, setDiffCommentAnchorIndex] = useAtom(diffCommentAnchorIndexAtom)
+	const [diffCommentRangeStartIndex, setDiffCommentRangeStartIndex] = useAtom(diffCommentRangeStartIndexAtom)
 	const [diffCommentThreads, setDiffCommentThreads] = useAtom(diffCommentThreadsAtom)
 	const setDiffCommentsLoaded = useAtomSet(diffCommentsLoadedAtom)
 	const setPullRequestDiffCache = useAtomSet(pullRequestDiffCacheAtom)
@@ -663,14 +718,39 @@ export const App = () => {
 		() => diffFullView ? getStackedDiffCommentAnchors(stackedDiffFiles, effectiveDiffRenderView, diffWrapMode, contentWidth) : [],
 		[diffFullView, stackedDiffFiles, effectiveDiffRenderView, diffWrapMode, contentWidth],
 	)
-	const selectedDiffCommentAnchor = diffCommentAnchors[Math.max(0, Math.min(diffCommentAnchorIndex, diffCommentAnchors.length - 1))] ?? null
-	const selectedDiffCommentThreadKey = selectedDiffKey && selectedDiffCommentAnchor ? `${selectedDiffKey}:${diffCommentLocationKey(selectedDiffCommentAnchor)}` : null
+	const selectedDiffCommentAnchorIndex = Math.max(0, Math.min(diffCommentAnchorIndex, diffCommentAnchors.length - 1))
+	const selectedDiffCommentAnchor = diffCommentAnchors[selectedDiffCommentAnchorIndex] ?? null
+	const diffCommentRangeStartAnchor = diffCommentRangeStartIndex === null
+		? null
+		: diffCommentAnchors[Math.max(0, Math.min(diffCommentRangeStartIndex, diffCommentAnchors.length - 1))] ?? null
+	const selectedDiffCommentRange = useMemo(
+		() => diffCommentRangeSelection(diffCommentRangeStartAnchor, selectedDiffCommentAnchor),
+		[diffCommentRangeStartAnchor, selectedDiffCommentAnchor],
+	)
+	const selectedDiffCommentRangeAnchors = useMemo(
+		() => selectedDiffCommentRange
+			? diffCommentAnchors.filter((anchor) => diffCommentRangeContains(selectedDiffCommentRange, anchor))
+			: [],
+		[diffCommentAnchors, selectedDiffCommentRange],
+	)
+	const diffCommentRangeActive = selectedDiffCommentRange !== null
+	const selectedDiffCommentLabel = selectedDiffCommentRange
+		? diffCommentRangeLabel(selectedDiffCommentRange)
+		: selectedDiffCommentAnchor ? diffCommentAnchorLabel(selectedDiffCommentAnchor) : null
+	const selectedDiffCommentThreadKey = selectedDiffKey && selectedDiffCommentAnchor ? diffCommentThreadMapKey(selectedDiffKey, selectedDiffCommentAnchor) : null
 	const selectedDiffCommentThread = selectedDiffCommentThreadKey ? diffCommentThreads[selectedDiffCommentThreadKey] ?? [] : []
 	const diffLineColorContextKey = selectedDiffKey ? `${selectedDiffKey}:${effectiveDiffRenderView}:${diffWrapMode}` : null
-	const diffCommentRows = useMemo(
-		() => [...new Set(diffCommentAnchors.map((anchor) => anchor.renderLine))].sort((left, right) => left - right),
-		[diffCommentAnchors],
-	)
+	const diffCommentThreadAnchors = useMemo(() => {
+		if (!selectedDiffKey) return [] as readonly StackedDiffCommentAnchor[]
+		const seen = new Set<string>()
+		return diffCommentAnchors.filter((anchor) => {
+			const key = diffCommentLocationKey(anchor)
+			if (seen.has(key)) return false
+			if ((diffCommentThreads[diffCommentThreadMapKey(selectedDiffKey, anchor)]?.length ?? 0) === 0) return false
+			seen.add(key)
+			return true
+		})
+	}, [diffCommentAnchors, diffCommentThreads, selectedDiffKey])
 	const groupStarts = useAtomValue(groupStartsAtom)
 	const getCurrentGroupIndex = (current: number) => {
 		if (groupStarts.length === 0) return 0
@@ -729,7 +809,7 @@ export const App = () => {
 		setLoadingMoreKey(null)
 		setDetailFullView(false)
 		setDiffFullView(false)
-		setDiffCommentMode(false)
+		setDiffCommentRangeStartIndex(null)
 		setFilterDraft(filterQuery)
 		setNotice(null)
 		setRefreshCompletionMessage(null)
@@ -926,6 +1006,7 @@ export const App = () => {
 		setDiffFileIndex(0)
 		setDiffScrollTop(0)
 		setDiffCommentAnchorIndex(0)
+		setDiffCommentRangeStartIndex(null)
 		detailPreviewScrollRef.current?.scrollTo({ x: 0, y: 0 })
 	}, [selectedIndex])
 
@@ -934,12 +1015,16 @@ export const App = () => {
 			if (diffCommentAnchors.length === 0) return 0
 			return Math.max(0, Math.min(current, diffCommentAnchors.length - 1))
 		})
+		setDiffCommentRangeStartIndex((current) => {
+			if (current === null || diffCommentAnchors.length === 0) return null
+			return Math.max(0, Math.min(current, diffCommentAnchors.length - 1))
+		})
 	}, [diffCommentAnchors.length])
 
 	useEffect(() => {
-		if (!diffCommentMode || !selectedDiffCommentAnchor) return
+		if (!diffFullView || !selectedDiffCommentAnchor) return
 		setDiffFileIndex((current) => current === selectedDiffCommentAnchor.fileIndex ? current : selectedDiffCommentAnchor.fileIndex)
-	}, [diffCommentMode, selectedDiffCommentAnchor?.fileIndex])
+	}, [diffFullView, selectedDiffCommentAnchor?.fileIndex])
 
 	useEffect(() => {
 		const previous = diffCommentLineColorsRef.current
@@ -952,27 +1037,28 @@ export const App = () => {
 
 		const nextEntries: AppliedDiffLineColor[] = []
 		const appliedKeys = new Set<string>()
-		const applyLineColor = (anchor: StackedDiffCommentAnchor, gutter: string, override = false) => {
+		const applyLineColor = (anchor: StackedDiffCommentAnchor, color: DiffLineColorConfig, override = false) => {
 			const key = `${effectiveDiffRenderView}:${anchor.side}:${anchor.renderLine}`
 			if (appliedKeys.has(key) && !override) return
 			appliedKeys.add(key)
 			const entry = { anchor, view: effectiveDiffRenderView } satisfies AppliedDiffLineColor
 			const diff = diffRenderableRefs.current.get(anchor.fileIndex)
-			if (diff) setDiffCommentLineColor(diff, entry, { ...originalDiffLineColor(anchor), gutter })
+			if (diff) setDiffCommentLineColor(diff, entry, color)
 			if (!nextEntries.some((existing) => existing.view === entry.view && existing.anchor.side === anchor.side && existing.anchor.renderLine === anchor.renderLine)) {
 				nextEntries.push(entry)
 			}
 		}
 
-		if (selectedDiffKey) {
-			for (const anchor of diffCommentAnchors) {
-				if ((diffCommentThreads[`${selectedDiffKey}:${diffCommentLocationKey(anchor)}`]?.length ?? 0) > 0) {
-					applyLineColor(anchor, diffCommentGutterColor(anchor, "thread"))
-				}
+		for (const anchor of diffCommentThreadAnchors) {
+			applyLineColor(anchor, diffCommentLineColor(anchor, "thread"))
+		}
+		if (selectedDiffCommentRangeAnchors.length > 0) {
+			for (const anchor of selectedDiffCommentRangeAnchors) {
+				applyLineColor(anchor, diffCommentLineColor(anchor, "range"), true)
 			}
 		}
-		if (diffCommentMode && selectedDiffCommentAnchor) {
-			applyLineColor(selectedDiffCommentAnchor, diffCommentGutterColor(selectedDiffCommentAnchor, "selected"), true)
+		if (selectedDiffCommentAnchor) {
+			applyLineColor(selectedDiffCommentAnchor, diffCommentLineColor(selectedDiffCommentAnchor, "selected"), true)
 			if (suppressNextDiffCommentScrollRef.current) {
 				suppressNextDiffCommentScrollRef.current = false
 			} else {
@@ -982,10 +1068,10 @@ export const App = () => {
 			suppressNextDiffCommentScrollRef.current = false
 		}
 		diffCommentLineColorsRef.current = { contextKey: diffLineColorContextKey, entries: nextEntries }
-	}, [diffCommentMode, selectedDiffCommentAnchor?.renderLine, selectedDiffCommentAnchor?.localRenderLine, selectedDiffCommentAnchor?.side, selectedDiffCommentAnchor?.fileIndex, diffLineColorContextKey, effectiveDiffRenderView, diffCommentAnchors, diffCommentThreads])
+	}, [selectedDiffCommentAnchor?.renderLine, selectedDiffCommentAnchor?.localRenderLine, selectedDiffCommentAnchor?.side, selectedDiffCommentAnchor?.fileIndex, selectedDiffCommentRangeAnchors, diffLineColorContextKey, effectiveDiffRenderView, diffCommentThreadAnchors])
 	const isHydratingPullRequestDetails = pullRequestStatus === "ready" && selectedPullRequest?.state === "open" && !selectedPullRequest.detailLoaded
 	const isRefreshingPullRequests = pullRequestResult.waiting && pullRequestLoad !== null
-	const hasActiveLoadingIndicator = pullRequestResult.waiting || isHydratingPullRequestDetails || labelModal.loading || closeModal.running || mergeModal.loading || mergeModal.running || selectedDiffState?._tag === "Loading"
+	const hasActiveLoadingIndicator = pullRequestResult.waiting || isHydratingPullRequestDetails || isLoadingMorePullRequests || labelModal.loading || closeModal.running || mergeModal.loading || mergeModal.running || selectedDiffState?._tag === "Loading"
 	const loadingIndicator = LOADING_FRAMES[loadingFrame % LOADING_FRAMES.length]!
 
 	useEffect(() => {
@@ -1128,9 +1214,10 @@ export const App = () => {
 		diffCommentLineColorsRef.current = { contextKey: null, entries: [] }
 		setDiffFullView(true)
 		setDetailFullView(false)
-		setDiffCommentMode(false)
 		setDiffFileIndex(0)
 		setDiffScrollTop(0)
+		setDiffCommentAnchorIndex(0)
+		setDiffCommentRangeStartIndex(null)
 		setDiffRenderView(contentWidth >= 100 ? "split" : "unified")
 		diffScrollRef.current?.scrollTo({ x: 0, y: 0 })
 		loadPullRequestDiff(selectedPullRequest, { includeComments: true })
@@ -1155,15 +1242,6 @@ export const App = () => {
 		setDiffFileIndex((current) => current === nextIndex ? current : nextIndex)
 	}
 
-	const scrollDiffBy = (y: number) => {
-		diffScrollRef.current?.scrollBy({ x: 0, y })
-		syncDiffScrollState()
-	}
-
-	const scrollDiffTo = (y: number) => {
-		diffScrollRef.current?.scrollTo({ x: 0, y })
-		syncDiffScrollState()
-	}
 	const scrollDetailPreviewBy = (y: number) => detailPreviewScrollRef.current?.scrollBy({ x: 0, y })
 	const scrollDetailPreviewTo = (y: number) => detailPreviewScrollRef.current?.scrollTo({ x: 0, y })
 
@@ -1188,37 +1266,72 @@ export const App = () => {
 		if (readyDiffFiles.length === 0) return
 		const nextIndex = safeDiffFileIndex(readyDiffFiles, diffFileIndex + delta)
 		setDiffFileIndex(nextIndex)
-		if (diffCommentMode) {
-			const nextAnchor = diffCommentAnchors.find((anchor) => anchor.fileIndex === nextIndex && anchor.side === selectedDiffCommentAnchor?.side)
-				?? diffCommentAnchors.find((anchor) => anchor.fileIndex === nextIndex)
-			if (nextAnchor) setDiffCommentAnchorIndex(diffCommentAnchors.indexOf(nextAnchor))
-		}
+		setDiffCommentRangeStartIndex(null)
+		const nextAnchor = diffCommentAnchors.find((anchor) => anchor.fileIndex === nextIndex && anchor.side === selectedDiffCommentAnchor?.side)
+			?? diffCommentAnchors.find((anchor) => anchor.fileIndex === nextIndex)
+		if (nextAnchor) setDiffCommentAnchorIndex(diffCommentAnchors.indexOf(nextAnchor))
 		scrollToDiffFile(nextIndex)
 	}
 
-	const enterDiffCommentMode = () => {
-		const scrollTop = diffScrollRef.current?.scrollTop ?? 0
-		suppressNextDiffCommentScrollRef.current = true
-		setDiffCommentAnchorIndex(nearestDiffCommentAnchorIndex(diffCommentAnchors, scrollTop + DIFF_STICKY_HEADER_LINES))
-		setDiffCommentMode(true)
+	const navigableDiffCommentAnchors = () => diffCommentRangeStartAnchor
+		? diffCommentAnchors.filter((anchor) => sameDiffCommentTarget(anchor, diffCommentRangeStartAnchor))
+		: diffCommentAnchors
+
+	const moveDiffCommentAnchor = (delta: number, options: { readonly preserveViewportRow?: boolean } = {}) => {
+		const anchors = navigableDiffCommentAnchors()
+		if (anchors.length === 0) return
+		const rows = [...new Set(anchors.map((anchor) => anchor.renderLine))].sort((left, right) => left - right)
+		const currentAnchor = selectedDiffCommentAnchor && anchors.includes(selectedDiffCommentAnchor) ? selectedDiffCommentAnchor : anchors[0]
+		const currentRowIndex = Math.max(0, currentAnchor ? rows.indexOf(currentAnchor.renderLine) : 0)
+		const nextRow = rows[Math.max(0, Math.min(rows.length - 1, currentRowIndex + delta))]
+		if (nextRow === undefined) return
+		const nextAnchor = anchors.find((anchor) => anchor.renderLine === nextRow && anchor.side === currentAnchor?.side)
+			?? anchors.find((anchor) => anchor.renderLine === nextRow)
+		if (!nextAnchor) return
+		if (options.preserveViewportRow) {
+			const scroll = diffScrollRef.current
+			if (scroll && currentAnchor) {
+				const maxScreenOffset = Math.max(DIFF_STICKY_HEADER_LINES, scroll.viewport.height - 2)
+				const screenOffset = Math.max(DIFF_STICKY_HEADER_LINES, Math.min(maxScreenOffset, currentAnchor.renderLine - scroll.scrollTop))
+				const maxScrollTop = Math.max(0, scroll.scrollHeight - scroll.viewport.height)
+				const nextTop = Math.max(0, Math.min(maxScrollTop, nextAnchor.renderLine - screenOffset))
+				suppressNextDiffCommentScrollRef.current = true
+				scroll.scrollTo({ x: 0, y: nextTop })
+				syncDiffScrollState()
+			}
+		}
+		setDiffCommentAnchorIndex(diffCommentAnchors.indexOf(nextAnchor))
 	}
 
-	const moveDiffCommentAnchor = (delta: number) => {
-		if (diffCommentAnchors.length === 0) return
-		const currentAnchor = selectedDiffCommentAnchor ?? diffCommentAnchors[0]
-		const currentRowIndex = Math.max(0, currentAnchor ? diffCommentRows.indexOf(currentAnchor.renderLine) : 0)
-		const nextRow = diffCommentRows[Math.max(0, Math.min(diffCommentRows.length - 1, currentRowIndex + delta))]
-		if (nextRow === undefined) return
-		const nextAnchor = diffCommentAnchors.find((anchor) => anchor.renderLine === nextRow && anchor.side === currentAnchor?.side)
-			?? diffCommentAnchors.find((anchor) => anchor.renderLine === nextRow)
+	const moveDiffCommentToBoundary = (boundary: "first" | "last") => {
+		const anchors = navigableDiffCommentAnchors()
+		const nextAnchor = boundary === "first" ? anchors[0] : anchors[anchors.length - 1]
 		if (!nextAnchor) return
 		setDiffCommentAnchorIndex(diffCommentAnchors.indexOf(nextAnchor))
+		setDiffFileIndex(nextAnchor.fileIndex)
+	}
+
+	const alignSelectedDiffCommentAnchor = (position: "top" | "center" | "bottom") => {
+		if (!selectedDiffCommentAnchor) return
+		const scroll = diffScrollRef.current
+		if (!scroll) return
+		const viewportHeight = Math.max(1, scroll.viewport.height)
+		const offset = position === "top"
+			? DIFF_STICKY_HEADER_LINES
+			: position === "center"
+				? Math.max(DIFF_STICKY_HEADER_LINES, Math.floor(viewportHeight / 2))
+				: Math.max(DIFF_STICKY_HEADER_LINES, viewportHeight - 2)
+		const maxScrollTop = Math.max(0, scroll.scrollHeight - viewportHeight)
+		const nextTop = Math.max(0, Math.min(maxScrollTop, selectedDiffCommentAnchor.renderLine - offset))
+		scroll.scrollTo({ x: 0, y: nextTop })
+		syncDiffScrollState()
 	}
 
 	const selectDiffCommentSide = (side: DiffCommentSide) => {
 		if (!selectedDiffCommentAnchor) return
 		const nextAnchor = diffCommentAnchors.find((anchor) => anchor.renderLine === selectedDiffCommentAnchor.renderLine && anchor.side === side)
 		if (!nextAnchor) return
+		setDiffCommentRangeStartIndex(null)
 		setDiffCommentAnchorIndex(diffCommentAnchors.indexOf(nextAnchor))
 	}
 
@@ -1227,9 +1340,11 @@ export const App = () => {
 		const nextAnchor = (side ? lineAnchors.find((anchor) => anchor.side === side) : undefined) ?? lineAnchors[0]
 		if (!nextAnchor) return
 		suppressNextDiffCommentScrollRef.current = true
+		if (diffCommentRangeStartAnchor && !sameDiffCommentTarget(diffCommentRangeStartAnchor, nextAnchor)) {
+			setDiffCommentRangeStartIndex(null)
+		}
 		setDiffCommentAnchorIndex(diffCommentAnchors.indexOf(nextAnchor))
 		setDiffFileIndex(nextAnchor.fileIndex)
-		setDiffCommentMode(true)
 	}
 
 	const editComment = (transform: (state: CommentEditorValue) => CommentEditorValue) => {
@@ -1250,6 +1365,39 @@ export const App = () => {
 		setCommentThreadModal({ scrollOffset: 0 })
 	}
 
+	const openSelectedDiffComment = () => {
+		if (diffCommentRangeActive) {
+			openDiffCommentModal()
+			return
+		}
+		if (selectedDiffCommentThread.length > 0) openDiffCommentThreadModal()
+		else openDiffCommentModal()
+	}
+
+	const toggleDiffCommentRange = () => {
+		if (!selectedDiffCommentAnchor) return
+		setDiffCommentRangeStartIndex((current) => current === null ? selectedDiffCommentAnchorIndex : null)
+	}
+
+	const moveDiffCommentThread = (delta: 1 | -1) => {
+		if (diffCommentThreadAnchors.length === 0) {
+			flashNotice("No diff comments")
+			return
+		}
+		const currentIndex = selectedDiffCommentAnchor
+			? diffCommentThreadAnchors.findIndex((anchor) => diffCommentLocationKey(anchor) === diffCommentLocationKey(selectedDiffCommentAnchor))
+			: -1
+		const nextAnchor = currentIndex >= 0
+			? diffCommentThreadAnchors[(currentIndex + delta + diffCommentThreadAnchors.length) % diffCommentThreadAnchors.length]
+			: delta > 0
+				? diffCommentThreadAnchors.find((anchor) => !selectedDiffCommentAnchor || anchor.renderLine > selectedDiffCommentAnchor.renderLine) ?? diffCommentThreadAnchors[0]
+				: [...diffCommentThreadAnchors].reverse().find((anchor) => !selectedDiffCommentAnchor || anchor.renderLine < selectedDiffCommentAnchor.renderLine) ?? diffCommentThreadAnchors[diffCommentThreadAnchors.length - 1]
+		if (!nextAnchor) return
+		setDiffCommentRangeStartIndex(null)
+		setDiffCommentAnchorIndex(diffCommentAnchors.indexOf(nextAnchor))
+		setDiffFileIndex(nextAnchor.fileIndex)
+	}
+
 	const submitDiffComment = () => {
 		if (!selectedPullRequest || !selectedDiffCommentAnchor) return
 		const body = commentModal.body.trim()
@@ -1258,8 +1406,9 @@ export const App = () => {
 			return
 		}
 
-		const threadKey = selectedDiffCommentThreadKey
-		const target = selectedDiffCommentAnchor
+		const targetRange = selectedDiffCommentRange
+		const target = targetRange?.end ?? selectedDiffCommentAnchor
+		const threadKey = selectedDiffKey ? diffCommentThreadMapKey(selectedDiffKey, target) : null
 		const optimisticComment = {
 			id: `local:${Date.now()}`,
 			path: target.path,
@@ -1270,6 +1419,9 @@ export const App = () => {
 			createdAt: new Date(),
 			url: null,
 		} satisfies PullRequestReviewComment
+		const rangeInput = targetRange && targetRange.start.line !== targetRange.end.line
+			? { startLine: targetRange.start.line, startSide: targetRange.start.side }
+			: {}
 		const input = {
 			repository: selectedPullRequest.repository,
 			number: selectedPullRequest.number,
@@ -1278,6 +1430,7 @@ export const App = () => {
 			line: target.line,
 			side: target.side,
 			body,
+			...rangeInput,
 		} satisfies CreatePullRequestCommentInput
 
 		if (threadKey) {
@@ -1287,6 +1440,7 @@ export const App = () => {
 			}))
 		}
 		closeActiveModal()
+		setDiffCommentRangeStartIndex(null)
 		flashNotice(`Commenting on ${target.path}:${target.line}`)
 		void createPullRequestComment(input).then((comment) => {
 			if (threadKey) {
@@ -1649,8 +1803,10 @@ export const App = () => {
 		diffWrapMode,
 		readyDiffFileCount: readyDiffFiles.length,
 		diffFileIndex,
-		diffCommentMode,
-		selectedDiffCommentAnchorLabel: selectedDiffCommentAnchor ? `${selectedDiffCommentAnchor.path}:${selectedDiffCommentAnchor.line}` : null,
+		diffRangeActive: diffCommentRangeActive,
+		selectedDiffCommentAnchorLabel: selectedDiffCommentLabel,
+		selectedDiffCommentThreadCount: selectedDiffCommentThread.length,
+		hasDiffCommentThreads: diffCommentThreadAnchors.length > 0,
 		actions: {
 			openCommandPalette,
 			refreshPullRequests,
@@ -1678,7 +1834,7 @@ export const App = () => {
 			openDiffView,
 			closeDiffView: () => {
 				setDiffFullView(false)
-				setDiffCommentMode(false)
+				setDiffCommentRangeStartIndex(null)
 			},
 			reloadDiff: () => {
 				if (!selectedPullRequest) return
@@ -1688,10 +1844,9 @@ export const App = () => {
 			toggleDiffRenderView: () => setDiffRenderView((current) => current === "unified" ? "split" : "unified"),
 			toggleDiffWrapMode: () => setDiffWrapMode((current) => current === "none" ? "word" : "none"),
 			jumpDiffFile,
-			toggleDiffCommentMode: () => {
-				if (diffCommentMode) setDiffCommentMode(false)
-				else enterDiffCommentMode()
-			},
+			openSelectedDiffComment,
+			toggleDiffCommentRange,
+			moveDiffCommentThread,
 			openDiffCommentModal,
 			togglePullRequestDraftStatus: toggleSelectedPullRequestDraftStatus,
 			openLabelModal,
@@ -1734,23 +1889,20 @@ export const App = () => {
 	})()
 	// Dynamic commands always pin to the top of the palette; they came directly from the
 	// user's typed input so they shouldn't be filtered by fuzzy score against themselves.
+	const staticPaletteCommands = commandPaletteActive
+		? filterCommands(appCommands.filter((command) => command.id !== "command.open" && commandEnabled(command)), commandPalette.query)
+		: []
 	const commandPaletteCommands = commandPaletteActive
 		? [
 			...dynamicPaletteCommands,
-			...sortCommandsByScope(filterCommands(appCommands.filter((command) => command.id !== "command.open" && commandEnabled(command)), commandPalette.query)),
+			...(commandPalette.query.trim().length > 0 ? staticPaletteCommands : sortCommandsByScope(staticPaletteCommands)),
 		]
 		: []
 	const selectedCommandIndex = clampCommandIndex(commandPalette.selectedIndex, commandPaletteCommands)
 	const selectedCommand = commandPaletteCommands[selectedCommandIndex] ?? null
 
-	const globalLayerActive = !commandPaletteActive
-		&& !openRepositoryModalActive
-		&& !labelModalActive
-		&& !commentModalActive
-		&& !commentThreadModalActive
-		&& !closeModalActive
-		&& !mergeModalActive
-		&& !themeModalActive
+	const noModalActive = activeModal._tag === "None"
+	const globalLayerActive = noModalActive
 		&& !diffFullView
 		&& !detailFullView
 		&& !filterMode
@@ -1910,40 +2062,25 @@ export const App = () => {
 	})
 
 	useScopedBindings({
-		when: diffFullView && !diffCommentMode,
+		when: diffFullView && noModalActive,
 		bindings: {
-			...scrollBindings(scrollDiffBy, halfPage, scrollDiffTo),
-			escape: "diff.close",
-			return: "diff.close",
-			c: "diff.comment-mode",
-			v: "diff.toggle-view",
+			escape: () => {
+				if (diffCommentRangeActive) setDiffCommentRangeStartIndex(null)
+				else runCommandById("diff.close")
+			},
+			return: openSelectedDiffComment,
+			a: "diff.add-comment",
+			v: "diff.toggle-range",
+			"shift+v": "diff.toggle-view",
 			w: "diff.toggle-wrap",
 			r: "diff.reload",
-			"]": "diff.next-file",
-			right: "diff.next-file",
-			l: "diff.next-file",
-			"[": "diff.previous-file",
-			left: "diff.previous-file",
-			h: "diff.previous-file",
-			o: "pull.open-browser",
-		},
-	})
-
-	useScopedBindings({
-		when: diffFullView && diffCommentMode,
-		bindings: {
-			escape: () => setDiffCommentMode(false),
-			c: "diff.comment-mode",
-			return: () => {
-				if (selectedDiffCommentThread.length > 0) openDiffCommentThreadModal()
-				else openDiffCommentModal()
-			},
-			a: "diff.add-comment",
-			pageup: () => moveDiffCommentAnchor(-halfPage),
-			"ctrl+u": () => moveDiffCommentAnchor(-halfPage),
-			pagedown: () => moveDiffCommentAnchor(halfPage),
-			"ctrl+d": () => moveDiffCommentAnchor(halfPage),
-			"ctrl+v": () => moveDiffCommentAnchor(halfPage),
+			n: "diff.next-thread",
+			p: "diff.previous-thread",
+			pageup: () => moveDiffCommentAnchor(-halfPage, { preserveViewportRow: true }),
+			"ctrl+u": () => moveDiffCommentAnchor(-halfPage, { preserveViewportRow: true }),
+			pagedown: () => moveDiffCommentAnchor(halfPage, { preserveViewportRow: true }),
+			"ctrl+d": () => moveDiffCommentAnchor(halfPage, { preserveViewportRow: true }),
+			"ctrl+v": () => moveDiffCommentAnchor(halfPage, { preserveViewportRow: true }),
 			"shift+up": () => moveDiffCommentAnchor(-8),
 			"shift+k": () => moveDiffCommentAnchor(-8),
 			"meta+up": () => moveDiffCommentAnchor(-8),
@@ -1952,6 +2089,10 @@ export const App = () => {
 			"shift+j": () => moveDiffCommentAnchor(8),
 			"meta+down": () => moveDiffCommentAnchor(8),
 			"meta+j": () => moveDiffCommentAnchor(8),
+			...countedVerticalBindings(
+				(count) => moveDiffCommentAnchor(-count),
+				(count) => moveDiffCommentAnchor(count),
+			),
 			up: () => moveDiffCommentAnchor(-1),
 			k: () => moveDiffCommentAnchor(-1),
 			down: () => moveDiffCommentAnchor(1),
@@ -1962,6 +2103,12 @@ export const App = () => {
 			l: () => selectDiffCommentSide("RIGHT"),
 			"]": "diff.next-file",
 			"[": "diff.previous-file",
+			"g g": () => moveDiffCommentToBoundary("first"),
+			"shift+g": () => moveDiffCommentToBoundary("last"),
+			"z z": () => alignSelectedDiffCommentAnchor("center"),
+			"z t": () => alignSelectedDiffCommentAnchor("top"),
+			"z b": () => alignSelectedDiffCommentAnchor("bottom"),
+			o: "pull.open-browser",
 		},
 	})
 
@@ -1974,7 +2121,7 @@ export const App = () => {
 		setDetailScrollOffset(y)
 	}
 	useScopedBindings({
-		when: detailFullView,
+		when: detailFullView && noModalActive,
 		bindings: {
 			...scrollBindings(scrollDetailFullViewBy, halfPage, scrollDetailFullViewTo),
 			escape: "detail.close",
@@ -2009,6 +2156,14 @@ export const App = () => {
 		if (visiblePullRequests.length === 0) return 0
 		return Math.max(0, Math.min(visiblePullRequests.length - 1, current + delta))
 	})
+	const stepSelectedDown = (count = 1) => {
+		if (visiblePullRequests.length === 0) return
+		if (selectedIndex + count >= visiblePullRequests.length && hasMorePullRequests) {
+			loadMorePullRequests()
+		}
+		stepSelected(count)
+	}
+	const stepSelectedUp = (count = 1) => stepSelected(-count)
 	const stepSelectedDownWithLoadMore = () => {
 		if (visiblePullRequests.length > 0 && selectedIndex >= visiblePullRequests.length - 1 && hasMorePullRequests) {
 			loadMorePullRequests()
@@ -2056,6 +2211,7 @@ export const App = () => {
 			"shift+j": moveSelectedToNextGroup,
 			"ctrl+u": () => stepSelected(-halfPage),
 			"ctrl+d": () => stepSelected(halfPage),
+			...countedVerticalBindings(stepSelectedUp, stepSelectedDown),
 			up: stepSelectedUpWrap,
 			k: stepSelectedUpWrap,
 			down: stepSelectedDownWithLoadMore,
@@ -2136,19 +2292,10 @@ export const App = () => {
 
 	const fullscreenContentWidth = Math.max(24, contentWidth - 2)
 	const fullscreenBodyLines = Math.max(8, terminalHeight - 8)
-	const wideFullscreenDetailScrollable = getDetailsPaneHeight({
-		pullRequest: selectedPullRequest,
-		contentWidth: fullscreenContentWidth,
-		bodyLines: DETAIL_BODY_SCROLL_LIMIT,
-		paneWidth: contentWidth,
-		showChecks: true,
-	}) > wideBodyHeight
-	const narrowFullscreenDetailScrollable = getDetailsPaneHeight({
-		pullRequest: selectedPullRequest,
-		contentWidth: fullscreenContentWidth,
-		bodyLines: DETAIL_BODY_SCROLL_LIMIT,
-		paneWidth: contentWidth,
-	}) > wideBodyHeight
+	const fullscreenDetailHeaderHeight = getDetailHeaderHeight(selectedPullRequest, contentWidth, isWideLayout)
+	const fullscreenDetailBodyViewportHeight = Math.max(1, wideBodyHeight - fullscreenDetailHeaderHeight)
+	const fullscreenDetailBodyHeight = getScrollableDetailBodyHeight(selectedPullRequest, fullscreenContentWidth)
+	const fullscreenDetailBodyScrollable = fullscreenDetailBodyHeight > fullscreenDetailBodyViewportHeight
 	const wideDetailHeaderHeight = getDetailHeaderHeight(selectedPullRequest, rightPaneWidth, true)
 	const wideDetailBodyViewportHeight = Math.max(1, wideBodyHeight - wideDetailHeaderHeight)
 	const wideDetailBodyHeight = getScrollableDetailBodyHeight(selectedPullRequest, rightContentWidth)
@@ -2165,6 +2312,7 @@ export const App = () => {
 		loadedCount: loadedPullRequestCount,
 		hasMore: hasMorePullRequests,
 		isLoadingMore: isLoadingMorePullRequests,
+		loadingIndicator,
 		onSelectPullRequest: selectPullRequestByUrl,
 	} as const
 
@@ -2193,8 +2341,8 @@ export const App = () => {
 	const commentThreadModalHeight = commentThreadLayout.height
 	const commentThreadModalLeft = commentThreadLayout.left
 	const commentThreadModalTop = commentThreadLayout.top
-	const commentAnchorLabel = selectedDiffCommentAnchor
-		? `${selectedDiffCommentAnchor.path}:${selectedDiffCommentAnchor.line} ${selectedDiffCommentAnchor.side === "RIGHT" ? "right" : "left"}`
+	const commentAnchorLabel = selectedDiffCommentAnchor && selectedDiffCommentLabel
+		? `${selectedDiffCommentAnchor.path} ${selectedDiffCommentLabel}`
 		: "No diff line selected"
 	const mergeLayout = sizedModal(46, 68, 12, 16)
 	const mergeModalWidth = mergeLayout.width
@@ -2242,8 +2390,8 @@ export const App = () => {
 					loadingIndicator={loadingIndicator}
 					scrollRef={diffScrollRef}
 					setDiffRef={setDiffRenderableRef}
-					commentMode={diffCommentMode}
 					selectedCommentAnchor={selectedDiffCommentAnchor}
+					selectedCommentLabel={selectedDiffCommentLabel}
 					selectedCommentThread={selectedDiffCommentThread}
 					onSelectCommentLine={selectDiffCommentLine}
 					themeId={themeId}
@@ -2255,20 +2403,16 @@ export const App = () => {
 				</box>
 			) : isWideLayout && detailFullView ? (
 				<box flexGrow={1} flexDirection="column">
-					<scrollbox ref={detailScrollRef} focused flexGrow={1} verticalScrollbarOptions={{ visible: wideFullscreenDetailScrollable }}>
-						<DetailsPane
-							pullRequest={selectedPullRequest}
-							viewerUsername={username}
-							contentWidth={fullscreenContentWidth}
-							bodyLines={fullscreenBodyLines}
-							bodyLineLimit={DETAIL_BODY_SCROLL_LIMIT}
-							paneWidth={contentWidth}
-							showChecks
-							placeholderContent={detailPlaceholderContent}
-							loadingIndicator={loadingIndicator}
-							themeId={themeId}
-						/>
-					</scrollbox>
+					{selectedPullRequest ? (
+						<>
+							<DetailHeader pullRequest={selectedPullRequest} viewerUsername={username} contentWidth={fullscreenContentWidth} paneWidth={contentWidth} showChecks />
+							<scrollbox ref={detailScrollRef} focused flexGrow={1} verticalScrollbarOptions={{ visible: fullscreenDetailBodyScrollable }}>
+								<DetailBody pullRequest={selectedPullRequest} contentWidth={fullscreenContentWidth} bodyLines={fullscreenBodyLines} bodyLineLimit={DETAIL_BODY_SCROLL_LIMIT} loadingIndicator={loadingIndicator} themeId={themeId} />
+							</scrollbox>
+						</>
+					) : (
+						<DetailsPane pullRequest={null} viewerUsername={username} contentWidth={fullscreenContentWidth} paneWidth={contentWidth} placeholderContent={detailPlaceholderContent} loadingIndicator={loadingIndicator} themeId={themeId} />
+					)}
 				</box>
 			) : isWideLayout ? (
 			<box key="wide-main" flexGrow={1} flexDirection="row">
@@ -2300,19 +2444,16 @@ export const App = () => {
 				</box>
 			) : detailFullView ? (
 				<box flexGrow={1} flexDirection="column">
-					<scrollbox ref={detailScrollRef} focused flexGrow={1} verticalScrollbarOptions={{ visible: narrowFullscreenDetailScrollable }}>
-						<DetailsPane
-							pullRequest={selectedPullRequest}
-							viewerUsername={username}
-							contentWidth={fullscreenContentWidth}
-							bodyLines={fullscreenBodyLines}
-							bodyLineLimit={DETAIL_BODY_SCROLL_LIMIT}
-							paneWidth={contentWidth}
-							placeholderContent={detailPlaceholderContent}
-							loadingIndicator={loadingIndicator}
-							themeId={themeId}
-						/>
-					</scrollbox>
+					{selectedPullRequest ? (
+						<>
+							<DetailHeader pullRequest={selectedPullRequest} viewerUsername={username} contentWidth={fullscreenContentWidth} paneWidth={contentWidth} />
+							<scrollbox ref={detailScrollRef} focused flexGrow={1} verticalScrollbarOptions={{ visible: fullscreenDetailBodyScrollable }}>
+								<DetailBody pullRequest={selectedPullRequest} contentWidth={fullscreenContentWidth} bodyLines={fullscreenBodyLines} bodyLineLimit={DETAIL_BODY_SCROLL_LIMIT} loadingIndicator={loadingIndicator} themeId={themeId} />
+							</scrollbox>
+						</>
+					) : (
+						<DetailsPane pullRequest={null} viewerUsername={username} contentWidth={fullscreenContentWidth} paneWidth={contentWidth} placeholderContent={detailPlaceholderContent} loadingIndicator={loadingIndicator} themeId={themeId} />
+					)}
 				</box>
 			) : (
 				<box key="narrow-main" height={wideBodyHeight} flexDirection="column">
@@ -2342,7 +2483,7 @@ export const App = () => {
 						showFilterClear={filterMode || filterQuery.length > 0}
 						detailFullView={detailFullView}
 						diffFullView={diffFullView}
-						diffCommentMode={diffCommentMode}
+						diffRangeActive={diffCommentRangeActive}
 						hasSelection={selectedPullRequest !== null}
 						canCloseSelection={selectedPullRequest?.state === "open"}
 						hasError={pullRequestStatus === "error"}

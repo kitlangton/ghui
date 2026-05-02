@@ -21,7 +21,9 @@ interface AppCommandActions {
 	readonly toggleDiffRenderView: () => void
 	readonly toggleDiffWrapMode: () => void
 	readonly jumpDiffFile: (delta: 1 | -1) => void
-	readonly toggleDiffCommentMode: () => void
+	readonly openSelectedDiffComment: () => void
+	readonly toggleDiffCommentRange: () => void
+	readonly moveDiffCommentThread: (delta: 1 | -1) => void
 	readonly openDiffCommentModal: () => void
 	readonly togglePullRequestDraftStatus: () => void
 	readonly openLabelModal: () => void
@@ -50,8 +52,10 @@ interface BuildAppCommandsInput {
 	readonly diffWrapMode: DiffWrapMode
 	readonly readyDiffFileCount: number
 	readonly diffFileIndex: number
-	readonly diffCommentMode: boolean
+	readonly diffRangeActive: boolean
 	readonly selectedDiffCommentAnchorLabel: string | null
+	readonly selectedDiffCommentThreadCount: number
+	readonly hasDiffCommentThreads: boolean
 	readonly actions: AppCommandActions
 }
 
@@ -73,8 +77,10 @@ export const buildAppCommands = ({
 	diffWrapMode,
 	readyDiffFileCount,
 	diffFileIndex,
-	diffCommentMode,
+	diffRangeActive,
 	selectedDiffCommentAnchorLabel,
+	selectedDiffCommentThreadCount,
+	hasDiffCommentThreads,
 	actions,
 }: BuildAppCommandsInput): readonly AppCommand[] => {
 	const selectedPullRequestLabel = selectedPullRequest ? `#${selectedPullRequest.number} ${selectedPullRequest.repository}` : "No pull request selected"
@@ -84,6 +90,12 @@ export const buildAppCommands = ({
 		? diffReady ? null : "Load the diff before running this command."
 		: noPullRequestReason
 	const diffOpenReadyReason = diffFullView ? diffReadyReason : "Open a diff first."
+	const selectedDiffLineReason = diffFullView && diffReady
+		? selectedDiffCommentAnchorLabel ? null : "No diff line selected."
+		: diffOpenReadyReason
+	const diffThreadReason = diffFullView && diffReady
+		? hasDiffCommentThreads ? null : "No diff comments loaded."
+		: diffOpenReadyReason
 	const loadMoreDisabledReason = isLoadingMorePullRequests
 		? "Already loading more pull requests."
 		: hasMorePullRequests ? null : "No more pull requests loaded by this view."
@@ -219,7 +231,7 @@ export const buildAppCommands = ({
 			title: "Toggle diff split/unified view",
 			scope: "Diff",
 			subtitle: effectiveDiffRenderView === "split" ? "Switch to unified view" : "Switch to split view",
-			shortcut: "v",
+			shortcut: "shift-v",
 			disabledReason: diffFullView ? null : "Open a diff first.",
 			run: actions.toggleDiffRenderView,
 		}),
@@ -251,14 +263,44 @@ export const buildAppCommands = ({
 			run: () => actions.jumpDiffFile(-1),
 		}),
 		defineCommand({
-			id: "diff.comment-mode",
-			title: diffCommentMode ? "Exit diff comment mode" : "Enter diff comment mode",
+			id: "diff.open-comment-target",
+			title: selectedDiffCommentThreadCount > 0 ? "Open selected diff thread" : "Comment on selected diff line",
 			scope: "Diff",
-			subtitle: diffCommentMode ? "Return to diff scrolling" : "Choose a line to comment on",
-			shortcut: "c",
-			disabledReason: diffFullView && diffReady ? null : diffOpenReadyReason,
-			keywords: ["review", "comment", "line"],
-			run: actions.toggleDiffCommentMode,
+			subtitle: selectedDiffCommentAnchorLabel ?? "No diff line selected",
+			shortcut: "enter",
+			disabledReason: selectedDiffLineReason,
+			keywords: ["review", "comment", "thread", "line"],
+			run: actions.openSelectedDiffComment,
+		}),
+		defineCommand({
+			id: "diff.toggle-range",
+			title: diffRangeActive ? "Clear diff comment range" : "Start diff comment range",
+			scope: "Diff",
+			subtitle: selectedDiffCommentAnchorLabel ?? "No diff line selected",
+			shortcut: "v",
+			disabledReason: selectedDiffLineReason,
+			keywords: ["review", "comment", "range", "visual"],
+			run: actions.toggleDiffCommentRange,
+		}),
+		defineCommand({
+			id: "diff.next-thread",
+			title: "Next diff thread",
+			scope: "Diff",
+			subtitle: hasDiffCommentThreads ? "Jump to the next commented line" : "No diff comments loaded",
+			shortcut: "n",
+			disabledReason: diffThreadReason,
+			keywords: ["review", "comment", "thread"],
+			run: () => actions.moveDiffCommentThread(1),
+		}),
+		defineCommand({
+			id: "diff.previous-thread",
+			title: "Previous diff thread",
+			scope: "Diff",
+			subtitle: hasDiffCommentThreads ? "Jump to the previous commented line" : "No diff comments loaded",
+			shortcut: "p",
+			disabledReason: diffThreadReason,
+			keywords: ["review", "comment", "thread"],
+			run: () => actions.moveDiffCommentThread(-1),
 		}),
 		defineCommand({
 			id: "diff.add-comment",
@@ -266,7 +308,7 @@ export const buildAppCommands = ({
 			scope: "Diff",
 			subtitle: selectedDiffCommentAnchorLabel ?? "No diff line selected",
 			shortcut: "a",
-			disabledReason: diffCommentMode && selectedDiffCommentAnchorLabel ? null : "Enter diff comment mode and select a line first.",
+			disabledReason: selectedDiffLineReason,
 			keywords: ["review", "reply"],
 			run: actions.openDiffCommentModal,
 		}),

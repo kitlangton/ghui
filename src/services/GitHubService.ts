@@ -663,6 +663,7 @@ export class GitHubService extends Context.Service<GitHubService, {
 					"-f", `path=${input.path}`,
 					"-F", `line=${input.line}`,
 					"-f", `side=${input.side}`,
+					...(input.startLine === undefined ? [] : ["-F", `start_line=${input.startLine}`, "-f", `start_side=${input.startSide ?? input.side}`]),
 				])
 				return parsePullRequestComment(response) ?? fallbackCreatedComment(input)
 			})

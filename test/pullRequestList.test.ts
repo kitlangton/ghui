@@ -52,8 +52,9 @@ describe("buildPullRequestListRows", () => {
 			loadedCount: 50,
 			hasMore: true,
 			isLoadingMore: true,
+			loadingIndicator: "⠋",
 		})
 
-		expect(rows.at(-1)).toEqual({ _tag: "load-more", text: "- Loading more pull requests... (50 loaded)" })
+		expect(rows.at(-1)).toEqual({ _tag: "load-more", text: "⠋ Loading more pull requests... (50 loaded)" })
 	})
 })

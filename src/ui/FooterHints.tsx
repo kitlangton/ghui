@@ -15,7 +15,7 @@ interface HintsContext {
 	readonly showFilterClear: boolean
 	readonly detailFullView: boolean
 	readonly diffFullView: boolean
-	readonly diffCommentMode: boolean
+	readonly diffRangeActive: boolean
 	readonly hasSelection: boolean
 	readonly canCloseSelection: boolean
 	readonly hasError: boolean
@@ -33,26 +33,17 @@ const filterEditingHints: readonly HintItem[] = [
 	{ key: "ctrl-w", label: "word" },
 ]
 
-const diffCommentModeHints: readonly HintItem[] = [
-	{ key: "↑↓", label: "line" },
-	{ key: "pgup/pgdn", label: "jump" },
-	{ key: "←→", label: "side" },
-	{ key: "enter", label: "open" },
-	{ key: "a", label: "comment" },
-	{ key: "c", label: "done" },
+const diffViewHints = (ctx: HintsContext): readonly HintItem[] => [
+	{ key: "esc", label: "back" },
+	{ key: "↑↓", label: ctx.diffRangeActive ? "range" : "line" },
+	{ key: "enter", label: ctx.diffRangeActive ? "comment" : "open" },
+	{ key: "v", label: ctx.diffRangeActive ? "clear" : "range" },
+	{ key: "n/p", label: "threads" },
 	{ key: "[]", label: "files" },
-	{ key: "esc", label: "back" },
-]
-
-const diffViewHints: readonly HintItem[] = [
-	{ key: "esc", label: "back" },
-	{ key: "v", label: "view" },
+	{ key: "V", label: "view" },
 	{ key: "w", label: "wrap" },
-	{ key: "c", label: "comment" },
-	{ key: "[]", label: "files" },
 	{ key: "r", label: "reload" },
 	{ key: "o", label: "open" },
-	{ key: "q", label: "quit" },
 ]
 
 const detailFullViewHints = (ctx: HintsContext): readonly HintItem[] => [
@@ -91,7 +82,7 @@ const defaultHints = (ctx: HintsContext): readonly HintItem[] => {
 
 const footerHints = (ctx: HintsContext): readonly HintItem[] => {
 	if (ctx.filterEditing) return filterEditingHints
-	if (ctx.diffFullView) return ctx.diffCommentMode ? diffCommentModeHints : diffViewHints
+	if (ctx.diffFullView) return diffViewHints(ctx)
 	if (ctx.detailFullView) return detailFullViewHints(ctx)
 	return defaultHints(ctx)
 }

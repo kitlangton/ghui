@@ -2,7 +2,7 @@ import type { DiffRenderable, MouseEvent, ScrollBoxRenderable } from "@opentui/c
 import { useMemo, type Ref } from "react"
 import type { DiffCommentSide, PullRequestItem, PullRequestReviewComment } from "../domain.js"
 import { colors, type ThemeId } from "./colors.js"
-import { createDiffSyntaxStyle, diffFileStats, diffFileStatsText, diffStatText, stackedDiffFileAtLine, type DiffFileStats, type DiffView, type DiffWrapMode, type PullRequestDiffState, type StackedDiffCommentAnchor, type StackedDiffFilePatch } from "./diff.js"
+import { createDiffSyntaxStyle, diffCommentAnchorLabel, diffFileStats, diffFileStatsText, diffStatText, stackedDiffFileAtLine, type DiffFileStats, type DiffView, type DiffWrapMode, type PullRequestDiffState, type StackedDiffCommentAnchor, type StackedDiffFilePatch } from "./diff.js"
 import { LoadingPane, StatusCard } from "./DetailsPane.js"
 import { DiffStats } from "./diffStats.js"
 import { Divider, fitCell, PaddedRow, PlainLine, TextLine } from "./primitives.js"
@@ -65,6 +65,11 @@ const FileHeader = ({
 	)
 }
 
+const firstCommentBodyLine = (body: string) => {
+	const newlineIndex = body.indexOf("\n")
+	return (newlineIndex >= 0 ? body.slice(0, newlineIndex) : body).trim() || "(empty comment)"
+}
+
 export const PullRequestDiffPane = ({
 	pullRequest,
 	diffState,
@@ -77,8 +82,8 @@ export const PullRequestDiffPane = ({
 	loadingIndicator,
 	scrollRef,
 	setDiffRef,
-	commentMode,
 	selectedCommentAnchor,
+	selectedCommentLabel,
 	selectedCommentThread,
 	onSelectCommentLine,
 	themeId,
@@ -94,8 +99,8 @@ export const PullRequestDiffPane = ({
 	loadingIndicator: string
 	scrollRef: Ref<ScrollBoxRenderable>
 	setDiffRef: (index: number, diff: DiffRenderable | null) => void
-	commentMode: boolean
 	selectedCommentAnchor: StackedDiffCommentAnchor | null
+	selectedCommentLabel: string | null
 	selectedCommentThread: readonly PullRequestReviewComment[]
 	onSelectCommentLine: (renderLine: number, side: DiffCommentSide | null) => void
 	themeId: ThemeId
@@ -134,13 +139,14 @@ export const PullRequestDiffPane = ({
 	}
 
 	const selectedSideLabel = selectedCommentAnchor?.side === "RIGHT" ? "right" : selectedCommentAnchor?.side === "LEFT" ? "left" : null
-	const commentPeek = commentMode && selectedCommentAnchor && selectedCommentThread.length > 0
+	const hasSelectedCommentAnchor = selectedCommentAnchor !== null
+	const commentPeek = hasSelectedCommentAnchor && selectedCommentThread.length > 0
 		? selectedCommentThread[selectedCommentThread.length - 1]!
 		: null
 	const commentPeekCount = selectedCommentThread.length === 1 ? "1 comment" : `${selectedCommentThread.length} comments`
-	const commentPeekBody = commentPeek?.body.split("\n")[0]?.trim() || "(empty comment)"
+	const commentPeekBody = commentPeek ? firstCommentBodyLine(commentPeek.body) : "(empty comment)"
 	const commentPeekMeta = commentPeek && selectedCommentAnchor
-		? `${selectedSideLabel ?? "line"} ${selectedCommentAnchor.side === "RIGHT" ? "+" : "-"}${selectedCommentAnchor.line}  ${commentPeek.author}  ${commentPeekCount}  enter thread  a comment`
+		? `${selectedCommentLabel ?? selectedSideLabel ?? "line"}  ${commentPeek.author}  ${commentPeekCount}  enter thread`
 		: ""
 	const stickyScrollTop = Math.max(0, Math.floor(scrollTop))
 	const stickyFile = stackedDiffFileAtLine(stackedFiles, stickyScrollTop) ?? stackedFiles[0]
@@ -149,10 +155,9 @@ export const PullRequestDiffPane = ({
 	const incomingHeaderDistance = incomingStickyFile ? incomingStickyFile.headerLine - stickyScrollTop : Number.POSITIVE_INFINITY
 	const incomingFile = incomingHeaderDistance === 1 ? incomingStickyFile : undefined
 	const stickyCommentLabelFor = (stackedFile: StackedDiffFilePatch | undefined) => {
-		if (!commentMode) return ""
-		if (!selectedCommentAnchor) return "  c no lines"
+		if (!selectedCommentAnchor) return "  no lines"
 		if (selectedCommentAnchor.fileIndex !== stackedFile?.index) return ""
-		return `  ${selectedCommentAnchor.side === "RIGHT" ? "right" : "left"} ${selectedCommentAnchor.side === "RIGHT" ? "+" : "-"}${selectedCommentAnchor.line}`
+		return `  ${selectedCommentLabel ?? diffCommentAnchorLabel(selectedCommentAnchor)}`
 	}
 	const stickyCommentColor = selectedCommentAnchor?.side === "LEFT" ? colors.status.failing : colors.status.passing
 	const handleDiffMouseDown = function (this: ScrollBoxRenderable, event: MouseEvent) {
@@ -172,7 +177,7 @@ export const PullRequestDiffPane = ({
 		<box height={height} flexDirection="column">
 			<DiffPaneHeader pullRequest={pullRequest} paneWidth={paneWidth} />
 			<Divider width={paneWidth} />
-			<scrollbox ref={scrollRef} focused={!commentMode} flexGrow={1} scrollY scrollX={false} onMouseDown={handleDiffMouseDown}>
+			<scrollbox ref={scrollRef} focused flexGrow={1} scrollY scrollX={false} onMouseDown={handleDiffMouseDown}>
 				{stackedFiles.map((stackedFile) => (
 					<box key={`${pullRequest.url}-${stackedFile.index}-${view}-${wrapMode}`} flexDirection="column" flexShrink={0}>
 						{stackedFile.index > 0 ? <Divider width={paneWidth} /> : null}

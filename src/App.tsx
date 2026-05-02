@@ -1829,6 +1829,34 @@ export const App = () => {
 		],
 	}), [])
 
+	// CommentThreadModal: scroll the thread, shortcut to compose a reply.
+	const commentThreadModalActiveRef = useRef(false)
+	commentThreadModalActiveRef.current = commentThreadModalActive
+	const commentThreadCtxRef = useRef({ openDiffCommentModal, setCommentThreadModal, halfPage })
+	commentThreadCtxRef.current = { openDiffCommentModal, setCommentThreadModal, halfPage }
+	const scrollCommentThread = (delta: number) => commentThreadCtxRef.current.setCommentThreadModal((current) => ({
+		...current,
+		scrollOffset: Math.max(0, current.scrollOffset + delta),
+	}))
+	useBindings(() => ({
+		enabled: () => commentThreadModalActiveRef.current,
+		bindings: [
+			{ key: "escape", cmd: () => closeActiveModalRef.current() },
+			{ key: "return", cmd: () => commentThreadCtxRef.current.openDiffCommentModal() },
+			{ key: "a", cmd: () => commentThreadCtxRef.current.openDiffCommentModal() },
+			{ key: "c", cmd: () => commentThreadCtxRef.current.openDiffCommentModal() },
+			{ key: "up", cmd: () => scrollCommentThread(-1) },
+			{ key: "k", cmd: () => scrollCommentThread(-1) },
+			{ key: "down", cmd: () => scrollCommentThread(1) },
+			{ key: "j", cmd: () => scrollCommentThread(1) },
+			{ key: "pageup", cmd: () => scrollCommentThread(-commentThreadCtxRef.current.halfPage) },
+			{ key: "ctrl+u", cmd: () => scrollCommentThread(-commentThreadCtxRef.current.halfPage) },
+			{ key: "pagedown", cmd: () => scrollCommentThread(commentThreadCtxRef.current.halfPage) },
+			{ key: "ctrl+d", cmd: () => scrollCommentThread(commentThreadCtxRef.current.halfPage) },
+			{ key: "ctrl+v", cmd: () => scrollCommentThread(commentThreadCtxRef.current.halfPage) },
+		],
+	}), [])
+
 	useKeyboard((key) => {
 		if (commandPaletteActive) {
 			if (key.name === "escape" || key.ctrl && key.name === "c") {
@@ -2030,33 +2058,6 @@ export const App = () => {
 			return
 		}
 
-		if (commentThreadModalActive) {
-			if (key.name === "escape") {
-				closeActiveModal()
-				return
-			}
-			if (key.name === "return" || key.name === "enter" || key.name === "a" || key.name === "c") {
-				openDiffCommentModal()
-				return
-			}
-			if (key.name === "up" || key.name === "k") {
-				setCommentThreadModal((current) => ({ ...current, scrollOffset: Math.max(0, current.scrollOffset - 1) }))
-				return
-			}
-			if (key.name === "down" || key.name === "j") {
-				setCommentThreadModal((current) => ({ ...current, scrollOffset: current.scrollOffset + 1 }))
-				return
-			}
-			if (key.name === "pageup" || key.ctrl && key.name === "u") {
-				setCommentThreadModal((current) => ({ ...current, scrollOffset: Math.max(0, current.scrollOffset - halfPage) }))
-				return
-			}
-			if (key.name === "pagedown" || key.ctrl && (key.name === "d" || key.name === "v")) {
-				setCommentThreadModal((current) => ({ ...current, scrollOffset: current.scrollOffset + halfPage }))
-				return
-			}
-			return
-		}
 
 
 

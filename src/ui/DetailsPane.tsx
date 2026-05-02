@@ -5,7 +5,7 @@ import type { CheckItem, PullRequestItem } from "../domain.js"
 import { colors, type ThemeId } from "./colors.js"
 import { diffStatText } from "./diff.js"
 import { DiffStats } from "./diffStats.js"
-import { centerCell, Divider, Filler, fitCell, PlainLine, TextLine } from "./primitives.js"
+import { centerCell, Divider, Filler, fitCell, PaddedRow, PlainLine, TextLine } from "./primitives.js"
 import { labelColor, labelTextColor, reviewLabel, shortRepoName, statusColor } from "./pullRequests.js"
 
 interface PreviewLine {
@@ -318,7 +318,7 @@ export const DetailHeader = ({
 
 	return (
 		<>
-			<box height={1} paddingLeft={1} paddingRight={1}>
+			<PaddedRow>
 				<TextLine>
 					<span fg={colors.count}>#{number}</span>
 					<span fg={colors.muted}> {repo}</span>
@@ -330,13 +330,13 @@ export const DetailHeader = ({
 					{statusParts.length > 0 ? <span fg={colors.muted}> </span> : null}
 					<span fg={colors.muted}>{opened}</span>
 				</TextLine>
-			</box>
+			</PaddedRow>
 			<box height={wrappedTitle.length} flexDirection="column" paddingLeft={1} paddingRight={1}>
 				{wrappedTitle.map((line, index) => (
 					<PlainLine key={index} text={line} bold />
 				))}
 			</box>
-			<box height={1} paddingLeft={1} paddingRight={1}>
+			<PaddedRow>
 				<TextLine>
 					{!pullRequest.detailLoaded ? <span fg={colors.muted}>loading details...</span> : labels.length > 0 ? labels.map((label, index) => (
 						<Fragment key={label.name}>
@@ -351,7 +351,7 @@ export const DetailHeader = ({
 						</>
 					) : null}
 				</TextLine>
-			</box>
+			</PaddedRow>
 			<box height={1}><Divider width={paneWidth} /></box>
 			{showChecks && unique.length > 0 ? (
 				<>

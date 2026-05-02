@@ -5,7 +5,7 @@ import { colors, type ThemeId } from "./colors.js"
 import { createDiffSyntaxStyle, diffFileStats, diffFileStatsText, diffStatText, stackedDiffFileAtLine, type DiffFileStats, type DiffView, type DiffWrapMode, type PullRequestDiffState, type StackedDiffCommentAnchor, type StackedDiffFilePatch } from "./diff.js"
 import { LoadingPane, StatusCard } from "./DetailsPane.js"
 import { DiffStats } from "./diffStats.js"
-import { Divider, fitCell, PlainLine, TextLine } from "./primitives.js"
+import { Divider, fitCell, PaddedRow, PlainLine, TextLine } from "./primitives.js"
 import { shortRepoName } from "./pullRequests.js"
 
 const DiffPaneHeader = ({ pullRequest, paneWidth }: { pullRequest: PullRequestItem; paneWidth: number }) => {
@@ -14,14 +14,14 @@ const DiffPaneHeader = ({ pullRequest, paneWidth }: { pullRequest: PullRequestIt
 	const leftHeader = `#${pullRequest.number} ${shortRepoName(pullRequest.repository)}`
 	const headerGap = Math.max(2, headerWidth - leftHeader.length - stats.length)
 	return (
-		<box height={1} paddingLeft={1} paddingRight={1}>
+		<PaddedRow>
 			<TextLine>
 				<span fg={colors.count}>#{pullRequest.number}</span>
 				<span fg={colors.muted}> {shortRepoName(pullRequest.repository)}</span>
 				<span fg={colors.muted}>{" ".repeat(headerGap)}</span>
 				<DiffStats pullRequest={pullRequest} />
 			</TextLine>
-		</box>
+		</PaddedRow>
 	)
 }
 
@@ -120,9 +120,9 @@ export const PullRequestDiffPane = ({
 	if (diffState._tag === "Error") {
 		return (
 			<box height={height} flexDirection="column">
-				<box height={1} paddingLeft={1} paddingRight={1}>
+				<PaddedRow>
 					<PlainLine text={`#${pullRequest.number} ${shortRepoName(pullRequest.repository)} diff`} fg={colors.count} bold />
-				</box>
+				</PaddedRow>
 				<Divider width={paneWidth} />
 				<StatusCard content={{ title: "Could not load diff", hint: diffState.error }} width={paneWidth} />
 			</box>
@@ -176,9 +176,9 @@ export const PullRequestDiffPane = ({
 				{stackedFiles.map((stackedFile) => (
 					<box key={`${pullRequest.url}-${stackedFile.index}-${view}-${wrapMode}`} flexDirection="column" flexShrink={0}>
 						{stackedFile.index > 0 ? <Divider width={paneWidth} /> : null}
-						<box height={1} paddingLeft={1} paddingRight={1}>
+						<PaddedRow>
 							<FileHeader file={stackedFile.file} index={stackedFile.index} count={readyFiles.length} width={paneWidth} />
-						</box>
+						</PaddedRow>
 						<Divider width={paneWidth} />
 						<diff
 							ref={(diff: DiffRenderable | null) => setDiffRef(stackedFile.index, diff)}
@@ -211,15 +211,15 @@ export const PullRequestDiffPane = ({
 					{incomingFile ? (
 						<>
 							<Divider width={paneWidth} />
-							<box height={1} paddingLeft={1} paddingRight={1} backgroundColor={colors.background}>
+							<PaddedRow backgroundColor={colors.background}>
 								<FileHeader file={incomingFile.file} index={incomingFile.index} count={readyFiles.length} width={paneWidth} suffix={stickyCommentLabelFor(incomingFile)} suffixColor={stickyCommentColor} />
-							</box>
+							</PaddedRow>
 						</>
 					) : (
 						<>
-							<box height={1} paddingLeft={1} paddingRight={1} backgroundColor={colors.background}>
+							<PaddedRow backgroundColor={colors.background}>
 								<FileHeader file={stickyFile.file} index={stickyFile.index} count={readyFiles.length} width={paneWidth} suffix={stickyCommentLabelFor(stickyFile)} suffixColor={stickyCommentColor} />
-							</box>
+							</PaddedRow>
 							<Divider width={paneWidth} />
 						</>
 					)}
@@ -228,12 +228,12 @@ export const PullRequestDiffPane = ({
 			{commentPeek ? (
 				<>
 					<Divider width={paneWidth} />
-					<box height={1} paddingLeft={1} paddingRight={1}>
+					<PaddedRow>
 						<PlainLine text={fitCell(commentPeekMeta, Math.max(1, paneWidth - 2))} fg={colors.count} />
-					</box>
-					<box height={1} paddingLeft={1} paddingRight={1}>
+					</PaddedRow>
+					<PaddedRow>
 						<PlainLine text={fitCell(commentPeekBody, Math.max(1, paneWidth - 2))} fg={colors.text} />
-					</box>
+					</PaddedRow>
 				</>
 			) : null}
 		</box>

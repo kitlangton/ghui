@@ -54,6 +54,10 @@ export const SectionTitle = ({ title }: { title: string }) => (
 export const Filler = ({ rows, prefix }: { rows: number; prefix: string }) =>
 	<>{Array.from({ length: rows }, (_, index) => <box key={`${prefix}-${index}`} height={1} />)}</>
 
+export const PaddedRow = ({ children, backgroundColor }: { children: React.ReactNode; backgroundColor?: string }) => (
+	<box height={1} paddingLeft={1} paddingRight={1} {...(backgroundColor ? { backgroundColor } : {})}>{children}</box>
+)
+
 export const Divider = ({ width, junctionAt, junctionChar }: { width: number; junctionAt?: number; junctionChar?: string }) => {
 	if (junctionAt === undefined || junctionChar === undefined || junctionAt < 0 || junctionAt >= width) {
 		return <PlainLine text={"─".repeat(Math.max(1, width))} fg={colors.separator} />
@@ -136,7 +140,7 @@ export const StandardModal = ({
 	const headerGap = Math.max(1, contentWidth - title.length - rightText.length)
 	return (
 		<ModalFrame left={left} top={top} width={width} height={height} junctionRows={[2, height - 4]}>
-			<box height={1} paddingLeft={1} paddingRight={1}>
+			<PaddedRow>
 				<TextLine>
 					<span fg={titleFg} attributes={TextAttributes.BOLD}>{title}</span>
 					{headerRight ? (
@@ -146,12 +150,12 @@ export const StandardModal = ({
 						</>
 					) : null}
 				</TextLine>
-			</box>
-			<box height={1} paddingLeft={1} paddingRight={1}>{subtitle}</box>
+			</PaddedRow>
+			<PaddedRow>{subtitle}</PaddedRow>
 			<Divider width={innerWidth} />
 			<box height={bodyHeight} flexDirection="column" paddingLeft={bodyPadding} paddingRight={bodyPadding}>{children}</box>
 			<Divider width={innerWidth} />
-			<box height={1} paddingLeft={1} paddingRight={1}>{footer}</box>
+			<PaddedRow>{footer}</PaddedRow>
 		</ModalFrame>
 	)
 }

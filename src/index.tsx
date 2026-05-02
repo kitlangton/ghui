@@ -47,6 +47,20 @@ process.stdout.write(FOCUS_REPORTING_ENABLE)
 
 const keymap = createDefaultOpenTuiKeymap(renderer)
 
+// Allow plain whitespace-separated key sequences ("g g") without modifiers,
+// filling the gap left by the default emacs-style parser which only treats
+// space-separated input as a sequence when at least one stroke has a "+".
+keymap.prependBindingParser(({ input, index, parseObjectKey }) => {
+	if (index !== 0) return undefined
+	const strokes = input.trim().split(/\s+/).filter(Boolean)
+	if (strokes.length <= 1) return undefined
+	if (strokes.some((stroke) => stroke.includes("+"))) return undefined
+	return {
+		parts: strokes.map((stroke) => parseObjectKey({ name: stroke.toLowerCase() })),
+		nextIndex: input.length,
+	}
+})
+
 createRoot(renderer).render(
 	<RegistryProvider>
 		<KeymapProvider keymap={keymap}>

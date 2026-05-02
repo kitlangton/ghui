@@ -9,7 +9,7 @@ Terminal UI for keeping up with your open GitHub pull requests across repositori
 ## Install
 
 ```bash
-npm install -g @kitlangton/ghui
+bun install -g @kitlangton/ghui
 ```
 
 Requirements:

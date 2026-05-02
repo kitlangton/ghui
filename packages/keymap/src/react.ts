@@ -1,28 +1,30 @@
 import { useEffect, useMemo, useRef, useSyncExternalStore } from "react"
-import type { Command } from "./commands.ts"
 import { createDispatcher, type Dispatcher, type DispatcherOptions } from "./dispatcher.ts"
 import type { ParsedStroke } from "./keys.ts"
+import type { Keymap } from "./keymap.ts"
 
 export type KeySubscribe = (handler: (stroke: ParsedStroke) => void) => () => void
 
 /**
- * Mounts a keymap. Subscribes to host key events through `subscribe`, dispatches
- * each into the keymap, and reads `state` fresh on every dispatch.
+ * Mounts a Keymap. Subscribes to host key events through `subscribe`, dispatches
+ * each into the keymap, and reads `ctx` fresh on every dispatch.
  *
- * `commands` is captured at first render; mutating the array later has no effect.
+ * `keymap` is captured at first render. To change the active keymap, recompute
+ * its identity in a parent (e.g. `useMemo(() => buildKeymap(flag), [flag])`).
  */
-export const useKeymap = <S>(
-	commands: readonly Command<S>[],
-	state: S,
+export const useKeymap = <C>(
+	keymap: Keymap<C>,
+	ctx: C,
 	subscribe: KeySubscribe,
 	options?: DispatcherOptions,
-): Dispatcher<S> => {
-	const stateRef = useRef(state)
-	stateRef.current = state
+): Dispatcher<C> => {
+	const ctxRef = useRef(ctx)
+	ctxRef.current = ctx
 
 	const dispatcher = useMemo(
-		() => createDispatcher(commands, () => stateRef.current, options),
-		// commands captured once by design; options too
+		() => createDispatcher(keymap, () => ctxRef.current, options),
+		// keymap captured once by design; users opt into reactive changes
+		// by recomputing the keymap value in a parent useMemo.
 		// eslint-disable-next-line react-hooks/exhaustive-deps
 		[],
 	)
@@ -32,7 +34,7 @@ export const useKeymap = <S>(
 	return dispatcher
 }
 
-export const usePendingSequence = <S>(dispatcher: Dispatcher<S>): readonly ParsedStroke[] =>
+export const usePendingSequence = <C>(dispatcher: Dispatcher<C>): readonly ParsedStroke[] =>
 	useSyncExternalStore(
 		(callback) => dispatcher.onPendingChange(callback),
 		dispatcher.getPending,

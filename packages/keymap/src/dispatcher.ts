@@ -1,10 +1,11 @@
-import { type Command, isCommandActive } from "./commands.ts"
-import { type ParsedStroke, parseBinding, sequenceMatches, sequenceStartsWith } from "./keys.ts"
+import { type Binding, isBindingActive } from "./binding.ts"
+import type { Keymap } from "./keymap.ts"
+import { type ParsedStroke, sequenceMatches, sequenceStartsWith } from "./keys.ts"
 
-export type DispatchResult<S> =
-	| { readonly kind: "ran"; readonly command: Command<S> }
+export type DispatchResult<C> =
+	| { readonly kind: "ran"; readonly binding: Binding<C> }
 	| { readonly kind: "pending"; readonly sequence: readonly ParsedStroke[] }
-	| { readonly kind: "disabled"; readonly command: Command<S>; readonly reason: string }
+	| { readonly kind: "disabled"; readonly binding: Binding<C>; readonly reason: string }
 	| { readonly kind: "ignored" }
 
 export interface Clock {
@@ -15,39 +16,31 @@ export interface Clock {
 export interface DispatcherOptions {
 	readonly disambiguationTimeoutMs?: number
 	readonly clock?: Clock
+	/** Called when two or more bindings collide on the same active sequence. */
+	readonly onCollision?: (sequence: readonly ParsedStroke[], bindings: readonly Binding<unknown>[]) => void
 }
 
-export interface Dispatcher<S> {
-	readonly dispatch: (stroke: ParsedStroke) => DispatchResult<S>
+export interface Dispatcher<C> {
+	readonly dispatch: (stroke: ParsedStroke) => DispatchResult<C>
 	readonly getPending: () => readonly ParsedStroke[]
 	readonly clearPending: () => void
 	readonly onPendingChange: (listener: (pending: readonly ParsedStroke[]) => void) => () => void
 }
-
-interface CompiledCommand<S> {
-	readonly command: Command<S>
-	readonly sequences: readonly (readonly ParsedStroke[])[]
-}
-
-const compile = <S>(commands: readonly Command<S>[]): readonly CompiledCommand<S>[] =>
-	commands.map((command) => ({
-		command,
-		sequences: (command.keys ?? []).map(parseBinding).filter((seq) => seq.length > 0),
-	}))
 
 const defaultClock: Clock = {
 	setTimeout: (fn, ms) => globalThis.setTimeout(fn, ms),
 	clearTimeout: (handle) => globalThis.clearTimeout(handle as ReturnType<typeof globalThis.setTimeout>),
 }
 
-export const createDispatcher = <S>(
-	commands: readonly Command<S>[],
-	getState: () => S,
+export const createDispatcher = <C>(
+	keymap: Keymap<C>,
+	getContext: () => C,
 	options: DispatcherOptions = {},
-): Dispatcher<S> => {
-	const compiled = compile(commands)
+): Dispatcher<C> => {
+	const bindings = keymap.bindings
 	const timeoutMs = options.disambiguationTimeoutMs ?? 500
 	const clock = options.clock ?? defaultClock
+	const onCollision = options.onCollision
 
 	let pending: readonly ParsedStroke[] = []
 	let timer: unknown = null
@@ -71,40 +64,33 @@ export const createDispatcher = <S>(
 		setPending([])
 	}
 
-	const findMatches = (sequence: readonly ParsedStroke[], state: S) => {
-		const exact: CompiledCommand<S>[] = []
-		const continuing: CompiledCommand<S>[] = []
-		for (const compiledCommand of compiled) {
-			const status = isCommandActive(compiledCommand.command, state)
-			// Disabled-with-reason is still a match (so we can report the reason);
-			// out-of-scope and silently-disabled are invisible.
-			const visibleAsBinding = status === true || (typeof status === "string" && status !== "out of scope" && status !== "disabled")
-			let exactSeen = false
-			let continuingSeen = false
-			for (const seq of compiledCommand.sequences) {
-				if (sequenceMatches(seq, sequence)) exactSeen = true
-				else if (sequenceStartsWith(seq, sequence)) continuingSeen = true
-			}
+	const findMatches = (sequence: readonly ParsedStroke[], ctx: C) => {
+		const exact: Binding<C>[] = []
+		const continuing: Binding<C>[] = []
+		for (const binding of bindings) {
+			const status = isBindingActive(binding, ctx)
+			const visibleAsBinding = status === true
+				|| (typeof status === "string" && status !== "out of scope" && status !== "disabled")
 			if (!visibleAsBinding) continue
-			if (exactSeen) exact.push(compiledCommand)
-			if (continuingSeen) continuing.push(compiledCommand)
+			if (sequenceMatches(binding.sequence, sequence)) exact.push(binding)
+			else if (sequenceStartsWith(binding.sequence, sequence)) continuing.push(binding)
 		}
 		return { exact, continuing }
 	}
 
-	const tryRun = (command: Command<S>, state: S): DispatchResult<S> => {
-		const status = isCommandActive(command, state)
+	const tryRun = (binding: Binding<C>, ctx: C): DispatchResult<C> => {
+		const status = isBindingActive(binding, ctx)
 		if (status === true) {
-			command.run(state)
-			return { kind: "ran", command }
+			binding.action(ctx)
+			return { kind: "ran", binding }
 		}
-		return { kind: "disabled", command, reason: status }
+		return { kind: "disabled", binding, reason: status }
 	}
 
-	const dispatch = (stroke: ParsedStroke): DispatchResult<S> => {
-		const state = getState()
+	const dispatch = (stroke: ParsedStroke): DispatchResult<C> => {
+		const ctx = getContext()
 		const next = [...pending, stroke]
-		const { exact, continuing } = findMatches(next, state)
+		const { exact, continuing } = findMatches(next, ctx)
 
 		if (exact.length === 0 && continuing.length === 0) {
 			const hadPending = pending.length > 0
@@ -115,7 +101,8 @@ export const createDispatcher = <S>(
 
 		if (exact.length > 0 && continuing.length === 0) {
 			clearPending()
-			return tryRun(exact[0]!.command, state)
+			if (exact.length > 1 && onCollision) onCollision(next, exact as readonly Binding<unknown>[])
+			return tryRun(exact[0]!, ctx)
 		}
 
 		if (exact.length === 0 && continuing.length > 0) {
@@ -129,12 +116,12 @@ export const createDispatcher = <S>(
 		}
 
 		// Ambiguous: there's an exact match AND a longer continuation.
-		const exactCommand = exact[0]!.command
+		const exactBinding = exact[0]!
 		clearTimer()
 		timer = clock.setTimeout(() => {
 			timer = null
 			setPending([])
-			tryRun(exactCommand, getState())
+			tryRun(exactBinding, getContext())
 		}, timeoutMs)
 		setPending(next)
 		return { kind: "pending", sequence: next }

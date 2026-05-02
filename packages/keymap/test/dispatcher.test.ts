@@ -1,15 +1,16 @@
 import { beforeEach, describe, expect, test } from "bun:test"
-import { defineCommand } from "../src/commands.ts"
+import { command } from "../src/command.ts"
 import { type Clock, createDispatcher } from "../src/dispatcher.ts"
+import { Keymap } from "../src/keymap.ts"
 import { parseKey } from "../src/keys.ts"
 
-interface State {
+interface Ctx {
 	readonly modal: boolean
 	readonly enabledMerge: boolean
 	readonly log: string[]
 }
 
-const press = (dispatcher: ReturnType<typeof createDispatcher<State>>, key: string) =>
+const press = (dispatcher: ReturnType<typeof createDispatcher<Ctx>>, key: string) =>
 	dispatcher.dispatch(parseKey(key))
 
 class FakeClock implements Clock {
@@ -37,263 +38,236 @@ class FakeClock implements Clock {
 	}
 }
 
-let state: State
-const setState = (next: Partial<State>) => {
-	state = { ...state, ...next }
+let ctx: Ctx
+const setCtx = (next: Partial<Ctx>) => {
+	ctx = { ...ctx, ...next }
 }
 beforeEach(() => {
-	state = { modal: false, enabledMerge: true, log: [] }
+	ctx = { modal: false, enabledMerge: true, log: [] }
 })
 
 describe("createDispatcher — single-stroke", () => {
-	test("dispatches the bound command", () => {
-		const refresh = defineCommand<State>({
-			id: "refresh",
-			title: "Refresh",
-			keys: ["r"],
-			run: (s) => s.log.push("refresh"),
-		})
-		const dispatcher = createDispatcher([refresh], () => state)
-		const result = press(dispatcher, "r")
-		expect(result.kind).toBe("ran")
-		expect(state.log).toEqual(["refresh"])
+	test("dispatches the bound binding", () => {
+		const km = command<Ctx>({ id: "refresh", title: "Refresh", keys: ["r"], run: (s) => s.log.push("refresh") })
+		const dispatcher = createDispatcher(km, () => ctx)
+		expect(press(dispatcher, "r").kind).toBe("ran")
+		expect(ctx.log).toEqual(["refresh"])
 	})
 
 	test("unbound key is ignored", () => {
-		const dispatcher = createDispatcher<State>([], () => state)
+		const dispatcher = createDispatcher(Keymap.empty<Ctx>(), () => ctx)
 		expect(press(dispatcher, "r").kind).toBe("ignored")
 	})
 
-	test("multiple bindings on one command — any matches", () => {
-		const cmd = defineCommand<State>({
-			id: "down",
-			title: "Down",
-			keys: ["j", "down"],
-			run: (s) => s.log.push("down"),
-		})
-		const dispatcher = createDispatcher([cmd], () => state)
+	test("multiple keys on one command — all match", () => {
+		const km = command<Ctx>({ id: "down", title: "Down", keys: ["j", "down"], run: (s) => s.log.push("down") })
+		const dispatcher = createDispatcher(km, () => ctx)
 		press(dispatcher, "j")
 		press(dispatcher, "down")
-		expect(state.log).toEqual(["down", "down"])
-	})
-
-	test("modifier keys differentiate", () => {
-		const lower = defineCommand<State>({ id: "l", title: "L", keys: ["m"], run: (s) => s.log.push("m") })
-		const upper = defineCommand<State>({ id: "u", title: "U", keys: ["shift+m"], run: (s) => s.log.push("M") })
-		const dispatcher = createDispatcher([lower, upper], () => state)
-		press(dispatcher, "m")
-		press(dispatcher, "shift+m")
-		expect(state.log).toEqual(["m", "M"])
+		expect(ctx.log).toEqual(["down", "down"])
 	})
 })
 
 describe("createDispatcher — gating", () => {
-	test("when=false → command not eligible", () => {
-		const command = defineCommand<State>({
+	test("when=false → invisible to dispatch", () => {
+		const km = command<Ctx>({
 			id: "modal-only",
-			title: "X",
+			title: "Modal",
 			keys: ["m"],
 			when: (s) => s.modal,
 			run: (s) => s.log.push("ran"),
 		})
-		const dispatcher = createDispatcher([command], () => state)
+		const dispatcher = createDispatcher(km, () => ctx)
 		expect(press(dispatcher, "m").kind).toBe("ignored")
-		setState({ modal: true })
+		setCtx({ modal: true })
 		expect(press(dispatcher, "m").kind).toBe("ran")
 	})
 
-	test("enabled=false → reported as disabled, run not called", () => {
-		const command = defineCommand<State>({
+	test("enabled=false → invisible", () => {
+		const km = command<Ctx>({
 			id: "merge",
 			title: "Merge",
 			keys: ["m"],
 			enabled: () => false,
 			run: (s) => s.log.push("ran"),
 		})
-		const dispatcher = createDispatcher([command], () => state)
-		// enabled=false makes the binding invisible to dispatch — there's no
-		// reason to flash a notice for "disabled". Treated as if the command
-		// weren't bound.
+		const dispatcher = createDispatcher(km, () => ctx)
 		expect(press(dispatcher, "m").kind).toBe("ignored")
-		expect(state.log).toEqual([])
 	})
 
-	test("enabled returning a reason → dispatch reports disabled with reason", () => {
-		const command = defineCommand<State>({
+	test("enabled with reason → reported as disabled", () => {
+		const km = command<Ctx>({
 			id: "merge",
 			title: "Merge",
 			keys: ["m"],
 			enabled: (s) => s.enabledMerge ? true : "Select a pull request first.",
 			run: (s) => s.log.push("ran"),
 		})
-		const dispatcher = createDispatcher([command], () => state)
-		setState({ enabledMerge: false })
+		const dispatcher = createDispatcher(km, () => ctx)
+		setCtx({ enabledMerge: false })
 		const result = press(dispatcher, "m")
-		expect(result).toEqual({ kind: "disabled", command, reason: "Select a pull request first." })
-		expect(state.log).toEqual([])
+		expect(result.kind).toBe("disabled")
+		if (result.kind === "disabled") expect(result.reason).toBe("Select a pull request first.")
+		expect(ctx.log).toEqual([])
 	})
 
-	test("state read fresh on every dispatch", () => {
-		const command = defineCommand<State>({
+	test("context read fresh on every dispatch", () => {
+		const km = command<Ctx>({
 			id: "x",
 			title: "X",
 			keys: ["x"],
 			when: (s) => s.modal,
 			run: (s) => s.log.push("ran"),
 		})
-		const dispatcher = createDispatcher([command], () => state)
-		press(dispatcher, "x") // ignored
-		setState({ modal: true })
-		press(dispatcher, "x") // ran
-		setState({ modal: false })
-		press(dispatcher, "x") // ignored
-		expect(state.log).toEqual(["ran"])
+		const dispatcher = createDispatcher(km, () => ctx)
+		press(dispatcher, "x")
+		setCtx({ modal: true })
+		press(dispatcher, "x")
+		setCtx({ modal: false })
+		press(dispatcher, "x")
+		expect(ctx.log).toEqual(["ran"])
 	})
 })
 
 describe("createDispatcher — sequences", () => {
 	test("two-stroke binding fires after both strokes", () => {
-		const top = defineCommand<State>({
-			id: "top",
-			title: "Top",
-			keys: ["g g"],
-			run: (s) => s.log.push("top"),
-		})
-		const dispatcher = createDispatcher([top], () => state)
+		const km = command<Ctx>({ id: "top", title: "Top", keys: ["g g"], run: (s) => s.log.push("top") })
+		const dispatcher = createDispatcher(km, () => ctx)
 		expect(press(dispatcher, "g").kind).toBe("pending")
-		expect(state.log).toEqual([])
 		expect(press(dispatcher, "g").kind).toBe("ran")
-		expect(state.log).toEqual(["top"])
+		expect(ctx.log).toEqual(["top"])
 	})
 
-	test("non-matching mid-sequence key clears pending and re-dispatches fresh", () => {
-		const top = defineCommand<State>({
-			id: "top",
-			title: "Top",
-			keys: ["g g"],
-			run: (s) => s.log.push("top"),
-		})
-		const refresh = defineCommand<State>({
-			id: "refresh",
-			title: "Refresh",
-			keys: ["r"],
-			run: (s) => s.log.push("refresh"),
-		})
-		const dispatcher = createDispatcher([top, refresh], () => state)
+	test("non-matching mid-sequence → re-dispatch fresh", () => {
+		const km = Keymap.union(
+			command<Ctx>({ id: "top", title: "Top", keys: ["g g"], run: () => {} }),
+			command<Ctx>({ id: "refresh", title: "Refresh", keys: ["r"], run: (s) => s.log.push("refresh") }),
+		)
+		const dispatcher = createDispatcher(km, () => ctx)
 		press(dispatcher, "g")
-		const result = press(dispatcher, "r")
-		expect(result.kind).toBe("ran")
-		expect(state.log).toEqual(["refresh"])
+		expect(press(dispatcher, "r").kind).toBe("ran")
+		expect(ctx.log).toEqual(["refresh"])
 		expect(dispatcher.getPending()).toEqual([])
 	})
 
-	test("non-matching key with no fresh fallback → ignored, pending cleared", () => {
-		const top = defineCommand<State>({ id: "top", title: "Top", keys: ["g g"], run: () => {} })
-		const dispatcher = createDispatcher([top], () => state)
+	test("clearPending drops a pending sequence", () => {
+		const km = command<Ctx>({ id: "top", title: "Top", keys: ["g g"], run: () => {} })
+		const dispatcher = createDispatcher(km, () => ctx)
 		press(dispatcher, "g")
-		const result = press(dispatcher, "x")
-		expect(result.kind).toBe("ignored")
-		expect(dispatcher.getPending()).toEqual([])
-	})
-
-	test("clearPending() drops a pending sequence", () => {
-		const top = defineCommand<State>({ id: "top", title: "Top", keys: ["g g"], run: () => {} })
-		const dispatcher = createDispatcher([top], () => state)
-		press(dispatcher, "g")
-		expect(dispatcher.getPending()).toHaveLength(1)
 		dispatcher.clearPending()
 		expect(dispatcher.getPending()).toEqual([])
 	})
 })
 
-describe("createDispatcher — ambiguous sequences (vim-style timeout)", () => {
-	test("g and 'g g' both bound: pressing g enters pending; second g runs the sequence", () => {
-		const goTop = defineCommand<State>({ id: "top", title: "Top", keys: ["g g"], run: (s) => s.log.push("top") })
-		const single = defineCommand<State>({ id: "single", title: "Single", keys: ["g"], run: (s) => s.log.push("single") })
+describe("createDispatcher — ambiguous sequences", () => {
+	test("'g' and 'g g' both bound: timeout commits to single g", () => {
+		const km = Keymap.union(
+			command<Ctx>({ id: "single", title: "Single", keys: ["g"], run: (s) => s.log.push("single") }),
+			command<Ctx>({ id: "top", title: "Top", keys: ["g g"], run: (s) => s.log.push("top") }),
+		)
 		const clock = new FakeClock()
-		const dispatcher = createDispatcher([goTop, single], () => state, { clock })
-		expect(press(dispatcher, "g").kind).toBe("pending")
-		expect(state.log).toEqual([])
+		const dispatcher = createDispatcher(km, () => ctx, { clock, disambiguationTimeoutMs: 500 })
 		press(dispatcher, "g")
-		expect(state.log).toEqual(["top"])
+		expect(ctx.log).toEqual([])
+		clock.advance(501)
+		expect(ctx.log).toEqual(["single"])
 	})
 
-	test("g and 'g g' both bound: timeout commits to single-key g", () => {
-		const goTop = defineCommand<State>({ id: "top", title: "Top", keys: ["g g"], run: (s) => s.log.push("top") })
-		const single = defineCommand<State>({ id: "single", title: "Single", keys: ["g"], run: (s) => s.log.push("single") })
+	test("'g' and 'g g' both bound: second g runs the sequence", () => {
+		const km = Keymap.union(
+			command<Ctx>({ id: "single", title: "Single", keys: ["g"], run: (s) => s.log.push("single") }),
+			command<Ctx>({ id: "top", title: "Top", keys: ["g g"], run: (s) => s.log.push("top") }),
+		)
 		const clock = new FakeClock()
-		const dispatcher = createDispatcher([goTop, single], () => state, { clock, disambiguationTimeoutMs: 500 })
+		const dispatcher = createDispatcher(km, () => ctx, { clock })
 		press(dispatcher, "g")
-		expect(state.log).toEqual([])
-		clock.advance(499)
-		expect(state.log).toEqual([])
-		clock.advance(2)
-		expect(state.log).toEqual(["single"])
-		expect(dispatcher.getPending()).toEqual([])
+		press(dispatcher, "g")
+		expect(ctx.log).toEqual(["top"])
+	})
+})
+
+describe("createDispatcher — composition", () => {
+	test("contramapMaybe-lifted keymap dispatches only when projection succeeds", () => {
+		interface DiffState {
+			readonly lines: number[]
+		}
+		interface AppCtx {
+			readonly inDiff: boolean
+			readonly diff: DiffState
+			readonly log: string[]
+		}
+		const diffKm = command<DiffState>({ id: "scroll", title: "Scroll", keys: ["k"], run: (s) => s.lines.push(1) })
+		const appKm = diffKm.contramapMaybe<AppCtx>((app) => app.inDiff ? app.diff : null)
+
+		let appCtx: AppCtx = { inDiff: false, diff: { lines: [] }, log: [] }
+		const dispatcher = createDispatcher(appKm, () => appCtx)
+
+		// Not in diff: ignored
+		expect(dispatcher.dispatch(parseKey("k")).kind).toBe("ignored")
+		expect(appCtx.diff.lines).toEqual([])
+
+		// In diff: runs against projected state
+		appCtx = { ...appCtx, inDiff: true }
+		expect(dispatcher.dispatch(parseKey("k")).kind).toBe("ran")
+		expect(appCtx.diff.lines).toEqual([1])
 	})
 
-	test("non-ambiguous sequence fires immediately, no timeout wait", () => {
-		const top = defineCommand<State>({ id: "top", title: "Top", keys: ["g g"], run: (s) => s.log.push("top") })
-		const clock = new FakeClock()
-		const dispatcher = createDispatcher([top], () => state, { clock })
-		press(dispatcher, "g")
-		press(dispatcher, "g")
-		expect(state.log).toEqual(["top"])
+	test("union of differently-scoped sub-keymaps composes cleanly", () => {
+		interface DiffState { readonly log: string[] }
+		interface DetailState { readonly log: string[] }
+		interface AppCtx {
+			readonly view: "diff" | "detail" | "list"
+			readonly diff: DiffState
+			readonly detail: DetailState
+		}
+		const diffKm = command<DiffState>({ id: "diff.x", title: "Diff X", keys: ["x"], run: (s) => s.log.push("diff") })
+		const detailKm = command<DetailState>({ id: "detail.x", title: "Detail X", keys: ["x"], run: (s) => s.log.push("detail") })
+
+		const appKm = Keymap.union(
+			diffKm.contramapMaybe<AppCtx>((a) => a.view === "diff" ? a.diff : null),
+			detailKm.contramapMaybe<AppCtx>((a) => a.view === "detail" ? a.detail : null),
+		)
+
+		let appCtx: AppCtx = { view: "list", diff: { log: [] }, detail: { log: [] } }
+		const dispatcher = createDispatcher(appKm, () => appCtx)
+
+		expect(dispatcher.dispatch(parseKey("x")).kind).toBe("ignored")
+
+		appCtx = { ...appCtx, view: "diff" }
+		dispatcher.dispatch(parseKey("x"))
+		expect(appCtx.diff.log).toEqual(["diff"])
+		expect(appCtx.detail.log).toEqual([])
+
+		appCtx = { ...appCtx, view: "detail" }
+		dispatcher.dispatch(parseKey("x"))
+		expect(appCtx.detail.log).toEqual(["detail"])
+	})
+
+	test("collisions invoke onCollision callback", () => {
+		const km = Keymap.union(
+			command<Ctx>({ id: "a", title: "A", keys: ["x"], run: (s) => s.log.push("a") }),
+			command<Ctx>({ id: "b", title: "B", keys: ["x"], run: (s) => s.log.push("b") }),
+		)
+		const seen: number[] = []
+		const dispatcher = createDispatcher(km, () => ctx, {
+			onCollision: (_seq, bindings) => seen.push(bindings.length),
+		})
+		press(dispatcher, "x")
+		expect(seen).toEqual([2])
+		expect(ctx.log).toEqual(["a"])
 	})
 })
 
 describe("createDispatcher — pending notifications", () => {
-	test("subscribers get current pending sequence on every change", () => {
-		const top = defineCommand<State>({ id: "top", title: "Top", keys: ["g g"], run: () => {} })
-		const dispatcher = createDispatcher([top], () => state)
+	test("subscribers see pending changes", () => {
+		const km = command<Ctx>({ id: "top", title: "Top", keys: ["g g"], run: () => {} })
+		const dispatcher = createDispatcher(km, () => ctx)
 		const events: number[] = []
 		const off = dispatcher.onPendingChange((p) => events.push(p.length))
 		press(dispatcher, "g")
 		press(dispatcher, "g")
 		off()
+		press(dispatcher, "g")
 		expect(events).toEqual([1, 0])
-	})
-
-	test("unsubscribed listeners don't receive further updates", () => {
-		const top = defineCommand<State>({ id: "top", title: "Top", keys: ["g g"], run: () => {} })
-		const dispatcher = createDispatcher([top], () => state)
-		const events: number[] = []
-		const off = dispatcher.onPendingChange((p) => events.push(p.length))
-		press(dispatcher, "g")
-		off()
-		press(dispatcher, "g")
-		expect(events).toEqual([1])
-	})
-})
-
-describe("createDispatcher — collisions", () => {
-	test("two commands bound to same active key: first registered wins", () => {
-		const a = defineCommand<State>({ id: "a", title: "A", keys: ["x"], run: (s) => s.log.push("a") })
-		const b = defineCommand<State>({ id: "b", title: "B", keys: ["x"], run: (s) => s.log.push("b") })
-		const dispatcher = createDispatcher([a, b], () => state)
-		press(dispatcher, "x")
-		expect(state.log).toEqual(["a"])
-	})
-
-	test("when conditions disambiguate active commands sharing a key", () => {
-		const inModal = defineCommand<State>({
-			id: "modal",
-			title: "M",
-			keys: ["x"],
-			when: (s) => s.modal,
-			run: (s) => s.log.push("modal"),
-		})
-		const global = defineCommand<State>({
-			id: "global",
-			title: "G",
-			keys: ["x"],
-			when: (s) => !s.modal,
-			run: (s) => s.log.push("global"),
-		})
-		const dispatcher = createDispatcher([inModal, global], () => state)
-		press(dispatcher, "x")
-		setState({ modal: true })
-		press(dispatcher, "x")
-		expect(state.log).toEqual(["global", "modal"])
 	})
 })

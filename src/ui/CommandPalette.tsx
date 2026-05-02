@@ -17,6 +17,7 @@ const scopeLabels = {
 
 export type CommandPaletteRow =
 	| { readonly _tag: "section"; readonly scope: AppCommand["scope"] }
+	| { readonly _tag: "spacer" }
 	| { readonly _tag: "command"; readonly command: AppCommand; readonly commandIndex: number }
 
 export const buildCommandPaletteRows = (commands: readonly AppCommand[]): readonly CommandPaletteRow[] => {
@@ -25,6 +26,7 @@ export const buildCommandPaletteRows = (commands: readonly AppCommand[]): readon
 	for (let commandIndex = 0; commandIndex < commands.length; commandIndex++) {
 		const command = commands[commandIndex]!
 		if (command.scope !== previousScope) {
+			if (previousScope !== null) rows.push({ _tag: "spacer" })
 			rows.push({ _tag: "section", scope: command.scope })
 			previousScope = command.scope
 		}
@@ -112,24 +114,35 @@ export const CommandPalette = ({
 				<>
 					{visibleRows.map((row, index) => {
 						const rowIndex = scrollTop + index
+						if (row._tag === "spacer") {
+							return <PlainLine key={`spacer-${rowIndex}`} text="" />
+						}
 						if (row._tag === "section") {
-							return <PlainLine key={`section-${row.scope}-${rowIndex}`} text={fitCell(` ${scopeLabels[row.scope]}`, rowWidth)} fg={colors.accent} bold />
+							return <PlainLine key={`section-${row.scope}-${rowIndex}`} text={fitCell(`  ${scopeLabels[row.scope].toUpperCase()}`, rowWidth)} fg={colors.muted} />
 						}
 
 						const { command, commandIndex } = row
 						const isSelected = commandIndex === clampedIndex
 						const shortcut = command.shortcut ? trimCell(command.shortcut, 16) : ""
-						const rightWidth = shortcut.length === 0 ? 0 : Math.min(18, Math.max(8, shortcut.length + 1))
+						const shortcutWidth = shortcut.length === 0 ? 0 : Math.min(18, Math.max(6, shortcut.length + 1))
 						const trailingPadding = shortcut.length === 0 ? 0 : 1
-						const titleWidth = Math.max(8, rowWidth - rightWidth - trailingPadding - 2)
+						// Layout: "▸ " (2) + title + "  " (2) + subtitle + filler + shortcut + " " (1)
+						const SELECTOR_WIDTH = 2
+						const titleAvailable = Math.max(8, rowWidth - SELECTOR_WIDTH - shortcutWidth - trailingPadding)
+						const titleText = trimCell(command.title, Math.min(titleAvailable, 36))
+						const subtitleSpace = Math.max(0, titleAvailable - titleText.length - 2)
+						const subtitleText = command.subtitle && subtitleSpace > 4 ? trimCell(command.subtitle, subtitleSpace) : ""
+						const fillerWidth = Math.max(0, titleAvailable - titleText.length - (subtitleText ? 2 + subtitleText.length : 0))
 
 						return (
 							<box key={command.id} height={1}>
 								<TextLine width={rowWidth} bg={isSelected ? colors.selectedBg : undefined} fg={isSelected ? colors.selectedText : colors.text}>
 									<span fg={isSelected ? colors.accent : colors.muted}>{isSelected ? "▸" : " "}</span>
 									<span> </span>
-									{isSelected ? <span attributes={TextAttributes.BOLD}>{fitCell(command.title, titleWidth)}</span> : <span>{fitCell(command.title, titleWidth)}</span>}
-									{rightWidth > 0 ? <span fg={colors.muted}>{fitCell(shortcut, rightWidth, "right")}</span> : null}
+									{isSelected ? <span attributes={TextAttributes.BOLD}>{titleText}</span> : <span>{titleText}</span>}
+									{subtitleText ? <span fg={colors.muted}>{`  ${subtitleText}`}</span> : null}
+									{fillerWidth > 0 ? <span>{" ".repeat(fillerWidth)}</span> : null}
+									{shortcutWidth > 0 ? <span fg={colors.muted}>{fitCell(shortcut, shortcutWidth, "right")}</span> : null}
 									{trailingPadding > 0 ? <span> </span> : null}
 								</TextLine>
 							</box>

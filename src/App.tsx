@@ -9,7 +9,7 @@ import * as AtomRegistry from "effect/unstable/reactivity/AtomRegistry"
 import { useContext, useEffect, useMemo, useRef, useState } from "react"
 import { buildAppCommands } from "./appCommands.js"
 import type { AppCommand } from "./commands.js"
-import { clampCommandIndex, commandEnabled, filterCommands } from "./commands.js"
+import { clampCommandIndex, commandEnabled, filterCommands, sortCommandsByScope } from "./commands.js"
 import { config } from "./config.js"
 import { type CreatePullRequestCommentInput, type DiffCommentSide, type ListPullRequestPageInput, type LoadStatus, type PullRequestItem, type PullRequestLabel, type PullRequestMergeAction, type PullRequestReviewComment } from "./domain.js"
 import { formatShortDate, formatTimestamp } from "./date.js"
@@ -1740,7 +1740,7 @@ export const App = () => {
 		const command = appCommands.find((entry) => entry.id === id)
 		return command ? runCommand(command, options) : false
 	}
-	const commandPaletteCommands = commandPaletteActive ? filterCommands(appCommands.filter((command) => command.id !== "command.open" && commandEnabled(command)), commandPalette.query) : []
+	const commandPaletteCommands = commandPaletteActive ? sortCommandsByScope(filterCommands(appCommands.filter((command) => command.id !== "command.open" && commandEnabled(command)), commandPalette.query)) : []
 	const selectedCommandIndex = clampCommandIndex(commandPalette.selectedIndex, commandPaletteCommands)
 	const selectedCommand = commandPaletteCommands[selectedCommandIndex] ?? null
 

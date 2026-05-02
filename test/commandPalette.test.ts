@@ -24,7 +24,10 @@ describe("command palette rows", () => {
 		const rows = buildCommandPaletteRows(commands)
 
 		expect(commandIds(rows)).toEqual(commands.map((item) => item.id))
-		expect(commands.map((_, index) => commandPaletteSelectedRowIndex(rows, index))).toEqual([1, 3, 5, 7])
+		// Each scope change inserts a spacer + section before the command, except the first.
+		// rows: [section, open-diff, spacer, section, open-repository, spacer, section, open-browser, spacer, section, refresh]
+		// command positions: 1, 4, 7, 10
+		expect(commands.map((_, index) => commandPaletteSelectedRowIndex(rows, index))).toEqual([1, 4, 7, 10])
 	})
 
 	test("only inserts a new section when the visible command scope changes", () => {
@@ -35,11 +38,17 @@ describe("command palette rows", () => {
 			command("authored", "View"),
 		])
 
-		expect(rows.map((row) => row._tag === "section" ? row.scope : row.command.id)).toEqual([
-			"Global",
+		const tag = (row: typeof rows[number]) => {
+			if (row._tag === "section") return `section:${row.scope}`
+			if (row._tag === "spacer") return "spacer"
+			return row.command.id
+		}
+		expect(rows.map(tag)).toEqual([
+			"section:Global",
 			"refresh",
 			"filter",
-			"View",
+			"spacer",
+			"section:View",
 			"repository",
 			"authored",
 		])

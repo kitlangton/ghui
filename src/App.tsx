@@ -179,7 +179,6 @@ const noticeAtom = Atom.make<string | null>(null)
 const filterQueryAtom = Atom.make("")
 const filterDraftAtom = Atom.make("")
 const filterModeAtom = Atom.make(false)
-const pendingGAtom = Atom.make(false)
 const detailFullViewAtom = Atom.make(false)
 const detailScrollOffsetAtom = Atom.make(0)
 const diffFullViewAtom = Atom.make(false)
@@ -381,9 +380,7 @@ const pullRequestDiffAtomKey = pullRequestRevisionAtomKey
 const parsePullRequestDetailAtomKey = (key: string) => parsePullRequestRevisionAtomKey(key, "detail")
 const parsePullRequestDiffAtomKey = (key: string) => parsePullRequestRevisionAtomKey(key, "diff")
 
-const isShiftG = (key: { readonly name: string; readonly shift?: boolean }) => key.name === "G" || key.name === "g" && key.shift
 
-const isThemeKey = (key: { readonly name: string; readonly ctrl?: boolean; readonly meta?: boolean }) => !key.ctrl && !key.meta && key.name.toLowerCase() === "t"
 
 const diffCommentThreadKey = (pullRequest: PullRequestItem, comment: Pick<PullRequestReviewComment, "path" | "side" | "line">) =>
 	`${pullRequestDiffKey(pullRequest)}:${diffCommentLocationKey(comment)}`
@@ -488,7 +485,6 @@ export const App = () => {
 	const [filterQuery, setFilterQuery] = useAtom(filterQueryAtom)
 	const [filterDraft, setFilterDraft] = useAtom(filterDraftAtom)
 	const [filterMode, setFilterMode] = useAtom(filterModeAtom)
-	const [pendingG, setPendingG] = useAtom(pendingGAtom)
 	const [detailFullView, setDetailFullView] = useAtom(detailFullViewAtom)
 	const setDetailScrollOffset = useAtomSet(detailScrollOffsetAtom)
 	const [diffFullView, setDiffFullView] = useAtom(diffFullViewAtom)
@@ -579,7 +575,6 @@ export const App = () => {
 	const wideDetailLines = Math.max(8, terminalHeight - 8)
 	const wideBodyHeight = Math.max(8, terminalHeight - 4)
 	const noticeTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
-	const pendingGTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 	const diffPrefetchTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 	const detailPrefetchTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 	const detailHydrationRef = useRef(new Map<string, DetailHydration>())
@@ -619,9 +614,6 @@ export const App = () => {
 		detailHydrationRef.current.clear()
 		if (noticeTimeoutRef.current !== null) {
 			clearTimeout(noticeTimeoutRef.current)
-		}
-		if (pendingGTimeoutRef.current !== null) {
-			clearTimeout(pendingGTimeoutRef.current)
 		}
 		if (diffPrefetchTimeoutRef.current !== null) {
 			clearTimeout(diffPrefetchTimeoutRef.current)
@@ -1173,37 +1165,6 @@ export const App = () => {
 	}
 	const scrollDetailPreviewBy = (y: number) => detailPreviewScrollRef.current?.scrollBy({ x: 0, y })
 	const scrollDetailPreviewTo = (y: number) => detailPreviewScrollRef.current?.scrollTo({ x: 0, y })
-
-	const clearPendingGTimeout = () => {
-		if (pendingGTimeoutRef.current !== null) {
-			clearTimeout(pendingGTimeoutRef.current)
-			pendingGTimeoutRef.current = null
-		}
-	}
-
-	const handleVimGoto = (key: { readonly name: string; readonly shift?: boolean }, gotoStart: () => void, gotoEnd: () => void): boolean => {
-		if (isShiftG(key)) {
-			gotoEnd()
-			setPendingG(false)
-			clearPendingGTimeout()
-			return true
-		}
-		if (key.name === "g") {
-			if (pendingG) {
-				gotoStart()
-				setPendingG(false)
-				clearPendingGTimeout()
-			} else {
-				setPendingG(true)
-				pendingGTimeoutRef.current = setTimeout(() => {
-					setPendingG(false)
-					pendingGTimeoutRef.current = null
-				}, 500)
-			}
-			return true
-		}
-		return false
-	}
 
 	const ensureDiffLineVisible = (line: number) => {
 		const scroll = diffScrollRef.current
@@ -1963,6 +1924,174 @@ export const App = () => {
 		},
 	})
 
+	const diffReady = selectedDiffState?._tag === "Ready"
+	useScopedBindings({
+		when: diffFullView && !diffCommentMode,
+		bindings: {
+			escape: () => runCommandById("diff.close"),
+			return: () => runCommandById("diff.close"),
+			c: () => { if (diffReady) runCommandById("diff.comment-mode") },
+			home: () => scrollDiffTo(0),
+			end: () => scrollDiffTo(Number.MAX_SAFE_INTEGER),
+			pageup: () => scrollDiffBy(-halfPage),
+			pagedown: () => scrollDiffBy(halfPage),
+			"g g": () => scrollDiffTo(0),
+			"shift+g": () => scrollDiffTo(Number.MAX_SAFE_INTEGER),
+			up: () => scrollDiffBy(-1),
+			k: () => scrollDiffBy(-1),
+			down: () => scrollDiffBy(1),
+			j: () => scrollDiffBy(1),
+			"ctrl+u": () => scrollDiffBy(-halfPage),
+			"ctrl+d": () => scrollDiffBy(halfPage),
+			"ctrl+v": () => scrollDiffBy(halfPage),
+			v: () => runCommandById("diff.toggle-view"),
+			w: () => runCommandById("diff.toggle-wrap"),
+			r: () => { if (selectedPullRequest) runCommandById("diff.reload") },
+			"]": () => { if (diffReady) runCommandById("diff.next-file") },
+			right: () => { if (diffReady) runCommandById("diff.next-file") },
+			l: () => { if (diffReady) runCommandById("diff.next-file") },
+			"[": () => { if (diffReady) runCommandById("diff.previous-file") },
+			left: () => { if (diffReady) runCommandById("diff.previous-file") },
+			h: () => { if (diffReady) runCommandById("diff.previous-file") },
+			o: () => { if (selectedPullRequest) runCommandById("pull.open-browser") },
+		},
+	})
+
+	useScopedBindings({
+		when: diffFullView && diffCommentMode,
+		bindings: {
+			escape: () => setDiffCommentMode(false),
+			c: () => runCommandById("diff.comment-mode"),
+			return: () => {
+				if (selectedDiffCommentThread.length > 0) openDiffCommentThreadModal()
+				else openDiffCommentModal()
+			},
+			a: () => runCommandById("diff.add-comment"),
+			pageup: () => moveDiffCommentAnchor(-halfPage),
+			"ctrl+u": () => moveDiffCommentAnchor(-halfPage),
+			pagedown: () => moveDiffCommentAnchor(halfPage),
+			"ctrl+d": () => moveDiffCommentAnchor(halfPage),
+			"ctrl+v": () => moveDiffCommentAnchor(halfPage),
+			"shift+up": () => moveDiffCommentAnchor(-8),
+			"shift+k": () => moveDiffCommentAnchor(-8),
+			"meta+up": () => moveDiffCommentAnchor(-8),
+			"meta+k": () => moveDiffCommentAnchor(-8),
+			"shift+down": () => moveDiffCommentAnchor(8),
+			"shift+j": () => moveDiffCommentAnchor(8),
+			"meta+down": () => moveDiffCommentAnchor(8),
+			"meta+j": () => moveDiffCommentAnchor(8),
+			up: () => moveDiffCommentAnchor(-1),
+			k: () => moveDiffCommentAnchor(-1),
+			down: () => moveDiffCommentAnchor(1),
+			j: () => moveDiffCommentAnchor(1),
+			left: () => selectDiffCommentSide("LEFT"),
+			h: () => selectDiffCommentSide("LEFT"),
+			right: () => selectDiffCommentSide("RIGHT"),
+			l: () => selectDiffCommentSide("RIGHT"),
+			"]": () => { if (diffReady) runCommandById("diff.next-file") },
+			"[": () => { if (diffReady) runCommandById("diff.previous-file") },
+		},
+	})
+
+	const scrollDetailFullViewBy = (delta: number) => {
+		detailScrollRef.current?.scrollBy({ x: 0, y: delta })
+		setDetailScrollOffset((current) => Math.max(0, current + delta))
+	}
+	const scrollDetailFullViewTo = (y: number) => {
+		detailScrollRef.current?.scrollTo({ x: 0, y })
+		setDetailScrollOffset(y)
+	}
+	useScopedBindings({
+		when: detailFullView,
+		bindings: {
+			escape: () => runCommandById("detail.close"),
+			return: () => runCommandById("detail.close"),
+			t: () => runCommandById("theme.open"),
+			d: () => { if (selectedPullRequest) runCommandById("diff.open") },
+			x: () => { if (selectedPullRequest?.state === "open") runCommandById("pull.close") },
+			l: () => { if (selectedPullRequest) runCommandById("pull.labels") },
+			m: () => { if (selectedPullRequest) runCommandById("pull.merge") },
+			"shift+m": () => { if (selectedPullRequest) runCommandById("pull.merge") },
+			s: () => { if (selectedPullRequest) runCommandById("pull.toggle-draft") },
+			"shift+s": () => { if (selectedPullRequest) runCommandById("pull.toggle-draft") },
+			r: () => runCommandById("pull.refresh"),
+			home: () => scrollDetailFullViewTo(0),
+			end: () => scrollDetailFullViewTo(Number.MAX_SAFE_INTEGER),
+			pageup: () => scrollDetailFullViewBy(-halfPage),
+			pagedown: () => scrollDetailFullViewBy(halfPage),
+			"g g": () => scrollDetailFullViewTo(0),
+			"shift+g": () => scrollDetailFullViewTo(Number.MAX_SAFE_INTEGER),
+			up: () => scrollDetailFullViewBy(-1),
+			k: () => scrollDetailFullViewBy(-1),
+			down: () => scrollDetailFullViewBy(1),
+			j: () => scrollDetailFullViewBy(1),
+			"ctrl+u": () => scrollDetailFullViewBy(-halfPage),
+			"ctrl+d": () => scrollDetailFullViewBy(halfPage),
+			"ctrl+v": () => scrollDetailFullViewBy(halfPage),
+			o: () => { if (selectedPullRequest) runCommandById("pull.open-browser") },
+			y: () => { if (selectedPullRequest) runCommandById("pull.copy-metadata") },
+		},
+	})
+
+	const moveSelectedToPreviousGroup = () => setSelectedIndex((current) => {
+		if (visiblePullRequests.length === 0 || groupStarts.length === 0) return 0
+		const currentGroup = getCurrentGroupIndex(current)
+		if (currentGroup <= 0) return groupStarts[groupStarts.length - 1]!
+		return groupStarts[currentGroup - 1]!
+	})
+	const moveSelectedToNextGroup = () => setSelectedIndex((current) => {
+		if (visiblePullRequests.length === 0 || groupStarts.length === 0) return 0
+		const currentGroup = getCurrentGroupIndex(current)
+		if (currentGroup >= groupStarts.length - 1) return groupStarts[0]!
+		return groupStarts[currentGroup + 1]!
+	})
+	const stepSelected = (delta: number) => setSelectedIndex((current) => {
+		if (visiblePullRequests.length === 0) return 0
+		return Math.max(0, Math.min(visiblePullRequests.length - 1, current + delta))
+	})
+	const stepSelectedDownWithLoadMore = () => {
+		if (visiblePullRequests.length > 0 && selectedIndex >= visiblePullRequests.length - 1 && hasMorePullRequests) {
+			loadMorePullRequests()
+			return
+		}
+		setSelectedIndex((current) => {
+			if (visiblePullRequests.length === 0) return 0
+			return current >= visiblePullRequests.length - 1 ? 0 : current + 1
+		})
+	}
+	const stepSelectedUpWrap = () => setSelectedIndex((current) => {
+		if (visiblePullRequests.length === 0) return 0
+		return current <= 0 ? visiblePullRequests.length - 1 : current - 1
+	})
+	useScopedBindings({
+		when: globalLayerActive,
+		bindings: {
+			tab: () => switchQueueMode(1),
+			"shift+tab": () => switchQueueMode(-1),
+			escape: () => { if (filterQuery.length > 0) runCommandById("filter.clear") },
+			home: () => { if (isWideLayout && selectedPullRequest) scrollDetailPreviewTo(0) },
+			end: () => { if (isWideLayout && selectedPullRequest) scrollDetailPreviewTo(Number.MAX_SAFE_INTEGER) },
+			pageup: () => { if (isWideLayout && selectedPullRequest) scrollDetailPreviewBy(-halfPage) },
+			pagedown: () => { if (isWideLayout && selectedPullRequest) scrollDetailPreviewBy(halfPage) },
+			"[": moveSelectedToPreviousGroup,
+			"meta+up": moveSelectedToPreviousGroup,
+			"meta+k": moveSelectedToPreviousGroup,
+			"shift+k": moveSelectedToPreviousGroup,
+			"]": moveSelectedToNextGroup,
+			"meta+down": moveSelectedToNextGroup,
+			"meta+j": moveSelectedToNextGroup,
+			"shift+j": moveSelectedToNextGroup,
+			"ctrl+u": () => stepSelected(-halfPage),
+			"ctrl+d": () => stepSelected(halfPage),
+			up: stepSelectedUpWrap,
+			k: stepSelectedUpWrap,
+			down: stepSelectedDownWithLoadMore,
+			j: stepSelectedDownWithLoadMore,
+			"g g": () => setSelectedIndex(0),
+			"shift+g": () => setSelectedIndex(visiblePullRequests.length === 0 ? 0 : visiblePullRequests.length - 1),
+		},
+	})
+
 	useKeyboard((key) => {
 		if (commandPaletteActive) {
 			if (isSingleLineInputKey(key)) {
@@ -2025,323 +2154,11 @@ export const App = () => {
 			return
 		}
 
-		if (diffFullView) {
-			if (diffCommentMode) {
-				if (key.name === "escape") {
-					setDiffCommentMode(false)
-					return
-				}
-				if (key.name === "c") {
-					runCommandById("diff.comment-mode")
-					return
-				}
-				if (key.name === "return" || key.name === "enter") {
-					if (selectedDiffCommentThread.length > 0) openDiffCommentThreadModal()
-					else openDiffCommentModal()
-					return
-				}
-				if (key.name === "a") {
-					runCommandById("diff.add-comment")
-					return
-				}
-				if (key.name === "pageup" || key.ctrl && key.name === "u") {
-					moveDiffCommentAnchor(-halfPage)
-					return
-				}
-				if (key.name === "pagedown" || key.ctrl && (key.name === "d" || key.name === "v")) {
-					moveDiffCommentAnchor(halfPage)
-					return
-				}
-				if ((key.shift || key.option || key.meta) && (key.name === "up" || key.name === "k") || key.name === "K") {
-					moveDiffCommentAnchor(-8)
-					return
-				}
-				if ((key.shift || key.option || key.meta) && (key.name === "down" || key.name === "j") || key.name === "J") {
-					moveDiffCommentAnchor(8)
-					return
-				}
-				if (key.name === "up" || key.name === "k") {
-					moveDiffCommentAnchor(-1)
-					return
-				}
-				if (key.name === "down" || key.name === "j") {
-					moveDiffCommentAnchor(1)
-					return
-				}
-				if (key.name === "left" || key.name === "h") {
-					selectDiffCommentSide("LEFT")
-					return
-				}
-				if (key.name === "right" || key.name === "l") {
-					selectDiffCommentSide("RIGHT")
-					return
-				}
-				if (key.name === "]" && selectedDiffState?._tag === "Ready") {
-					runCommandById("diff.next-file")
-					return
-				}
-				if (key.name === "[" && selectedDiffState?._tag === "Ready") {
-					runCommandById("diff.previous-file")
-					return
-				}
-				return
-			}
-
-			if (key.name === "escape" || key.name === "return" || key.name === "enter") {
-				runCommandById("diff.close")
-				return
-			}
-			if (key.name === "c" && selectedDiffState?._tag === "Ready") {
-				runCommandById("diff.comment-mode")
-				return
-			}
-			if (key.name === "home") {
-				scrollDiffTo(0)
-				return
-			}
-			if (key.name === "end") {
-				scrollDiffTo(Number.MAX_SAFE_INTEGER)
-				return
-			}
-			if (key.name === "pageup") {
-				scrollDiffBy(-halfPage)
-				return
-			}
-			if (key.name === "pagedown") {
-				scrollDiffBy(halfPage)
-				return
-			}
-			if (handleVimGoto(key, () => scrollDiffTo(0), () => scrollDiffTo(Number.MAX_SAFE_INTEGER))) return
-			if (key.name === "up" || key.name === "k") {
-				scrollDiffBy(-1)
-				return
-			}
-			if (key.name === "down" || key.name === "j") {
-				scrollDiffBy(1)
-				return
-			}
-			if (key.ctrl && key.name === "u") {
-				scrollDiffBy(-halfPage)
-				return
-			}
-			if (key.ctrl && (key.name === "d" || key.name === "v")) {
-				scrollDiffBy(halfPage)
-				return
-			}
-			if (key.name === "v") {
-				runCommandById("diff.toggle-view")
-				return
-			}
-			if (key.name === "w") {
-				runCommandById("diff.toggle-wrap")
-				return
-			}
-			if (key.name === "r" && selectedPullRequest) {
-				runCommandById("diff.reload")
-				return
-			}
-			if ((key.name === "]" || key.name === "right" || key.name === "l") && selectedDiffState?._tag === "Ready") {
-				runCommandById("diff.next-file")
-				return
-			}
-			if ((key.name === "[" || key.name === "left" || key.name === "h") && selectedDiffState?._tag === "Ready") {
-				runCommandById("diff.previous-file")
-				return
-			}
-			if (key.name === "o" && selectedPullRequest) {
-				runCommandById("pull.open-browser")
-				return
-			}
-			return
-		}
-
-		if (detailFullView) {
-			const plainKey = !key.ctrl && !key.meta && !key.option
-			if (key.name === "escape" || (key.name === "return" || key.name === "enter")) {
-				runCommandById("detail.close")
-				return
-			}
-			if (isThemeKey(key)) {
-				runCommandById("theme.open")
-				return
-			}
-			if (plainKey && key.name === "d" && selectedPullRequest) {
-				runCommandById("diff.open")
-				return
-			}
-			if (plainKey && key.name === "x" && selectedPullRequest?.state === "open") {
-				runCommandById("pull.close")
-				return
-			}
-			if (plainKey && key.name === "l" && selectedPullRequest) {
-				runCommandById("pull.labels")
-				return
-			}
-			if (plainKey && (key.name === "m" || key.name === "M") && selectedPullRequest) {
-				runCommandById("pull.merge")
-				return
-			}
-			if (plainKey && (key.name === "s" || key.name === "S") && selectedPullRequest) {
-				runCommandById("pull.toggle-draft")
-				return
-			}
-			if (plainKey && key.name === "r") {
-				runCommandById("pull.refresh")
-				return
-			}
-			if (key.name === "home") {
-				detailScrollRef.current?.scrollTo({ x: 0, y: 0 })
-				setDetailScrollOffset(0)
-				return
-			}
-			if (key.name === "end") {
-				detailScrollRef.current?.scrollTo({ x: 0, y: Number.MAX_SAFE_INTEGER })
-				setDetailScrollOffset(Number.MAX_SAFE_INTEGER)
-				return
-			}
-			if (key.name === "pageup") {
-				detailScrollRef.current?.scrollBy({ x: 0, y: -halfPage })
-				setDetailScrollOffset((current) => Math.max(0, current - halfPage))
-				return
-			}
-			if (key.name === "pagedown") {
-				detailScrollRef.current?.scrollBy({ x: 0, y: halfPage })
-				setDetailScrollOffset((current) => current + halfPage)
-				return
-			}
-			if (handleVimGoto(key,
-				() => { detailScrollRef.current?.scrollTo({ x: 0, y: 0 }); setDetailScrollOffset(0) },
-				() => { detailScrollRef.current?.scrollTo({ x: 0, y: Number.MAX_SAFE_INTEGER }); setDetailScrollOffset(Number.MAX_SAFE_INTEGER) },
-			)) return
-			if (key.name === "up" || key.name === "k") {
-				detailScrollRef.current?.scrollBy({ x: 0, y: -1 })
-				setDetailScrollOffset((current) => Math.max(0, current - 1))
-				return
-			}
-			if (key.name === "down" || key.name === "j") {
-				detailScrollRef.current?.scrollBy({ x: 0, y: 1 })
-				setDetailScrollOffset((current) => current + 1)
-				return
-			}
-			if (key.ctrl && key.name === "u") {
-				detailScrollRef.current?.scrollBy({ x: 0, y: -halfPage })
-				setDetailScrollOffset((current) => Math.max(0, current - halfPage))
-				return
-			}
-			if (key.ctrl && (key.name === "d" || key.name === "v")) {
-				detailScrollRef.current?.scrollBy({ x: 0, y: halfPage })
-				setDetailScrollOffset((current) => current + halfPage)
-				return
-			}
-			if (plainKey && key.name === "o" && selectedPullRequest) {
-				runCommandById("pull.open-browser")
-				return
-			}
-			if (plainKey && key.name === "y" && selectedPullRequest) {
-				runCommandById("pull.copy-metadata")
-				return
-			}
-			return
-		}
-
 		if (filterMode) {
 			if (isSingleLineInputKey(key)) {
 				setFilterDraft((current) => editSingleLineInput(current, key) ?? current)
 			}
-			return
 		}
-
-		if (key.name === "tab") {
-			switchQueueMode(key.shift ? -1 : 1)
-			return
-		}
-
-		if (key.name === "escape" && filterQuery.length > 0) {
-			runCommandById("filter.clear")
-			return
-		}
-		if (isWideLayout && selectedPullRequest && !detailFullView && !diffFullView) {
-			if (key.name === "home") {
-				scrollDetailPreviewTo(0)
-				return
-			}
-			if (key.name === "end") {
-				scrollDetailPreviewTo(Number.MAX_SAFE_INTEGER)
-				return
-			}
-			if (key.name === "pageup") {
-				scrollDetailPreviewBy(-halfPage)
-				return
-			}
-			if (key.name === "pagedown") {
-				scrollDetailPreviewBy(halfPage)
-				return
-			}
-		}
-		if (
-			key.name === "[" ||
-			((key.option || key.meta) && (key.name === "up" || key.name === "k")) ||
-			(key.shift && key.name === "k") ||
-			key.name === "K"
-		) {
-			setSelectedIndex((current) => {
-				if (visiblePullRequests.length === 0 || groupStarts.length === 0) return 0
-				const currentGroup = getCurrentGroupIndex(current)
-				if (currentGroup <= 0) return groupStarts[groupStarts.length - 1]!
-				return groupStarts[currentGroup - 1]!
-			})
-			return
-		}
-		if (
-			key.name === "]" ||
-			((key.option || key.meta) && (key.name === "down" || key.name === "j")) ||
-			(key.shift && key.name === "j") ||
-			key.name === "J"
-		) {
-			setSelectedIndex((current) => {
-				if (visiblePullRequests.length === 0 || groupStarts.length === 0) return 0
-				const currentGroup = getCurrentGroupIndex(current)
-				if (currentGroup >= groupStarts.length - 1) return groupStarts[0]!
-				return groupStarts[currentGroup + 1]!
-			})
-			return
-		}
-		if (key.ctrl && key.name === "u") {
-			setSelectedIndex((current) => {
-				if (visiblePullRequests.length === 0) return 0
-				return Math.max(0, current - halfPage)
-			})
-			return
-		}
-		if (key.ctrl && key.name === "d") {
-			setSelectedIndex((current) => {
-				if (visiblePullRequests.length === 0) return 0
-				return Math.min(visiblePullRequests.length - 1, current + halfPage)
-			})
-			return
-		}
-		if (key.name === "up" || key.name === "k") {
-			setSelectedIndex((current) => {
-				if (visiblePullRequests.length === 0) return 0
-				return current <= 0 ? visiblePullRequests.length - 1 : current - 1
-			})
-			return
-		}
-		if (key.name === "down" || key.name === "j") {
-			if (visiblePullRequests.length > 0 && selectedIndex >= visiblePullRequests.length - 1 && hasMorePullRequests) {
-				loadMorePullRequests()
-				return
-			}
-			setSelectedIndex((current) => {
-				if (visiblePullRequests.length === 0) return 0
-				return current >= visiblePullRequests.length - 1 ? 0 : current + 1
-			})
-			return
-		}
-		if (handleVimGoto(key,
-			() => setSelectedIndex(0),
-			() => setSelectedIndex(visiblePullRequests.length === 0 ? 0 : visiblePullRequests.length - 1),
-		)) return
 	})
 
 	const fullscreenContentWidth = Math.max(24, contentWidth - 2)

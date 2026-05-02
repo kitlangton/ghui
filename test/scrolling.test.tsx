@@ -21,10 +21,10 @@ const loadApp = async () => {
 	const { createTestRenderer } = await import("@opentui/core/testing")
 	const { createRoot } = await import("@opentui/react")
 	const { RegistryProvider } = await import("@effect/atom-react")
-	const { createDefaultOpenTuiKeymap } = await import("@opentui/keymap/opentui")
 	const { KeymapProvider } = await import("@opentui/keymap/react")
+	const { createKeymap } = await import("../src/keyboard/createKeymap.ts")
 	const { App } = await import("../src/App.tsx")
-	return { createTestRenderer, createRoot, RegistryProvider, createDefaultOpenTuiKeymap, KeymapProvider, App }
+	return { createTestRenderer, createRoot, RegistryProvider, createKeymap, KeymapProvider, App }
 }
 
 let cached: Awaited<ReturnType<typeof loadApp>> | null = null
@@ -55,9 +55,9 @@ const settle = async (
 
 const setupApp = async (cols = 100, rows = 20) => {
 	if (!cached) cached = await loadApp()
-	const { createTestRenderer, createRoot, RegistryProvider, createDefaultOpenTuiKeymap, KeymapProvider, App } = cached
+	const { createTestRenderer, createRoot, RegistryProvider, createKeymap, KeymapProvider, App } = cached
 	const setup = await createTestRenderer({ width: cols, height: rows })
-	const keymap = createDefaultOpenTuiKeymap(setup.renderer)
+	const keymap = createKeymap(setup.renderer)
 	const root = createRoot(setup.renderer)
 	act(() => {
 		root.render(

@@ -1,15 +1,12 @@
 import { Schema } from "effect"
 
-export const LoadStatus = Schema.Literals(["loading", "ready", "error"])
-export type LoadStatus = Schema.Schema.Type<typeof LoadStatus>
+export type LoadStatus = "loading" | "ready" | "error"
 
-export const PullRequestState = Schema.Literals(["open", "closed", "merged"])
-export type PullRequestState = Schema.Schema.Type<typeof PullRequestState>
+export type PullRequestState = "open" | "closed" | "merged"
 
-export const PullRequestQueueMode = Schema.Literals(["repository", "authored", "review", "assigned", "mentioned"])
-export type PullRequestQueueMode = Schema.Schema.Type<typeof PullRequestQueueMode>
-export type PullRequestUserQueueMode = Exclude<PullRequestQueueMode, "repository">
-export const pullRequestQueueModes = PullRequestQueueMode.literals.filter((mode): mode is PullRequestUserQueueMode => mode !== "repository")
+export const pullRequestQueueModes = ["authored", "review", "assigned", "mentioned"] as const
+export type PullRequestUserQueueMode = (typeof pullRequestQueueModes)[number]
+export type PullRequestQueueMode = "repository" | PullRequestUserQueueMode
 
 export const pullRequestQueueLabels = {
 	repository: "repository",
@@ -30,26 +27,22 @@ export const pullRequestQueueSearchQualifier = (mode: PullRequestQueueMode, auth
 	return qualifiers[mode]
 }
 
-export const CheckConclusion = Schema.Literals(["success", "failure", "neutral", "skipped", "cancelled", "timed_out"])
-export type CheckConclusion = Schema.Schema.Type<typeof CheckConclusion>
+export type CheckConclusion = "success" | "failure" | "neutral" | "skipped" | "cancelled" | "timed_out"
 
-export const CheckRunStatus = Schema.Literals(["completed", "in_progress", "queued", "pending"])
-export type CheckRunStatus = Schema.Schema.Type<typeof CheckRunStatus>
+export type CheckRunStatus = "completed" | "in_progress" | "queued" | "pending"
 
-export const CheckRollupStatus = Schema.Literals(["passing", "pending", "failing", "none"])
-export type CheckRollupStatus = Schema.Schema.Type<typeof CheckRollupStatus>
+export type CheckRollupStatus = "passing" | "pending" | "failing" | "none"
 
-export const ReviewStatus = Schema.Literals(["draft", "approved", "changes", "review", "none"])
-export type ReviewStatus = Schema.Schema.Type<typeof ReviewStatus>
+export type ReviewStatus = "draft" | "approved" | "changes" | "review" | "none"
 
-export const Mergeable = Schema.Literals(["mergeable", "conflicting", "unknown"])
-export type Mergeable = Schema.Schema.Type<typeof Mergeable>
+export type Mergeable = "mergeable" | "conflicting" | "unknown"
 
+// DiffCommentSide is the only literal type still consumed at runtime — GitHubService
+// uses it as a Schema inside PullRequestCommentSchema.
 export const DiffCommentSide = Schema.Literals(["LEFT", "RIGHT"])
 export type DiffCommentSide = Schema.Schema.Type<typeof DiffCommentSide>
 
-export const PullRequestMergeAction = Schema.Literals(["squash", "auto", "admin", "disable-auto"])
-export type PullRequestMergeAction = Schema.Schema.Type<typeof PullRequestMergeAction>
+export type PullRequestMergeAction = "squash" | "auto" | "admin" | "disable-auto"
 
 export interface CheckItem {
 	readonly name: string

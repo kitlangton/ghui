@@ -358,6 +358,7 @@ const closePullRequestAtom = githubRuntime.fn<{ readonly repository: string; rea
 const createPullRequestCommentAtom = githubRuntime.fn<CreatePullRequestCommentInput>()((input) => GitHubService.use((github) => github.createPullRequestComment(input)))
 const copyToClipboardAtom = githubRuntime.fn<string>()((text) => Clipboard.use((clipboard) => clipboard.copy(text)))
 const openInBrowserAtom = githubRuntime.fn<PullRequestItem>()((pullRequest) => BrowserOpener.use((browser) => browser.openPullRequest(pullRequest)))
+const openUrlAtom = githubRuntime.fn<string>()((url) => BrowserOpener.use((browser) => browser.openUrl(url)))
 
 const centeredOffset = (outer: number, inner: number) => Math.floor((outer - inner) / 2)
 
@@ -617,6 +618,7 @@ export const App = () => {
 	const createPullRequestComment = useAtomSet(createPullRequestCommentAtom, { mode: "promise" })
 	const copyToClipboard = useAtomSet(copyToClipboardAtom, { mode: "promise" })
 	const openInBrowser = useAtomSet(openInBrowserAtom, { mode: "promise" })
+	const openUrl = useAtomSet(openUrlAtom, { mode: "promise" })
 	const terminalWidth = width ?? 100
 	const terminalHeight = height ?? 24
 	const contentWidth = Math.max(1, terminalWidth)
@@ -1467,6 +1469,12 @@ export const App = () => {
 	const openSelectedPullRequestInBrowser = (pullRequest: PullRequestItem) => {
 		void openInBrowser(pullRequest)
 			.then(() => flashNotice(`Opened #${pullRequest.number} in browser`))
+			.catch((error) => flashNotice(errorMessage(error)))
+	}
+
+	const openLinkInBrowser = (url: string) => {
+		void openUrl(url)
+			.then(() => flashNotice(`Opened ${url} in browser`))
 			.catch((error) => flashNotice(errorMessage(error)))
 	}
 
@@ -2407,7 +2415,7 @@ export const App = () => {
 						<>
 							<DetailHeader pullRequest={selectedPullRequest} viewerUsername={username} contentWidth={fullscreenContentWidth} paneWidth={contentWidth} showChecks />
 							<scrollbox ref={detailScrollRef} focused flexGrow={1} verticalScrollbarOptions={{ visible: fullscreenDetailBodyScrollable }}>
-								<DetailBody pullRequest={selectedPullRequest} contentWidth={fullscreenContentWidth} bodyLines={fullscreenBodyLines} bodyLineLimit={DETAIL_BODY_SCROLL_LIMIT} loadingIndicator={loadingIndicator} themeId={themeId} />
+								<DetailBody pullRequest={selectedPullRequest} contentWidth={fullscreenContentWidth} bodyLines={fullscreenBodyLines} bodyLineLimit={DETAIL_BODY_SCROLL_LIMIT} loadingIndicator={loadingIndicator} themeId={themeId} onLinkOpen={openLinkInBrowser} />
 							</scrollbox>
 						</>
 					) : (
@@ -2434,7 +2442,7 @@ export const App = () => {
 							<>
 								<DetailHeader pullRequest={selectedPullRequest} viewerUsername={username} contentWidth={rightContentWidth} paneWidth={rightPaneWidth} showChecks />
 								<scrollbox ref={detailPreviewScrollRef} flexGrow={1} verticalScrollbarOptions={{ visible: wideDetailBodyScrollable }}>
-									<DetailBody pullRequest={selectedPullRequest} contentWidth={rightContentWidth} bodyLines={wideDetailLines} bodyLineLimit={DETAIL_BODY_SCROLL_LIMIT} loadingIndicator={loadingIndicator} themeId={themeId} />
+									<DetailBody pullRequest={selectedPullRequest} contentWidth={rightContentWidth} bodyLines={wideDetailLines} bodyLineLimit={DETAIL_BODY_SCROLL_LIMIT} loadingIndicator={loadingIndicator} themeId={themeId} onLinkOpen={openLinkInBrowser} />
 								</scrollbox>
 							</>
 						) : (
@@ -2448,7 +2456,7 @@ export const App = () => {
 						<>
 							<DetailHeader pullRequest={selectedPullRequest} viewerUsername={username} contentWidth={fullscreenContentWidth} paneWidth={contentWidth} />
 							<scrollbox ref={detailScrollRef} focused flexGrow={1} verticalScrollbarOptions={{ visible: fullscreenDetailBodyScrollable }}>
-								<DetailBody pullRequest={selectedPullRequest} contentWidth={fullscreenContentWidth} bodyLines={fullscreenBodyLines} bodyLineLimit={DETAIL_BODY_SCROLL_LIMIT} loadingIndicator={loadingIndicator} themeId={themeId} />
+								<DetailBody pullRequest={selectedPullRequest} contentWidth={fullscreenContentWidth} bodyLines={fullscreenBodyLines} bodyLineLimit={DETAIL_BODY_SCROLL_LIMIT} loadingIndicator={loadingIndicator} themeId={themeId} onLinkOpen={openLinkInBrowser} />
 							</scrollbox>
 						</>
 					) : (
@@ -2457,7 +2465,7 @@ export const App = () => {
 				</box>
 			) : (
 				<box key="narrow-main" height={wideBodyHeight} flexDirection="column">
-					<DetailsPane pullRequest={selectedPullRequest} viewerUsername={username} contentWidth={fullscreenContentWidth} paneWidth={contentWidth} placeholderContent={detailPlaceholderContent} loadingIndicator={loadingIndicator} themeId={themeId} />
+					<DetailsPane pullRequest={selectedPullRequest} viewerUsername={username} contentWidth={fullscreenContentWidth} paneWidth={contentWidth} placeholderContent={detailPlaceholderContent} loadingIndicator={loadingIndicator} themeId={themeId} onLinkOpen={openLinkInBrowser} />
 					<Divider width={contentWidth} />
 					<box flexGrow={1} flexDirection="column">
 						<scrollbox ref={prListScrollRef} focusable={false} flexGrow={1}>

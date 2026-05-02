@@ -459,6 +459,7 @@ export const DetailBody = ({
 	bodyLineLimit = bodyLines,
 	loadingIndicator,
 	themeId,
+	onLinkOpen,
 }: {
 	pullRequest: PullRequestItem
 	contentWidth: number
@@ -466,6 +467,7 @@ export const DetailBody = ({
 	bodyLineLimit?: number
 	loadingIndicator: string
 	themeId: ThemeId
+	onLinkOpen?: (url: string) => void
 }) => {
 	const renderer = useRenderer()
 	const [hoveredUrl, setHoveredUrl] = useState<string | null>(null)
@@ -515,6 +517,12 @@ export const DetailBody = ({
 		if (hoveredUrl !== null) setHoveredUrl(null)
 	}
 
+	const handleMouseDown = function (this: BoxRenderable, event: MouseEvent) {
+		if (!onLinkOpen || hoveredUrl === null || event.button !== 0) return
+		event.stopPropagation()
+		onLinkOpen(hoveredUrl)
+	}
+
 	return (
 		<box
 			flexDirection="column"
@@ -523,6 +531,7 @@ export const DetailBody = ({
 			height={previewLines.length}
 			onMouseMove={handleMouseMove}
 			onMouseOut={handleMouseOut}
+			onMouseDown={handleMouseDown}
 		>
 			{previewLines.map((line, index) => (
 				<TextLine key={`${pullRequest.url}-${index}`}>
@@ -606,6 +615,7 @@ export const DetailsPane = ({
 	placeholderContent,
 	loadingIndicator,
 	themeId,
+	onLinkOpen,
 }: {
 	pullRequest: PullRequestItem | null
 	viewerUsername: string | null
@@ -617,6 +627,7 @@ export const DetailsPane = ({
 	placeholderContent: DetailPlaceholderContent
 	loadingIndicator: string
 	themeId: ThemeId
+	onLinkOpen?: (url: string) => void
 }) => {
 	const contentHeight = getDetailsPaneHeight({ pullRequest, contentWidth, bodyLines: bodyLineLimit, paneWidth, showChecks })
 
@@ -625,7 +636,7 @@ export const DetailsPane = ({
 			{pullRequest ? (
 				<>
 					<DetailHeader pullRequest={pullRequest} viewerUsername={viewerUsername} contentWidth={contentWidth} paneWidth={paneWidth} showChecks={showChecks} />
-					<DetailBody pullRequest={pullRequest} contentWidth={contentWidth} bodyLines={bodyLines} bodyLineLimit={bodyLineLimit} loadingIndicator={loadingIndicator} themeId={themeId} />
+					<DetailBody pullRequest={pullRequest} contentWidth={contentWidth} bodyLines={bodyLines} bodyLineLimit={bodyLineLimit} loadingIndicator={loadingIndicator} themeId={themeId} {...(onLinkOpen ? { onLinkOpen } : {})} />
 				</>
 			) : (
 				<>

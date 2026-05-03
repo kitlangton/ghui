@@ -3,6 +3,7 @@ import { changedFilesModalKeymap, type ChangedFilesModalCtx } from "./changedFil
 import { closeModalKeymap, type CloseModalCtx } from "./closeModal.ts"
 import { commandPaletteKeymap, type CommandPaletteCtx } from "./commandPalette.ts"
 import { commentModalKeymap, type CommentModalCtx } from "./commentModal.ts"
+import { commentsViewKeymap, type CommentsViewCtx } from "./commentsView.ts"
 import { commentThreadModalKeymap, type CommentThreadModalCtx } from "./commentThreadModal.ts"
 import { detailViewKeymap, type DetailViewCtx } from "./detailView.ts"
 import { diffViewKeymap, type DiffViewCtx } from "./diffView.ts"
@@ -31,6 +32,7 @@ export interface AppCtx {
 	readonly filterMode: boolean
 	readonly diffFullView: boolean
 	readonly detailFullView: boolean
+	readonly commentsViewActive: boolean
 
 	// True whenever a modal/mode swallows raw text input (so q-quit, etc. are
 	// disabled inside text-editing contexts).
@@ -51,6 +53,7 @@ export interface AppCtx {
 	readonly filterModeCtx: FilterModeCtx
 	readonly diff: DiffViewCtx
 	readonly detail: DetailViewCtx
+	readonly commentsView: CommentsViewCtx
 	readonly listNav: ListNavCtx
 
 	// Always-on / app-level
@@ -73,7 +76,7 @@ const modalActive = (a: AppCtx): boolean =>
 	a.commentModalActive ||
 	a.commandPaletteActive
 
-const inListMode = (a: AppCtx): boolean => !modalActive(a) && !a.filterMode && !a.diffFullView && !a.detailFullView
+const inListMode = (a: AppCtx): boolean => !modalActive(a) && !a.filterMode && !a.diffFullView && !a.detailFullView && !a.commentsViewActive
 
 export const appKeymap = App(
 	// Always-on: command palette opener
@@ -111,6 +114,7 @@ export const appKeymap = App(
 	// Full-view layers (only when no modal is on top)
 	diffViewKeymap.scope((a) => a.diffFullView && !modalActive(a) && a.diff),
 	detailViewKeymap.scope((a) => a.detailFullView && !modalActive(a) && a.detail),
+	commentsViewKeymap.scope((a) => a.commentsViewActive && !modalActive(a) && a.commentsView),
 
 	// PR list nav
 	listNavKeymap.scope((a) => inListMode(a) && a.listNav),

@@ -150,6 +150,7 @@ import {
 	type ThemeModalState,
 } from "./ui/modals.js"
 import { groupBy, pullRequestMetadataText } from "./ui/pullRequests.js"
+import { CommentsPane } from "./ui/CommentsPane.js"
 import { PullRequestDiffPane } from "./ui/PullRequestDiffPane.js"
 import { buildPullRequestListRows, pullRequestListRowIndex, PullRequestList } from "./ui/PullRequestList.js"
 import { editSingleLineInput, isSingleLineInputKey, printableKeyText, singleLineText } from "./ui/singleLineInput.js"
@@ -312,6 +313,8 @@ const filterModeAtom = Atom.make(false)
 const detailFullViewAtom = Atom.make(false)
 const detailScrollOffsetAtom = Atom.make(0)
 const diffFullViewAtom = Atom.make(false)
+const commentsViewActiveAtom = Atom.make(false)
+const commentsViewSelectionAtom = Atom.make(0)
 const diffFileIndexAtom = Atom.make(0)
 const diffScrollTopAtom = Atom.make(0)
 const diffRenderViewAtom = Atom.make<DiffView>("split")
@@ -633,6 +636,8 @@ export const App = () => {
 	const [detailFullView, setDetailFullView] = useAtom(detailFullViewAtom)
 	const setDetailScrollOffset = useAtomSet(detailScrollOffsetAtom)
 	const [diffFullView, setDiffFullView] = useAtom(diffFullViewAtom)
+	const [commentsViewActive, setCommentsViewActive] = useAtom(commentsViewActiveAtom)
+	const [commentsViewSelection, setCommentsViewSelection] = useAtom(commentsViewSelectionAtom)
 	const [diffFileIndex, setDiffFileIndex] = useAtom(diffFileIndexAtom)
 	const [diffScrollTop, setDiffScrollTop] = useAtom(diffScrollTopAtom)
 	const [diffRenderView, setDiffRenderView] = useAtom(diffRenderViewAtom)
@@ -832,7 +837,7 @@ export const App = () => {
 	)
 	const selectedPullRequestRowIndex = pullRequestListRowIndex(pullRequestListRows, selectedPullRequest?.url ?? null)
 	const selectedDiffKey = useAtomValue(selectedDiffKeyAtom)
-	const selectedConversationItems = selectedDiffKey ? (pullRequestComments[selectedDiffKey] ?? []) : []
+	const selectedComments = selectedDiffKey ? (pullRequestComments[selectedDiffKey] ?? []) : []
 	const selectedCommentsStatus: DetailCommentsStatus = selectedDiffKey ? (pullRequestCommentsLoaded[selectedDiffKey] ?? "idle") : "idle"
 	const selectedDiffState = useAtomValue(selectedDiffStateAtom)
 	const effectiveDiffRenderView = contentWidth >= 100 ? diffRenderView : "unified"
@@ -1059,7 +1064,7 @@ export const App = () => {
 			})
 		return true
 	}
-	const loadPullRequestConversation = (pullRequest: PullRequestItem, force = false) => {
+	const loadPullRequestComments = (pullRequest: PullRequestItem, force = false) => {
 		const key = pullRequestDiffKey(pullRequest)
 		const previousLoadState = registry.get(pullRequestCommentsLoadedAtom)[key]
 		if (!force && previousLoadState) return
@@ -1335,7 +1340,7 @@ export const App = () => {
 
 	useEffect(() => {
 		if (pullRequestStatus !== "ready" || !selectedPullRequest) return
-		loadPullRequestConversation(selectedPullRequest)
+		loadPullRequestComments(selectedPullRequest)
 	}, [pullRequestStatus, selectedPullRequest?.url, selectedPullRequest?.headRefOid, selectedPullRequest?.repository, selectedPullRequest?.number])
 
 	useEffect(() => {
@@ -1369,7 +1374,7 @@ export const App = () => {
 	const isSelectedPullRequestDetailLoading = selectedPullRequest !== null && !selectedPullRequest.detailLoaded
 	const halfPage = Math.max(1, Math.floor(wideBodyHeight / 2))
 
-	const loadPullRequestComments = (pullRequest: PullRequestItem, force = false) => {
+	const loadPullRequestReviewComments = (pullRequest: PullRequestItem, force = false) => {
 		const key = pullRequestDiffKey(pullRequest)
 		const previousLoadState = registry.get(diffCommentsLoadedAtom)[key]
 		if (!force && previousLoadState) return
@@ -1413,7 +1418,7 @@ export const App = () => {
 		const includeComments = options.includeComments ?? false
 		const key = pullRequestDiffKey(pullRequest)
 		const existing = registry.get(pullRequestDiffCacheAtom)[key]
-		if (includeComments) loadPullRequestComments(pullRequest, force)
+		if (includeComments) loadPullRequestReviewComments(pullRequest, force)
 		if (!force && existing && (existing._tag === "Ready" || existing._tag === "Loading")) return
 
 		setPullRequestDiffCache((current) => ({ ...current, [key]: PullRequestDiffState.Loading() }))
@@ -1457,6 +1462,7 @@ export const App = () => {
 		diffCommentLineColorsRef.current = { contextKey: null, entries: [] }
 		setDiffFullView(true)
 		setDetailFullView(false)
+		setCommentsViewActive(false)
 		setDiffFileIndex(0)
 		setDiffScrollTop(0)
 		setDiffCommentAnchorIndex(0)
@@ -1465,6 +1471,44 @@ export const App = () => {
 		setDiffRenderView(contentWidth >= 100 ? "split" : "unified")
 		diffScrollRef.current?.scrollTo({ x: 0, y: 0 })
 		loadPullRequestDiff(selectedPullRequest, { includeComments: true })
+	}
+
+	const openCommentsView = () => {
+		if (!selectedPullRequest) return
+		setCommentsViewActive(true)
+		setDetailFullView(false)
+		setDiffFullView(false)
+		setCommentsViewSelection(0)
+		loadPullRequestReviewComments(selectedPullRequest, true)
+	}
+
+	const closeCommentsView = () => {
+		setCommentsViewActive(false)
+	}
+
+	const moveCommentsSelection = (delta: number) => {
+		setCommentsViewSelection((current) => {
+			const max = Math.max(0, selectedComments.length - 1)
+			return Math.max(0, Math.min(max, current + delta))
+		})
+	}
+
+	const setCommentsSelection = (index: number) => {
+		const max = Math.max(0, selectedComments.length - 1)
+		setCommentsViewSelection(Math.max(0, Math.min(max, index)))
+	}
+
+	const openSelectedCommentInBrowser = () => {
+		const comment = selectedComments[commentsViewSelection]
+		if (!comment?.url) return
+		void openUrl(comment.url)
+			.then(() => flashNotice(`Opened ${comment.url}`))
+			.catch((error) => flashNotice(errorMessage(error)))
+	}
+
+	const refreshSelectedComments = () => {
+		if (!selectedPullRequest) return
+		loadPullRequestReviewComments(selectedPullRequest, true)
 	}
 
 	const setDiffRenderableRef = (index: number, diff: DiffRenderable | null) => {
@@ -2321,6 +2365,8 @@ export const App = () => {
 				setDiffFullView(false)
 				setDiffCommentRangeStartIndex(null)
 			},
+			openCommentsView,
+			closeCommentsView,
 			reloadDiff: () => {
 				if (!selectedPullRequest) return
 				loadPullRequestDiff(selectedPullRequest, { force: true, includeComments: true })
@@ -2510,6 +2556,7 @@ export const App = () => {
 		filterMode,
 		diffFullView,
 		detailFullView,
+		commentsViewActive,
 		textInputActive:
 			commentModalActive ||
 			commandPaletteActive ||
@@ -2668,6 +2715,17 @@ export const App = () => {
 			openInBrowser: () => runCommandById("pull.open-browser"),
 			copyMetadata: () => runCommandById("pull.copy-metadata"),
 		},
+		commentsView: {
+			halfPage,
+			scrollBy: () => moveCommentsSelection(0),
+			scrollTo: setCommentsSelection,
+			visibleCount: selectedComments.length,
+			closeCommentsView,
+			moveSelection: moveCommentsSelection,
+			setSelected: setCommentsSelection,
+			openInBrowser: openSelectedCommentInBrowser,
+			refresh: refreshSelectedComments,
+		},
 		listNav: {
 			halfPage,
 			visibleCount: visiblePullRequests.length,
@@ -2784,17 +2842,17 @@ export const App = () => {
 	const fullscreenBodyLines = Math.max(8, terminalHeight - 8)
 	const fullscreenDetailHeaderHeight = getDetailHeaderHeight(selectedPullRequest, contentWidth, isWideLayout)
 	const fullscreenDetailBodyViewportHeight = Math.max(1, wideBodyHeight - fullscreenDetailHeaderHeight)
-	const fullscreenDetailBodyHeight = getScrollableDetailBodyHeight(selectedPullRequest, fullscreenContentWidth, selectedConversationItems, selectedCommentsStatus)
+	const fullscreenDetailBodyHeight = getScrollableDetailBodyHeight(selectedPullRequest, fullscreenContentWidth, selectedComments, selectedCommentsStatus)
 	const fullscreenDetailBodyScrollable = fullscreenDetailBodyHeight > fullscreenDetailBodyViewportHeight
 	const wideDetailHeaderHeight = getDetailHeaderHeight(selectedPullRequest, rightPaneWidth, true)
 	const wideDetailBodyViewportHeight = Math.max(1, wideBodyHeight - wideDetailHeaderHeight)
-	const wideDetailBodyHeight = getScrollableDetailBodyHeight(selectedPullRequest, rightContentWidth, selectedConversationItems, selectedCommentsStatus)
+	const wideDetailBodyHeight = getScrollableDetailBodyHeight(selectedPullRequest, rightContentWidth, selectedComments, selectedCommentsStatus)
 	const wideDetailBodyScrollable = wideDetailBodyHeight > wideDetailBodyViewportHeight
 	const narrowDetailsPaneHeight = getDetailsPaneHeight({
 		pullRequest: selectedPullRequest,
 		contentWidth: fullscreenContentWidth,
 		paneWidth: contentWidth,
-		comments: selectedConversationItems,
+		comments: selectedComments,
 		commentsStatus: selectedCommentsStatus,
 	})
 	const narrowPullRequestListHeight = Math.max(1, wideBodyHeight - narrowDetailsPaneHeight - 1)
@@ -2807,7 +2865,7 @@ export const App = () => {
 				paneWidth: rightPaneWidth,
 				showChecks: true,
 				contentWidth: rightContentWidth,
-				comments: selectedConversationItems,
+				comments: selectedComments,
 				commentsStatus: selectedCommentsStatus,
 				bodyScrollTop: detailPreviewScrollTop,
 				bodyViewportHeight: wideDetailBodyViewportHeight,
@@ -2905,8 +2963,23 @@ export const App = () => {
 			<box paddingLeft={1} paddingRight={1} flexDirection="column" backgroundColor={colors.background}>
 				<PlainLine text={headerLine} fg={colors.muted} bold />
 			</box>
-			{isWideLayout && !detailFullView && !diffFullView ? <Divider width={contentWidth} junctionAt={dividerJunctionAt} junctionChar="┬" /> : <Divider width={contentWidth} />}
-			{diffFullView ? (
+			{isWideLayout && !detailFullView && !diffFullView && !commentsViewActive ? (
+				<Divider width={contentWidth} junctionAt={dividerJunctionAt} junctionChar="┬" />
+			) : (
+				<Divider width={contentWidth} />
+			)}
+			{commentsViewActive && selectedPullRequest ? (
+				<CommentsPane
+					pullRequest={selectedPullRequest}
+					comments={selectedComments}
+					status={selectedCommentsStatus}
+					selectedIndex={commentsViewSelection}
+					contentWidth={fullscreenContentWidth}
+					paneWidth={contentWidth}
+					height={wideBodyHeight}
+					loadingIndicator={loadingIndicator}
+				/>
+			) : diffFullView ? (
 				<PullRequestDiffPane
 					pullRequest={selectedPullRequest}
 					diffState={displayedDiffState}
@@ -2942,7 +3015,7 @@ export const App = () => {
 									contentWidth={fullscreenContentWidth}
 									bodyLines={fullscreenBodyLines}
 									bodyLineLimit={DETAIL_BODY_SCROLL_LIMIT}
-									comments={selectedConversationItems}
+									comments={selectedComments}
 									commentsStatus={selectedCommentsStatus}
 									loadingIndicator={loadingIndicator}
 									themeId={themeId}
@@ -2992,7 +3065,7 @@ export const App = () => {
 										contentWidth={rightContentWidth}
 										bodyLines={wideDetailLines}
 										bodyLineLimit={DETAIL_BODY_SCROLL_LIMIT}
-										comments={selectedConversationItems}
+										comments={selectedComments}
 										commentsStatus={selectedCommentsStatus}
 										loadingIndicator={loadingIndicator}
 										themeId={themeId}
@@ -3016,7 +3089,7 @@ export const App = () => {
 									contentWidth={fullscreenContentWidth}
 									bodyLines={fullscreenBodyLines}
 									bodyLineLimit={DETAIL_BODY_SCROLL_LIMIT}
-									comments={selectedConversationItems}
+									comments={selectedComments}
 									commentsStatus={selectedCommentsStatus}
 									loadingIndicator={loadingIndicator}
 									themeId={themeId}
@@ -3044,7 +3117,7 @@ export const App = () => {
 						viewerUsername={username}
 						contentWidth={fullscreenContentWidth}
 						paneWidth={contentWidth}
-						comments={selectedConversationItems}
+						comments={selectedComments}
 						commentsStatus={selectedCommentsStatus}
 						placeholderContent={detailPlaceholderContent}
 						loadingIndicator={loadingIndicator}

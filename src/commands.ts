@@ -1,6 +1,6 @@
-export type CommandScope = "Global" | "View" | "Pull request" | "Diff" | "Navigation" | "System"
+export type CommandScope = "Global" | "View" | "Pull request" | "Diff" | "Comments" | "Navigation" | "System"
 
-const SCOPE_ORDER: readonly CommandScope[] = ["Global", "View", "Pull request", "Diff", "Navigation", "System"]
+const SCOPE_ORDER: readonly CommandScope[] = ["Global", "View", "Pull request", "Diff", "Comments", "Navigation", "System"]
 
 export const sortCommandsByScope = (commands: readonly AppCommand[]) => [...commands].sort((left, right) => SCOPE_ORDER.indexOf(left.scope) - SCOPE_ORDER.indexOf(right.scope))
 

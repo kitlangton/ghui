@@ -17,6 +17,8 @@ interface AppCommandActions {
 	readonly closeDetails: () => void
 	readonly openDiffView: () => void
 	readonly closeDiffView: () => void
+	readonly openCommentsView: () => void
+	readonly closeCommentsView: () => void
 	readonly reloadDiff: () => void
 	readonly toggleDiffRenderView: () => void
 	readonly toggleDiffWrapMode: () => void
@@ -204,6 +206,14 @@ export const buildAppCommands = ({
 			shortcut: "d",
 			keywords: ["files", "patch"],
 			run: actions.openDiffView,
+		}),
+		forSelected({
+			id: "comments.open",
+			title: "Open comments",
+			scope: "Comments",
+			shortcut: "c",
+			keywords: ["conversation", "discussion", "review"],
+			run: actions.openCommentsView,
 		}),
 		defineCommand({
 			id: "diff.close",

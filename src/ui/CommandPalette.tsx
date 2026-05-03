@@ -11,6 +11,7 @@ const scopeLabels = {
 	View: "View",
 	"Pull request": "Pull Request",
 	Diff: "Diff",
+	Comments: "Comments",
 	Navigation: "Navigation",
 	System: "System",
 } as const satisfies Record<AppCommand["scope"], string>

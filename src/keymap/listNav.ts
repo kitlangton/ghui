@@ -29,6 +29,7 @@ export const listNavKeymap = List(
 	{ id: "list.refresh", title: "Refresh", keys: ["r"], run: (s) => s.runCommandById("pull.refresh") },
 	{ id: "list.theme", title: "Theme", keys: ["t"], run: (s) => s.runCommandById("theme.open") },
 	{ id: "list.diff", title: "Open diff", keys: ["d"], run: (s) => s.runCommandById("diff.open") },
+	{ id: "list.comments", title: "Open comments", keys: ["c"], run: (s) => s.runCommandById("comments.open") },
 	{ id: "list.review", title: "Review pull request", keys: ["shift+r"], run: (s) => s.runCommandById("pull.submit-review") },
 	{ id: "list.labels", title: "Labels", keys: ["l"], run: (s) => s.runCommandById("pull.labels") },
 	{ id: "list.merge", title: "Merge", keys: ["m", "shift+m"], run: (s) => s.runCommandById("pull.merge") },

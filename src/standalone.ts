@@ -9,6 +9,9 @@ Usage:
   ghui -v, --version
                     Print the installed version
   ghui -h, --help   Show this help message
+
+Options:
+  -f, --filter <query>  Start with a preset filter query
 `
 
 const args = Bun.argv.slice(2)
@@ -43,7 +46,13 @@ if (command === "upgrade") {
 	process.exit(1)
 }
 
-if (typeof command === "string") {
+if (command === "-f" || command === "--filter") {
+	if (!args[1] || args[1].startsWith("-")) {
+		console.error("Error: --filter requires a query value.")
+		console.error("Usage: ghui --filter <query>")
+		process.exit(1)
+	}
+} else if (typeof command === "string") {
 	const unknownCommand = command
 	const suggestion = commands.find((name) => editDistance(unknownCommand, name) <= 2)
 	console.error(`Unknown command: ${unknownCommand}`)

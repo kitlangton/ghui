@@ -1526,7 +1526,7 @@ export const App = () => {
 	// j/k navigates the *visual* (threaded) order, not the raw load order — so
 	// the comment under the cursor is the one immediately below the previously
 	// highlighted row, regardless of where it lives in the flat array.
-	const orderedComments = orderCommentsForDisplay(selectedComments)
+	const orderedComments = useMemo(() => orderCommentsForDisplay(selectedComments), [selectedComments])
 	const selectedOrderedComment = orderedComments[commentsViewSelection]?.comment ?? null
 	const commentsRowCount = commentsViewRowCount(selectedComments.length)
 	const moveCommentsSelection = (delta: number) => {
@@ -3147,6 +3147,7 @@ export const App = () => {
 				<CommentsPane
 					pullRequest={selectedPullRequest}
 					comments={selectedComments}
+					orderedComments={orderedComments}
 					status={selectedCommentsStatus}
 					selectedIndex={commentsViewSelection}
 					contentWidth={fullscreenContentWidth}

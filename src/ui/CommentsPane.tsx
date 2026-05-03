@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef } from "react"
-import type { ScrollBoxRenderable } from "@opentui/core"
+import { TextAttributes, type ScrollBoxRenderable } from "@opentui/core"
 import type { PullRequestComment, PullRequestItem } from "../domain.js"
 import { colors } from "./colors.js"
 import { commentBodyRows, commentCountText, commentMetaSegments, CommentSegmentsLine, type CommentDisplayLine, type CommentSegment } from "./comments.js"
@@ -14,8 +14,9 @@ const PLACEHOLDER_KEY = "__placeholder_new_comment"
 export const COMMENTS_VIEW_PLACEHOLDER_ROWS = 1
 export const commentsViewRowCount = (count: number) => count + COMMENTS_VIEW_PLACEHOLDER_ROWS
 
-// Cap visual indent so deep threads don't run off the right of the pane.
-const MAX_INDENT = 3
+// Cap nesting depth — deep chains otherwise eat the pane width.
+const MAX_INDENT_LEVELS = 3
+const REPLY_INDENT_COLS = 4
 
 interface CommentBlock {
 	readonly key: string
@@ -40,6 +41,15 @@ const reviewContextGroups = (comment: PullRequestComment, width: number): readon
 // like `> @author wrote:\n> <quoted>\n\n<reply>`. We use that prefix to find a
 // likely parent so the reply visually nests instead of falling to the bottom.
 const QUOTE_HEADER_RE = /^>\s*@(\S+)\s+wrote:\s*\n((?:>[^\n]*(?:\n|$))+)/
+
+// When we nest a quote-reply under its parent, the quoted block becomes visual
+// noise — the parent is already shown right above. Strip the leading quote
+// header so the rendered body is just the user's actual reply text.
+const stripQuoteHeader = (body: string): string => {
+	const match = QUOTE_HEADER_RE.exec(body)
+	if (!match) return body
+	return body.slice(match[0].length).replace(/^\n+/, "")
+}
 
 // Whitespace-tolerant compare: collapse blank lines and trailing spaces so the
 // quote text we extracted from a child matches its parent's body even when the
@@ -82,7 +92,7 @@ export interface OrderedComment {
 // Order comments so replies sit right after their parent: review threads via
 // `inReplyTo`, issue-comment quote replies via the heuristic above. Roots
 // preserve overall createdAt order; replies render at the parent's depth + 1
-// (capped at MAX_INDENT so deep chains don't run off the pane).
+// (capped at MAX_INDENT_LEVELS so deep chains don't run off the pane).
 export const orderCommentsForDisplay = (comments: readonly PullRequestComment[]): readonly OrderedComment[] => {
 	const byId = new Map<string, PullRequestComment>()
 	for (const comment of comments) byId.set(comment.id, comment)
@@ -111,7 +121,7 @@ export const orderCommentsForDisplay = (comments: readonly PullRequestComment[])
 	const visit = (comment: PullRequestComment, indent: number): void => {
 		if (visited.has(comment.id)) return
 		visited.add(comment.id)
-		ordered.push({ comment, indent: Math.min(indent, MAX_INDENT) })
+		ordered.push({ comment, indent: Math.min(indent, MAX_INDENT_LEVELS) })
 		const children = (childrenByParent.get(comment.id) ?? []).slice().sort(byTime)
 		for (const child of children) visit(child, indent + 1)
 	}
@@ -119,14 +129,16 @@ export const orderCommentsForDisplay = (comments: readonly PullRequestComment[])
 	return ordered
 }
 
-const buildBlocks = (comments: readonly PullRequestComment[], width: number): readonly CommentBlock[] =>
-	orderCommentsForDisplay(comments).map(({ comment, indent }) => {
+const buildBlocks = (ordered: readonly OrderedComment[], width: number): readonly CommentBlock[] =>
+	ordered.map(({ comment, indent }) => {
 		const usableWidth = Math.max(8, width - indent * REPLY_INDENT_COLS)
 		// Don't repeat the file path for replies — the thread root carries it.
 		const groups = indent > 0 ? [] : reviewContextGroups(comment, usableWidth)
 		const marker = indent > 0 ? { text: "↳", fg: colors.muted } : undefined
 		const meta: CommentDisplayLine = { key: `${comment.id}:meta`, segments: commentMetaSegments({ item: comment, groups, marker }) }
-		const body = commentBodyRows({ keyPrefix: comment.id, body: comment.body, width: usableWidth })
+		// When nested, the parent is right above — the quote header becomes noise.
+		const renderedBody = indent > 0 && comment._tag === "comment" ? stripQuoteHeader(comment.body) : comment.body
+		const body = commentBodyRows({ keyPrefix: comment.id, body: renderedBody, width: usableWidth })
 		// Reserve 1 spacer line between blocks for breathing room.
 		return { key: comment.id, comment, meta, body, height: 1 + body.length + 1, indent, isPlaceholder: false }
 	})
@@ -151,16 +163,13 @@ const blockOffsets = (blocks: readonly CommentBlock[]): readonly number[] => {
 	return offsets
 }
 
-// Top-level rows sit flush with the pane edge — the '●' bullet is the visual
-// anchor — and replies indent under the thread root.
-const REPLY_INDENT_COLS = 4
-
 const withReplyIndent = (segments: readonly CommentSegment[], indent: number): readonly CommentSegment[] =>
 	indent === 0 ? segments : [{ text: " ".repeat(indent * REPLY_INDENT_COLS), fg: colors.muted }, ...segments]
 
 export const CommentsPane = ({
 	pullRequest,
 	comments,
+	orderedComments,
 	status,
 	selectedIndex,
 	contentWidth,
@@ -170,6 +179,7 @@ export const CommentsPane = ({
 }: {
 	pullRequest: PullRequestItem
 	comments: readonly PullRequestComment[]
+	orderedComments: readonly OrderedComment[]
 	status: "idle" | "loading" | "ready"
 	selectedIndex: number
 	contentWidth: number
@@ -177,7 +187,7 @@ export const CommentsPane = ({
 	height: number
 	loadingIndicator: string
 }) => {
-	const realBlocks = useMemo(() => buildBlocks(comments, contentWidth), [comments, contentWidth])
+	const realBlocks = useMemo(() => buildBlocks(orderedComments, contentWidth), [orderedComments, contentWidth])
 	const blocks = useMemo<readonly CommentBlock[]>(() => [...realBlocks, placeholderBlock], [realBlocks])
 	const offsets = useMemo(() => blockOffsets(blocks), [blocks])
 	const scrollboxRef = useRef<ScrollBoxRenderable | null>(null)
@@ -245,7 +255,7 @@ export const CommentsPane = ({
 							if (block.isPlaceholder) {
 								return (
 									<TextLine key={block.key}>
-										<span fg={isSelected ? colors.accent : colors.muted} attributes={isSelected ? 1 : 0}>
+										<span fg={isSelected ? colors.accent : colors.muted} attributes={isSelected ? TextAttributes.BOLD : 0}>
 											+ Add new comment
 										</span>
 									</TextLine>
@@ -253,7 +263,7 @@ export const CommentsPane = ({
 							}
 							return (
 								<box key={block.key} flexDirection="column">
-									<CommentSegmentsLine segments={withReplyIndent(block.meta.segments, block.indent)} {...(isSelected ? { fgOverride: colors.accent, boldAll: true } : {})} />
+									<CommentSegmentsLine segments={withReplyIndent(block.meta.segments, block.indent)} selected={isSelected} />
 									{block.body.map((line) => (
 										<CommentSegmentsLine key={line.key} segments={withReplyIndent(line.segments, block.indent)} />
 									))}

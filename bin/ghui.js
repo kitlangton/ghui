@@ -32,6 +32,9 @@ Usage:
   ghui -v, --version
                     Print the installed version
   ghui -h, --help   Show this help message
+
+Options:
+  -f, --filter <query>  Start with a preset filter query
 `
 
 const run = (target, args = process.argv.slice(2)) => {
@@ -55,6 +58,14 @@ if (process.argv[2] === "-h" || process.argv[2] === "--help" || process.argv[2] 
 if (process.argv[2] === "-v" || process.argv[2] === "--version" || process.argv[2] === "version") {
 	console.log(packageJson.version)
 	process.exit(0)
+}
+
+if (process.argv[2] === "-f" || process.argv[2] === "--filter") {
+	if (!process.argv[3] || process.argv[3].startsWith("-")) {
+		console.error("Error: --filter requires a query value.")
+		console.error('Usage: ghui --filter <query>')
+		process.exit(1)
+	}
 }
 
 if (process.argv[2] === "upgrade") {

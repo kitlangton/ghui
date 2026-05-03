@@ -306,7 +306,11 @@ const pullRequestsAtom = githubRuntime
 const wrapIndex = (index: number, length: number) => (length === 0 ? 0 : ((index % length) + length) % length)
 const selectedIndexAtom = Atom.make(0)
 const noticeAtom = Atom.make<string | null>(null)
-const filterQueryAtom = Atom.make("")
+const initialFilter = (() => {
+	const index = process.argv.findIndex((arg) => arg === "--filter" || arg === "-f")
+	return index !== -1 ? (process.argv[index + 1] ?? "") : ""
+})()
+const filterQueryAtom = Atom.make(initialFilter)
 const filterDraftAtom = Atom.make("")
 const filterModeAtom = Atom.make(false)
 const detailFullViewAtom = Atom.make(false)

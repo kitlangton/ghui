@@ -36,11 +36,12 @@
 	},
 	"scripts": {
 		"build:cli": "bun run dev/build-cli.ts",
+		"build:npm-packages": "bun run dev/build-npm-packages.ts",
 		"build:standalone": "bun run dev/build-standalone.ts",
 		"changeset": "npm exec --package @changesets/cli@2.31.0 -- changeset",
 		"changeset:status": "npm exec --package @changesets/cli@2.31.0 -- changeset status",
 		"changeset:version": "npm exec --package @changesets/cli@2.31.0 -- changeset version",
-		"dev": "GHUI_MOTEL_PORT=${GHUI_MOTEL_PORT:-27686} bun --watch bin/ghui.js",
+		"dev": "GHUI_MOTEL_PORT=${GHUI_MOTEL_PORT:-27686} bun --watch src/index.tsx",
 		"dev:logo": "bun --watch dev/loadingLogo.tsx",
 		"start": "bun run src/index.tsx",
 		"start:mock": "GHUI_MOCK_PR_COUNT=400 GHUI_MOCK_REPO_COUNT=4 bun run src/index.tsx",

@@ -21,7 +21,6 @@ npm install -g @kitlangton/ghui
 Requirements:
 
 - GitHub CLI installed and authenticated with `gh auth login`
-- Bun runtime installed when using the npm package
 
 Run it from anywhere:
 

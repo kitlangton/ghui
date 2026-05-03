@@ -1,7 +1,7 @@
 import type { DiffRenderable, MouseEvent, ScrollBoxRenderable } from "@opentui/core"
 import { useMemo, type Ref } from "react"
 import type { DiffCommentSide, PullRequestItem, PullRequestReviewComment } from "../domain.js"
-import { colors, type ThemeId } from "./colors.js"
+import { colors, lineNumberTextColor, type ThemeId } from "./colors.js"
 import { CommentBodyLine, commentCountText, commentMetaSegments, CommentSegmentsLine } from "./comments.js"
 import { createDiffSyntaxStyle, diffCommentAnchorLabel, diffCommentLineLabel, diffFileStats, diffFileStatsText, diffStatText, stackedDiffFileIndexAtLine, type DiffFileStats, type DiffView, type DiffWhitespaceMode, type DiffWrapMode, type PullRequestDiffState, type StackedDiffCommentAnchor, type StackedDiffFilePatch } from "./diff.js"
 import { LoadingPane, StatusCard } from "./DetailsPane.js"
@@ -162,6 +162,7 @@ export const PullRequestDiffPane = ({
 		return `  ${selectedCommentLabel ?? diffCommentAnchorLabel(selectedCommentAnchor)}`
 	}
 	const stickyCommentColor = selectedCommentAnchor?.side === "LEFT" ? colors.status.failing : colors.status.passing
+	const diffLineNumberFg = lineNumberTextColor(colors.diff.lineNumberBg, colors.text)
 	const handleDiffMouseDown = function (this: ScrollBoxRenderable, event: MouseEvent) {
 		if (event.button !== 0) return
 		const localY = event.y - this.viewport.y
@@ -201,7 +202,7 @@ export const PullRequestDiffPane = ({
 							contextBg={colors.diff.contextBg}
 							addedSignColor={colors.status.passing}
 							removedSignColor={colors.status.failing}
-							lineNumberFg={colors.muted}
+							lineNumberFg={diffLineNumberFg}
 							lineNumberBg={colors.diff.lineNumberBg}
 							addedLineNumberBg={colors.diff.addedLineNumberBg}
 							removedLineNumberBg={colors.diff.removedLineNumberBg}

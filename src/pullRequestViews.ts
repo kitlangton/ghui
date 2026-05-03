@@ -4,9 +4,7 @@ export type PullRequestView =
 	| { readonly _tag: "Repository"; readonly repository: string }
 	| { readonly _tag: "Queue"; readonly mode: PullRequestUserQueueMode; readonly repository: string | null }
 
-export const initialPullRequestView = (repository: string | null): PullRequestView => repository
-	? { _tag: "Repository", repository }
-	: { _tag: "Queue", mode: "authored", repository: null }
+export const initialPullRequestView = (): PullRequestView => ({ _tag: "Queue", mode: "authored", repository: null })
 
 export const viewMode = (view: PullRequestView): PullRequestQueueMode => view._tag === "Repository" ? "repository" : view.mode
 

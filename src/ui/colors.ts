@@ -154,6 +154,13 @@ const mutedTextColor = (background: string) => {
 
 const contrastText = (background: string) => luminance(background) > 128 ? "#000000" : "#ffffff"
 
+export const lineNumberTextColor = (background: string, foreground: string) => {
+	const bg = readableHex(background, foreground)
+	const fg = readableHex(foreground, contrastText(bg))
+	const contrast = Math.abs(luminance(bg) - luminance(fg))
+	return mixHex(bg, fg, contrast < 90 ? 0.62 : 0.5)
+}
+
 const ghuiColors: ColorPalette = {
 	background: "#111018",
 	modalBackground: "#1a1a2e",

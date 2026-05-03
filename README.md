@@ -45,14 +45,12 @@ bun run dev
 ## Configuration
 
 - `GHUI_AUTHOR`: author passed to `gh search prs`, defaults to `@me`
-- `GHUI_REPO`: optional `owner/name` repository queue for browsing all open PRs in a repo
 - `GHUI_PR_FETCH_LIMIT`: max PRs fetched, defaults to `200`
 
 Example:
 
 ```bash
 GHUI_AUTHOR=@me ghui
-GHUI_REPO=basecamp/omarchy ghui
 ```
 
 You can also copy `.env.example` to `.env` and edit the values locally.

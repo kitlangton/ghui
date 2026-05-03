@@ -17,10 +17,6 @@ const appConfig = Config.all({
 		Config.withDefault(50),
 		Config.map(pageSizeOr(50)),
 	),
-	repository: Config.string("GHUI_REPO").pipe(
-		Config.withDefault(""),
-		Config.map((value) => value.trim() || null),
-	),
 })
 
 export const config = Effect.runSync(Effect.gen(function*() {

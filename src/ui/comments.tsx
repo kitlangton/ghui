@@ -108,14 +108,16 @@ export const commentMetaSegments = ({
 	return segments
 }
 
-// Body lines indent two columns under the meta line; quotes get a soft '▎ '
-// instead of a chat-bubble '│ '.
+// Body indent aligns content under the author name in the meta line above.
+export const COMMENT_BODY_INDENT = "  "
+const COMMENT_QUOTE_PREFIX = `${COMMENT_BODY_INDENT}▎ `
+
 export const commentBodyRows = ({ keyPrefix, body, width }: { readonly keyPrefix: string; readonly body: string; readonly width: number }): readonly CommentDisplayLine[] =>
-	wrapCommentText(body, Math.max(1, width - 2)).map((line, index) => ({
+	wrapCommentText(body, Math.max(1, width - COMMENT_BODY_INDENT.length)).map((line, index) => ({
 		key: `${keyPrefix}:body:${index}`,
 		segments: line.quote
-			? [{ text: "  ▎ ", fg: colors.separator }, ...inlineCommentSegments(line.text, colors.muted)]
-			: [{ text: "  ", fg: colors.muted }, ...inlineCommentSegments(line.text)],
+			? [{ text: COMMENT_QUOTE_PREFIX, fg: colors.separator }, ...inlineCommentSegments(line.text, colors.muted)]
+			: [{ text: COMMENT_BODY_INDENT, fg: colors.muted }, ...inlineCommentSegments(line.text)],
 	}))
 
 export const commentDisplayRows = ({
@@ -167,8 +169,8 @@ export const CommentSegmentsLine = ({
 export const CommentBodyLine = ({ body, width }: { body: string; width: number }) => (
 	<CommentSegmentsLine
 		segments={[
-			{ text: "│ ", fg: colors.muted },
-			{ text: fitCell(firstCommentBodyLine(body), Math.max(1, width - 2)), fg: colors.text },
+			{ text: COMMENT_BODY_INDENT, fg: colors.muted },
+			{ text: fitCell(firstCommentBodyLine(body), Math.max(1, width - COMMENT_BODY_INDENT.length)), fg: colors.text },
 		]}
 	/>
 )

@@ -84,7 +84,7 @@ const orderForThreads = (comments: readonly PullRequestComment[]): readonly { re
 
 const buildBlocks = (comments: readonly PullRequestComment[], width: number): readonly CommentBlock[] =>
 	orderForThreads(comments).map(({ comment, indent }) => {
-		const usableWidth = Math.max(8, width - indent * 4)
+		const usableWidth = Math.max(8, width - indent * REPLY_INDENT_COLS)
 		// Don't repeat the file path for replies — the thread root carries it.
 		const groups = indent > 0 ? [] : reviewContextGroups(comment, usableWidth)
 		const marker = indent > 0 ? { text: "↳", fg: colors.muted } : undefined
@@ -114,14 +114,12 @@ const blockOffsets = (blocks: readonly CommentBlock[]): readonly number[] => {
 	return offsets
 }
 
-// Replies indent four columns under the thread root; top-level rows sit flush
-// with the pane edge (the '●' bullet acts as the visual anchor).
-const replyIndentText = (indent: 0 | 1) => " ".repeat(indent * 4)
+// Top-level rows sit flush with the pane edge — the '●' bullet is the visual
+// anchor — and replies indent under the thread root.
+const REPLY_INDENT_COLS = 4
 
-const withReplyIndent = (segments: readonly CommentSegment[], indent: 0 | 1): readonly CommentSegment[] => {
-	const text = replyIndentText(indent)
-	return text.length > 0 ? [{ text, fg: colors.muted }, ...segments] : segments
-}
+const withReplyIndent = (segments: readonly CommentSegment[], indent: 0 | 1): readonly CommentSegment[] =>
+	indent === 0 ? segments : [{ text: " ".repeat(REPLY_INDENT_COLS), fg: colors.muted }, ...segments]
 
 export const CommentsPane = ({
 	pullRequest,

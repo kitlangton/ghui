@@ -1,5 +1,11 @@
 # @kitlangton/ghui
 
+## 0.4.1
+
+### Patch Changes
+
+- Avoid leaking terminal color query escape responses when starting ghui.
+
 ## 0.4.0
 
 ### Minor Changes

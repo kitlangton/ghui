@@ -14,6 +14,7 @@ import { listNavKeymap, type ListNavCtx } from "./listNav.ts"
 import { mergeModalKeymap, type MergeModalCtx } from "./mergeModal.ts"
 import { openRepositoryModalKeymap, type OpenRepositoryModalCtx } from "./openRepositoryModal.ts"
 import { pullRequestStateModalKeymap, type PullRequestStateModalCtx } from "./pullRequestStateModal.ts"
+import { deleteReleaseModalKeymap, type DeleteReleaseModalCtx } from "./deleteReleaseModal.ts"
 import { releaseFormKeymap, type ReleaseFormCtx } from "./releaseForm.ts"
 import { releasesModalKeymap, type ReleasesModalCtx } from "./releasesModal.ts"
 import { submitReviewModalKeymap, type SubmitReviewModalCtx } from "./submitReviewModal.ts"
@@ -32,6 +33,7 @@ export interface AppCtx {
 	readonly openRepositoryModalActive: boolean
 	readonly releasesModalActive: boolean
 	readonly releaseFormActive: boolean
+	readonly deleteReleaseModalActive: boolean
 	readonly commentModalActive: boolean
 	readonly deleteCommentModalActive: boolean
 	readonly commandPaletteActive: boolean
@@ -56,6 +58,7 @@ export interface AppCtx {
 	readonly openRepositoryModal: OpenRepositoryModalCtx
 	readonly releasesModal: ReleasesModalCtx
 	readonly releaseForm: ReleaseFormCtx
+	readonly deleteReleaseModal: DeleteReleaseModalCtx
 	readonly commentModal: CommentModalCtx
 	readonly deleteCommentModal: DeleteCommentModalCtx
 	readonly commandPalette: CommandPaletteCtx
@@ -84,6 +87,7 @@ const modalActive = (a: AppCtx): boolean =>
 	a.openRepositoryModalActive ||
 	a.releasesModalActive ||
 	a.releaseFormActive ||
+	a.deleteReleaseModalActive ||
 	a.commentModalActive ||
 	a.deleteCommentModalActive ||
 	a.commandPaletteActive
@@ -121,6 +125,7 @@ export const appKeymap = App(
 	openRepositoryModalKeymap.scope((a) => a.openRepositoryModalActive && a.openRepositoryModal),
 	releasesModalKeymap.scope((a) => a.releasesModalActive && a.releasesModal),
 	releaseFormKeymap.scope((a) => a.releaseFormActive && a.releaseForm),
+	deleteReleaseModalKeymap.scope((a) => a.deleteReleaseModalActive && a.deleteReleaseModal),
 	commentModalKeymap.scope((a) => a.commentModalActive && a.commentModal),
 	deleteCommentModalKeymap.scope((a) => a.deleteCommentModalActive && a.deleteCommentModal),
 	commandPaletteKeymap.scope((a) => a.commandPaletteActive && a.commandPalette),

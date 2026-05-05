@@ -18,6 +18,7 @@ export interface ReleasesModalCtx {
 	readonly loadMore: () => void
 	readonly newRelease: () => void
 	readonly editRelease: () => void
+	readonly deleteRelease: () => void
 }
 
 const Releases = context<ReleasesModalCtx>()
@@ -115,5 +116,12 @@ export const releasesModalKeymap = Releases(
 		when: (s) => s.panel === "list",
 		enabled: (s) => (s.hasSelection ? true : "No release selected."),
 		run: (s) => s.editRelease(),
+	},
+	{
+		id: "releases.delete",
+		title: "Delete release",
+		keys: ["shift+d"],
+		enabled: (s) => (s.panel === "details" || s.hasSelection ? true : "No release selected."),
+		run: (s) => s.deleteRelease(),
 	},
 )

@@ -94,11 +94,24 @@ Use REST via `gh api` (already the pattern in `GitHubService` for non-GraphQL fl
 
 ## Status
 
-In progress.
+Shipped.
 
 - [x] Phase 1 — domain types, `GitHubService` methods, mock mirror, unit tests.
-- [x] Phase 2 — release list + details overlay, command-palette entry, async loaders. (Persistent cache deferred; releases are refetched each time the modal opens.)
-- [x] Phase 3 — create/edit form with tag/target/title/body fields, pre-release toggle, latest tri-state, generate-notes (`ctrl-g`), draft (`ctrl-s`), publish (`ctrl-↵`). Tag autocomplete dropdown deferred to phase 4 (free-text input for now).
-- [ ] Phase 4 — delete confirm, footer hints, lazy discussion categories, doc updates.
+- [x] Phase 2 — release list + details overlay, command-palette entry, async loaders.
+- [x] Phase 3 — create/edit form with tag/target/title/body fields, pre-release toggle, latest tri-state, generate-notes, draft, publish.
+- [x] Phase 4 — delete with confirm (`shift-d`), README documentation.
 
 Decisions (from review): command-palette only in v1, single-repo release list, lazy default-branch fetch, generate-notes mirrors web (only fills empty fields), asset upload deferred to v2.
+
+## Follow-ups (deferred from v1)
+
+The v1 loop — browse, create, edit, publish/draft, delete — is complete. These were in the original plan but were deliberately not shipped because the form is already usable without them and they each carry meaningful design surface:
+
+- **Persistent cache.** Releases re-fetch each time the overlay opens. `CacheService` is heavily PR-shaped today; adding a generic `repo:releases` table is a real piece of work and not worth it until users complain about latency.
+- **Tag autocomplete dropdown.** The tag field is free-text. The form already calls `listTags` lazily on open isn’t wired in — the next step would be a fuzzy dropdown beneath the tag input that lets you reuse an existing tag (suppressing the target field on pick, like the web).
+- **Target branch picker.** Defaults to the repo’s default branch (lazy fetch already shipped); free-text otherwise. A picker dropdown would mirror the web more faithfully.
+- **Previous tag picker.** Currently always sent as `auto` to the generate-notes endpoint. A picker would let users force a specific previous tag.
+- **Discussion categories.** `listDiscussionCategories` and the `discussion_category_name` request field are wired in `GitHubService`, but the form has no UI to surface them. Add a fourth toggle row ("Create a discussion: [ ] enabled") that lazy-loads categories on toggle and exposes a single-select.
+- **Asset upload / management.** GitHub uses a separate uploads host with multipart binary; `gh release upload` exists. TUI file pickers are a real design exercise — punt to a follow-up plan.
+- **Markdown preview pane** for the release body.
+- **Cross-repo “all my releases” feed** (current overlay is single-repo, by design).

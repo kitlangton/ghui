@@ -2,7 +2,7 @@
 
 Terminal UI for keeping up with your open GitHub pull requests across repositories.
 
-`ghui` gives you one keyboard-driven place to review PR details, inspect diffs, leave diff comments, manage labels, toggle draft state, merge, open PRs in GitHub, and copy PR metadata without leaving the terminal.
+`ghui` gives you one keyboard-driven place to review PR details, inspect diffs, leave diff comments, manage labels, toggle draft state, merge, cut releases, open PRs in GitHub, and copy PR metadata without leaving the terminal.
 
 <img width="1420" height="856" alt="image" src="https://github.com/user-attachments/assets/5e560a4a-5887-4baa-a6d4-e1f4f0410c70" />
 
@@ -106,3 +106,30 @@ Review submission:
 - Press `enter` to move to the optional summary area.
 - Press `enter` again to submit, or `shift-enter` to insert a newline.
 - Press `esc` from the summary to return to action selection; press `esc` from action selection to cancel.
+
+## Releases
+
+Open the command palette and pick **Releases…** (or **New release…**) to manage releases for the active repository without leaving the terminal.
+
+In the releases overlay:
+
+- `j` / `k`, `gg` / `G`: navigate releases
+- `enter`: view a release (body + assets)
+- `n`: cut a new release
+- `e`: edit the selected release
+- `shift-d`: delete the selected release (with confirmation)
+- `o`: open in browser
+- `y`: copy URL
+- `]` / `r`: load more / refresh
+- `esc`: back to list / close
+
+In the release form:
+
+- `tab` / `shift-tab`: move between fields (tag, target, title, description, pre-release, latest)
+- `space` / `enter`: toggle the focused checkbox or tri-state
+- `ctrl-g`: generate release notes (only fills empty title and body, matching github.com)
+- `ctrl-s`: save as draft
+- `ctrl-↵`: publish (or save the edit when editing an existing release)
+- `esc`: cancel and return to the releases overlay
+
+Asset uploads are still done from the GitHub web UI for now — use `o` to jump to the draft release in the browser when you need to attach binaries.

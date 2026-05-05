@@ -116,6 +116,7 @@ import { Divider, Filler, fitCell, PlainLine, SeparatorColumn } from "./ui/primi
 import { CommandPalette } from "./ui/CommandPalette.js"
 import { ReleaseForm } from "./ui/ReleaseForm.js"
 import { ReleasesModal } from "./ui/ReleasesModal.js"
+import { DeleteReleaseModal } from "./ui/modals.js"
 import {
 	ChangedFilesModal,
 	CloseModal,
@@ -135,6 +136,7 @@ import {
 	initialModal,
 	initialOpenRepositoryModalState,
 	initialPullRequestStateModalState,
+	initialDeleteReleaseModalState,
 	initialReleaseFormState,
 	initialReleasesModalState,
 	initialSubmitReviewModalState,
@@ -159,6 +161,7 @@ import {
 	type ModalTag,
 	type OpenRepositoryModalState,
 	type PullRequestStateModalState,
+	type DeleteReleaseModalState,
 	type ReleaseFormFocus,
 	type ReleaseFormState,
 	type ReleasesModalState,
@@ -531,6 +534,9 @@ const createReleaseAtom = githubRuntime.fn<{ readonly repository: string; readon
 const updateReleaseAtom = githubRuntime.fn<{ readonly repository: string; readonly releaseId: number; readonly input: UpdateReleaseInput }>()((args) =>
 	GitHubService.use((github) => github.updateRelease(args.repository, args.releaseId, args.input)),
 )
+const deleteReleaseAtom = githubRuntime.fn<{ readonly repository: string; readonly releaseId: number }>()((args) =>
+	GitHubService.use((github) => github.deleteRelease(args.repository, args.releaseId)),
+)
 const generateReleaseNotesAtom = githubRuntime.fn<{
 	readonly repository: string
 	readonly tagName: string
@@ -766,6 +772,7 @@ export const App = () => {
 	const openRepositoryModalActive = Modal.$is("OpenRepository")(activeModal)
 	const releasesModalActive = Modal.$is("Releases")(activeModal)
 	const releaseFormActive = Modal.$is("ReleaseForm")(activeModal)
+	const deleteReleaseModalActive = Modal.$is("DeleteRelease")(activeModal)
 	const labelModal: LabelModalState = labelModalActive ? activeModal : initialLabelModalState
 	const closeModal: CloseModalState = closeModalActive ? activeModal : initialCloseModalState
 	const pullRequestStateModal: PullRequestStateModalState = pullRequestStateModalActive ? activeModal : initialPullRequestStateModalState
@@ -780,6 +787,7 @@ export const App = () => {
 	const openRepositoryModal: OpenRepositoryModalState = openRepositoryModalActive ? activeModal : initialOpenRepositoryModalState
 	const releasesModal: ReleasesModalState = releasesModalActive ? activeModal : initialReleasesModalState
 	const releaseForm: ReleaseFormState = releaseFormActive ? activeModal : initialReleaseFormState
+	const deleteReleaseModal: DeleteReleaseModalState = deleteReleaseModalActive ? activeModal : initialDeleteReleaseModalState
 	const makeModalSetter =
 		<Tag extends Exclude<ModalTag, "None">>(tag: Tag) =>
 		(next: ModalState<Tag> | ((prev: ModalState<Tag>) => ModalState<Tag>)) =>
@@ -806,6 +814,7 @@ export const App = () => {
 	const setOpenRepositoryModal = makeModalSetter("OpenRepository")
 	const setReleasesModal = makeModalSetter("Releases")
 	const setReleaseForm = makeModalSetter("ReleaseForm")
+	const setDeleteReleaseModal = makeModalSetter("DeleteRelease")
 	const themeIdRef = useRef(themeId)
 	const themeModalRef = useRef(themeModal)
 	themeIdRef.current = themeId
@@ -854,6 +863,7 @@ export const App = () => {
 	const loadLatestRelease = useAtomSet(getLatestReleaseAtom, { mode: "promise" })
 	const submitCreateRelease = useAtomSet(createReleaseAtom, { mode: "promise" })
 	const submitUpdateRelease = useAtomSet(updateReleaseAtom, { mode: "promise" })
+	const submitDeleteRelease = useAtomSet(deleteReleaseAtom, { mode: "promise" })
 	const fetchGenerateReleaseNotes = useAtomSet(generateReleaseNotesAtom, { mode: "promise" })
 	const fetchDefaultBranch = useAtomSet(getDefaultBranchAtom, { mode: "promise" })
 	const terminalWidth = width ?? 100
@@ -3082,6 +3092,77 @@ export const App = () => {
 		}
 	}
 
+	const openDeleteReleaseConfirm = () => {
+		const current = releasesModal
+		if (!current.repository || current.releases.length === 0) {
+			flashNotice("No release selected")
+			return
+		}
+		if (current.panel === "details") {
+			const release = current.detailsRelease
+			if (!release) {
+				flashNotice("No release loaded")
+				return
+			}
+			setDeleteReleaseModal({
+				repository: current.repository,
+				releaseId: release.id,
+				tagName: release.tagName,
+				name: release.name,
+				isDraft: release.isDraft,
+				running: false,
+				error: null,
+			})
+			return
+		}
+		const summary = current.releases[Math.max(0, Math.min(current.listSelectedIndex, current.releases.length - 1))]
+		if (!summary) return
+		setDeleteReleaseModal({
+			repository: current.repository,
+			releaseId: summary.id,
+			tagName: summary.tagName,
+			name: summary.name,
+			isDraft: summary.isDraft,
+			running: false,
+			error: null,
+		})
+	}
+
+	const confirmDeleteRelease = () => {
+		const current = deleteReleaseModal
+		if (!current.repository || current.releaseId === null || current.running) return
+		setDeleteReleaseModal((prev) => ({ ...prev, running: true, error: null }))
+		void submitDeleteRelease({ repository: current.repository, releaseId: current.releaseId })
+			.then(() => {
+				flashNotice(`Deleted release ${current.tagName}`)
+				// Optimistically drop from the list cache and bounce back to the releases overlay.
+				const nextReleases = releasesModal.releases.filter((r) => r.id !== current.releaseId)
+				const clampedIndex = Math.max(0, Math.min(releasesModal.listSelectedIndex, nextReleases.length - 1))
+				if (releasesModal.repository) {
+					setActiveModal(
+						Modal.Releases({
+							...releasesModal,
+							panel: "list",
+							releases: nextReleases,
+							listSelectedIndex: clampedIndex,
+							detailsRelease: null,
+							detailsReleaseId: null,
+							detailsLoading: false,
+							detailsError: null,
+							detailsScrollOffset: 0,
+						}),
+					)
+				} else {
+					closeActiveModal()
+				}
+			})
+			.catch((error) => {
+				const message = errorMessage(error)
+				setDeleteReleaseModal((prev) => ({ ...prev, running: false, error: message }))
+				flashNotice(message)
+			})
+	}
+
 	const insertPastedText = (text: string) => {
 		if (text.length === 0) return false
 		if (commandPaletteActive) {
@@ -3402,6 +3483,7 @@ export const App = () => {
 		openRepositoryModalActive,
 		releasesModalActive,
 		releaseFormActive,
+		deleteReleaseModalActive,
 		commentModalActive,
 		deleteCommentModalActive,
 		commandPaletteActive,
@@ -3511,6 +3593,16 @@ export const App = () => {
 			loadMore: loadMoreReleases,
 			newRelease: openReleaseFormForCreate,
 			editRelease: openReleaseFormForSelectedListItem,
+			deleteRelease: openDeleteReleaseConfirm,
+		},
+		deleteReleaseModal: {
+			running: deleteReleaseModal.running,
+			closeModal: () => {
+				setDeleteReleaseModal(initialDeleteReleaseModalState)
+				if (releasesModal.repository) setActiveModal(Modal.Releases({ ...releasesModal }))
+				else closeActiveModal()
+			},
+			confirmDelete: confirmDeleteRelease,
 		},
 		releaseForm: {
 			bodyFocused: releaseForm.focus === "body",
@@ -3891,6 +3983,11 @@ export const App = () => {
 	const releaseFormModalHeight = releaseFormLayout.height
 	const releaseFormModalLeft = releaseFormLayout.left
 	const releaseFormModalTop = releaseFormLayout.top
+	const deleteReleaseLayout = sizedModal(46, 68, 12, 12)
+	const deleteReleaseModalWidth = deleteReleaseLayout.width
+	const deleteReleaseModalHeight = deleteReleaseLayout.height
+	const deleteReleaseModalLeft = deleteReleaseLayout.left
+	const deleteReleaseModalTop = deleteReleaseLayout.top
 	const commandPaletteLayout = sizedModal(50, 88, 8, 24)
 	const commandPaletteWidth = commandPaletteLayout.width
 	const commandPaletteHeight = commandPaletteLayout.height
@@ -4268,6 +4365,16 @@ export const App = () => {
 					modalHeight={releaseFormModalHeight}
 					offsetLeft={releaseFormModalLeft}
 					offsetTop={releaseFormModalTop}
+					loadingIndicator={loadingIndicator}
+				/>
+			) : null}
+			{deleteReleaseModalActive ? (
+				<DeleteReleaseModal
+					state={deleteReleaseModal}
+					modalWidth={deleteReleaseModalWidth}
+					modalHeight={deleteReleaseModalHeight}
+					offsetLeft={deleteReleaseModalLeft}
+					offsetTop={deleteReleaseModalTop}
 					loadingIndicator={loadingIndicator}
 				/>
 			) : null}

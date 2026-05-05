@@ -461,6 +461,26 @@ export interface ReleaseFormState {
 	readonly error: string | null
 }
 
+export interface DeleteReleaseModalState {
+	readonly repository: string | null
+	readonly releaseId: number | null
+	readonly tagName: string
+	readonly name: string | null
+	readonly isDraft: boolean
+	readonly running: boolean
+	readonly error: string | null
+}
+
+export const initialDeleteReleaseModalState: DeleteReleaseModalState = {
+	repository: null,
+	releaseId: null,
+	tagName: "",
+	name: null,
+	isDraft: false,
+	running: false,
+	error: null,
+}
+
 export const initialReleaseFormState: ReleaseFormState = {
 	mode: "create",
 	repository: "",
@@ -503,6 +523,7 @@ export type Modal = Data.TaggedEnum<{
 	Label: LabelModalState
 	Close: CloseModalState
 	ReleaseForm: ReleaseFormState
+	DeleteRelease: DeleteReleaseModalState
 	PullRequestState: PullRequestStateModalState
 	Merge: MergeModalState
 	Comment: CommentModalState
@@ -537,6 +558,7 @@ export const modalInitialStates = {
 	OpenRepository: initialOpenRepositoryModalState,
 	Releases: initialReleasesModalState,
 	ReleaseForm: initialReleaseFormState,
+	DeleteRelease: initialDeleteReleaseModalState,
 } as const satisfies { [Tag in Exclude<ModalTag, "None">]: ModalState<Tag> }
 
 export const OpenRepositoryModal = ({
@@ -1119,6 +1141,64 @@ export const CommentModal = ({
 		>
 			{state.error ? <PlainLine text={fitCell(state.error, contentWidth)} fg={colors.error} /> : null}
 			{visibleLines.map(renderEditorLine)}
+		</StandardModal>
+	)
+}
+
+export const DeleteReleaseModal = ({
+	state,
+	modalWidth,
+	modalHeight,
+	offsetLeft,
+	offsetTop,
+	loadingIndicator,
+}: {
+	state: DeleteReleaseModalState
+	modalWidth: number
+	modalHeight: number
+	offsetLeft: number
+	offsetTop: number
+	loadingIndicator: string
+}) => {
+	const { contentWidth, bodyHeight } = standardModalDims(modalWidth, modalHeight)
+	const title = state.isDraft ? "Delete draft release" : "Delete release"
+	const rightText = state.running ? `${loadingIndicator} deleting` : "confirm"
+	const nameLine = state.name && state.name.length > 0 ? state.name : state.tagName
+	const titleLines = [fitCell(state.tagName, contentWidth), fitCell(nameLine, contentWidth)]
+	const topRows = Math.max(0, Math.floor((bodyHeight - titleLines.length - 2) / 2))
+	const bottomRows = Math.max(0, bodyHeight - topRows - titleLines.length - 2)
+	const caution = state.isDraft ? "Discards this draft. The tag is unaffected." : "Removes the release on GitHub. The underlying git tag is kept."
+
+	return (
+		<StandardModal
+			left={offsetLeft}
+			top={offsetTop}
+			width={modalWidth}
+			height={modalHeight}
+			title={title}
+			titleFg={colors.error}
+			headerRight={{ text: rightText, pending: state.running }}
+			subtitle={<PlainLine text={fitCell(caution, contentWidth)} fg={colors.muted} />}
+			bodyPadding={1}
+			footer={
+				<HintRow
+					items={[
+						{ key: "enter", label: "delete" },
+						{ key: "esc", label: "cancel" },
+					]}
+				/>
+			}
+		>
+			{state.error ? (
+				<PlainLine text={fitCell(state.error, contentWidth)} fg={colors.error} />
+			) : (
+				<>
+					<Filler rows={topRows} prefix="top" />
+					<PlainLine text={titleLines[0]!} fg={colors.accent} />
+					<PlainLine text={titleLines[1]!} fg={colors.text} />
+					<Filler rows={bottomRows} prefix="bottom" />
+				</>
+			)}
 		</StandardModal>
 	)
 }

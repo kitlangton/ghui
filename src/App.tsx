@@ -24,7 +24,11 @@ import {
 	type PullRequestMergeAction,
 	type PullRequestMergeMethod,
 	type PullRequestReviewComment,
+	type CreateReleaseInput,
+	type MakeLatest,
+	type Release,
 	type RepositoryMergeMethods,
+	type UpdateReleaseInput,
 	type SubmitPullRequestReviewInput,
 } from "./domain.js"
 import { allowedMergeMethodList, pullRequestMergeMethods } from "./domain.js"
@@ -110,6 +114,9 @@ import { FooterHints, initialRetryProgress, RetryProgress } from "./ui/FooterHin
 import { LoadingLogoPane } from "./ui/LoadingLogo.js"
 import { Divider, Filler, fitCell, PlainLine, SeparatorColumn } from "./ui/primitives.js"
 import { CommandPalette } from "./ui/CommandPalette.js"
+import { ReleaseForm } from "./ui/ReleaseForm.js"
+import { ReleasesModal } from "./ui/ReleasesModal.js"
+import { DeleteReleaseModal } from "./ui/modals.js"
 import {
 	ChangedFilesModal,
 	CloseModal,
@@ -129,6 +136,9 @@ import {
 	initialModal,
 	initialOpenRepositoryModalState,
 	initialPullRequestStateModalState,
+	initialDeleteReleaseModalState,
+	initialReleaseFormState,
+	initialReleasesModalState,
 	initialSubmitReviewModalState,
 	initialThemeModalState,
 	LabelModal,
@@ -151,6 +161,10 @@ import {
 	type ModalTag,
 	type OpenRepositoryModalState,
 	type PullRequestStateModalState,
+	type DeleteReleaseModalState,
+	type ReleaseFormFocus,
+	type ReleaseFormState,
+	type ReleasesModalState,
 	type SubmitReviewModalState,
 	type ThemeModalState,
 } from "./ui/modals.js"
@@ -507,6 +521,37 @@ const submitPullRequestReviewAtom = githubRuntime.fn<SubmitPullRequestReviewInpu
 const copyToClipboardAtom = githubRuntime.fn<string>()((text) => Clipboard.use((clipboard) => clipboard.copy(text)))
 const openInBrowserAtom = githubRuntime.fn<PullRequestItem>()((pullRequest) => BrowserOpener.use((browser) => browser.openPullRequest(pullRequest)))
 const openUrlAtom = githubRuntime.fn<string>()((url) => BrowserOpener.use((browser) => browser.openUrl(url)))
+const listReleasesAtom = githubRuntime.fn<{ readonly repository: string; readonly page: number }>()((input) =>
+	GitHubService.use((github) => github.listReleases(input.repository, input.page)),
+)
+const getReleaseAtom = githubRuntime.fn<{ readonly repository: string; readonly releaseId: number }>()((input) =>
+	GitHubService.use((github) => github.getRelease(input.repository, input.releaseId)),
+)
+const getLatestReleaseAtom = githubRuntime.fn<string>()((repository) => GitHubService.use((github) => github.getLatestRelease(repository)))
+const createReleaseAtom = githubRuntime.fn<{ readonly repository: string; readonly input: CreateReleaseInput }>()((args) =>
+	GitHubService.use((github) => github.createRelease(args.repository, args.input)),
+)
+const updateReleaseAtom = githubRuntime.fn<{ readonly repository: string; readonly releaseId: number; readonly input: UpdateReleaseInput }>()((args) =>
+	GitHubService.use((github) => github.updateRelease(args.repository, args.releaseId, args.input)),
+)
+const deleteReleaseAtom = githubRuntime.fn<{ readonly repository: string; readonly releaseId: number }>()((args) =>
+	GitHubService.use((github) => github.deleteRelease(args.repository, args.releaseId)),
+)
+const generateReleaseNotesAtom = githubRuntime.fn<{
+	readonly repository: string
+	readonly tagName: string
+	readonly previousTagName?: string
+	readonly targetCommitish?: string
+}>()((args) =>
+	GitHubService.use((github) =>
+		github.generateReleaseNotes(args.repository, {
+			tagName: args.tagName,
+			...(args.previousTagName !== undefined ? { previousTagName: args.previousTagName } : {}),
+			...(args.targetCommitish !== undefined ? { targetCommitish: args.targetCommitish } : {}),
+		}),
+	),
+)
+const getDefaultBranchAtom = githubRuntime.fn<string>()((repository) => GitHubService.use((github) => github.getDefaultBranch(repository)))
 
 const pickInitialMergeMethod = (allowed: RepositoryMergeMethods | null, preferred: PullRequestMergeMethod | undefined): PullRequestMergeMethod => {
 	if (!allowed) return preferred ?? pullRequestMergeMethods[0]
@@ -725,6 +770,9 @@ export const App = () => {
 	const themeModalActive = Modal.$is("Theme")(activeModal)
 	const commandPaletteActive = Modal.$is("CommandPalette")(activeModal)
 	const openRepositoryModalActive = Modal.$is("OpenRepository")(activeModal)
+	const releasesModalActive = Modal.$is("Releases")(activeModal)
+	const releaseFormActive = Modal.$is("ReleaseForm")(activeModal)
+	const deleteReleaseModalActive = Modal.$is("DeleteRelease")(activeModal)
 	const labelModal: LabelModalState = labelModalActive ? activeModal : initialLabelModalState
 	const closeModal: CloseModalState = closeModalActive ? activeModal : initialCloseModalState
 	const pullRequestStateModal: PullRequestStateModalState = pullRequestStateModalActive ? activeModal : initialPullRequestStateModalState
@@ -737,6 +785,9 @@ export const App = () => {
 	const themeModal: ThemeModalState = themeModalActive ? activeModal : initialThemeModalState
 	const commandPalette: CommandPaletteState = commandPaletteActive ? activeModal : initialCommandPaletteState
 	const openRepositoryModal: OpenRepositoryModalState = openRepositoryModalActive ? activeModal : initialOpenRepositoryModalState
+	const releasesModal: ReleasesModalState = releasesModalActive ? activeModal : initialReleasesModalState
+	const releaseForm: ReleaseFormState = releaseFormActive ? activeModal : initialReleaseFormState
+	const deleteReleaseModal: DeleteReleaseModalState = deleteReleaseModalActive ? activeModal : initialDeleteReleaseModalState
 	const makeModalSetter =
 		<Tag extends Exclude<ModalTag, "None">>(tag: Tag) =>
 		(next: ModalState<Tag> | ((prev: ModalState<Tag>) => ModalState<Tag>)) =>
@@ -761,6 +812,9 @@ export const App = () => {
 	const setThemeModal = makeModalSetter("Theme")
 	const setCommandPalette = makeModalSetter("CommandPalette")
 	const setOpenRepositoryModal = makeModalSetter("OpenRepository")
+	const setReleasesModal = makeModalSetter("Releases")
+	const setReleaseForm = makeModalSetter("ReleaseForm")
+	const setDeleteReleaseModal = makeModalSetter("DeleteRelease")
 	const themeIdRef = useRef(themeId)
 	const themeModalRef = useRef(themeModal)
 	themeIdRef.current = themeId
@@ -804,6 +858,14 @@ export const App = () => {
 	const copyToClipboard = useAtomSet(copyToClipboardAtom, { mode: "promise" })
 	const openInBrowser = useAtomSet(openInBrowserAtom, { mode: "promise" })
 	const openUrl = useAtomSet(openUrlAtom, { mode: "promise" })
+	const loadReleases = useAtomSet(listReleasesAtom, { mode: "promise" })
+	const loadRelease = useAtomSet(getReleaseAtom, { mode: "promise" })
+	const loadLatestRelease = useAtomSet(getLatestReleaseAtom, { mode: "promise" })
+	const submitCreateRelease = useAtomSet(createReleaseAtom, { mode: "promise" })
+	const submitUpdateRelease = useAtomSet(updateReleaseAtom, { mode: "promise" })
+	const submitDeleteRelease = useAtomSet(deleteReleaseAtom, { mode: "promise" })
+	const fetchGenerateReleaseNotes = useAtomSet(generateReleaseNotesAtom, { mode: "promise" })
+	const fetchDefaultBranch = useAtomSet(getDefaultBranchAtom, { mode: "promise" })
 	const terminalWidth = width ?? 100
 	const terminalHeight = height ?? 24
 	const contentWidth = Math.max(1, terminalWidth)
@@ -2655,6 +2717,475 @@ export const App = () => {
 		switchViewTo({ _tag: "Repository", repository })
 		flashNotice(`Opened ${repository}`)
 	}
+
+	const loadReleasesPage = (repository: string, page: number, mode: "initial" | "refresh" | "more") => {
+		if (mode === "initial" || mode === "refresh") {
+			setReleasesModal((current) => ({ ...current, loading: true, error: null }))
+		} else {
+			setReleasesModal((current) => ({ ...current, loadingMore: true, error: null }))
+		}
+		void loadReleases({ repository, page })
+			.then((result) => {
+				setReleasesModal((current) => {
+					if (current.repository !== repository) return current
+					const items = mode === "more" ? [...current.releases, ...result.items] : result.items
+					return {
+						...current,
+						releases: items,
+						loading: false,
+						loadingMore: false,
+						hasNextPage: result.hasNextPage,
+						nextPage: result.nextPage,
+						listSelectedIndex: mode === "more" ? current.listSelectedIndex : 0,
+						error: null,
+					}
+				})
+			})
+			.catch((error) => {
+				const message = errorMessage(error)
+				setReleasesModal((current) => (current.repository === repository ? { ...current, loading: false, loadingMore: false, error: message } : current))
+				flashNotice(message)
+			})
+		if (mode === "initial" || mode === "refresh") {
+			void loadLatestRelease(repository)
+				.then((latest) => {
+					setReleasesModal((current) => (current.repository === repository ? { ...current, latestReleaseId: latest?.id ?? null } : current))
+				})
+				.catch(() => {
+					/* non-fatal — "latest" badge just stays absent */
+				})
+		}
+	}
+
+	const openReleasesModal = () => {
+		if (!selectedRepository) {
+			flashNotice("Open a repository first.")
+			return
+		}
+		setReleasesModal({ ...initialReleasesModalState, repository: selectedRepository, loading: true })
+		loadReleasesPage(selectedRepository, 1, "initial")
+	}
+
+	const refreshReleases = () => {
+		if (!releasesModal.repository) return
+		loadReleasesPage(releasesModal.repository, 1, "refresh")
+	}
+
+	const loadMoreReleases = () => {
+		if (!releasesModal.repository || !releasesModal.hasNextPage || releasesModal.loadingMore) return
+		const page = releasesModal.nextPage ?? 2
+		loadReleasesPage(releasesModal.repository, page, "more")
+	}
+
+	const moveReleaseSelection = (delta: -1 | 1) => {
+		setReleasesModal((current) => {
+			if (current.releases.length === 0) return current
+			const next = Math.max(0, Math.min(current.releases.length - 1, current.listSelectedIndex + delta))
+			return next === current.listSelectedIndex ? current : { ...current, listSelectedIndex: next }
+		})
+	}
+
+	const jumpReleaseSelection = (target: "top" | "bottom") => {
+		setReleasesModal((current) => {
+			if (current.releases.length === 0) return current
+			const index = target === "top" ? 0 : current.releases.length - 1
+			return index === current.listSelectedIndex ? current : { ...current, listSelectedIndex: index }
+		})
+	}
+
+	const openSelectedReleaseDetails = () => {
+		const current = releasesModal
+		if (!current.repository || current.releases.length === 0) return
+		const selected = current.releases[Math.max(0, Math.min(current.listSelectedIndex, current.releases.length - 1))]
+		if (!selected) return
+		setReleasesModal((prev) => ({
+			...prev,
+			panel: "details",
+			detailsReleaseId: selected.id,
+			detailsRelease: null,
+			detailsLoading: true,
+			detailsError: null,
+			detailsScrollOffset: 0,
+		}))
+		void loadRelease({ repository: current.repository, releaseId: selected.id })
+			.then((release: Release) => {
+				setReleasesModal((prev) => (prev.detailsReleaseId === release.id ? { ...prev, detailsRelease: release, detailsLoading: false, detailsError: null } : prev))
+			})
+			.catch((error) => {
+				const message = errorMessage(error)
+				setReleasesModal((prev) => (prev.detailsReleaseId === selected.id ? { ...prev, detailsLoading: false, detailsError: message } : prev))
+			})
+	}
+
+	const scrollReleaseDetails = (delta: number) => {
+		setReleasesModal((current) => {
+			if (current.panel !== "details") return current
+			const next = Math.max(0, current.detailsScrollOffset + delta)
+			return next === current.detailsScrollOffset ? current : { ...current, detailsScrollOffset: next }
+		})
+	}
+
+	const closeOrBackReleases = () => {
+		if (releasesModal.panel === "details") {
+			setReleasesModal((current) => ({
+				...current,
+				panel: "list",
+				detailsRelease: null,
+				detailsReleaseId: null,
+				detailsLoading: false,
+				detailsError: null,
+				detailsScrollOffset: 0,
+			}))
+			return
+		}
+		closeActiveModal()
+	}
+
+	const selectedReleaseUrl = (): string | null => {
+		if (releasesModal.panel === "details") return releasesModal.detailsRelease?.htmlUrl ?? null
+		const selected = releasesModal.releases[releasesModal.listSelectedIndex]
+		return selected?.htmlUrl ?? null
+	}
+
+	const openSelectedReleaseInBrowser = () => {
+		const url = selectedReleaseUrl()
+		if (!url) {
+			flashNotice("No release selected")
+			return
+		}
+		void openUrl(url)
+			.then(() => flashNotice(`Opened ${url}`))
+			.catch((error) => flashNotice(errorMessage(error)))
+	}
+
+	const copySelectedReleaseUrl = () => {
+		const url = selectedReleaseUrl()
+		if (!url) {
+			flashNotice("No release selected")
+			return
+		}
+		void copyToClipboard(url)
+			.then(() => flashNotice(`Copied ${url}`))
+			.catch((error) => flashNotice(errorMessage(error)))
+	}
+
+	const loadDefaultBranchInto = (repository: string) => {
+		setReleaseForm((current) => (current.repository === repository ? { ...current, defaultBranchLoading: true } : current))
+		void fetchDefaultBranch(repository)
+			.then((branch) => {
+				setReleaseForm((current) => {
+					if (current.repository !== repository) return current
+					return { ...current, defaultBranch: branch, defaultBranchLoading: false }
+				})
+			})
+			.catch(() => {
+				setReleaseForm((current) => (current.repository === repository ? { ...current, defaultBranchLoading: false } : current))
+			})
+	}
+
+	const openReleaseFormForCreate = () => {
+		const repository = releasesModal.repository ?? selectedRepository
+		if (!repository) {
+			flashNotice("Open a repository first.")
+			return
+		}
+		// Reuse the latest release we already have cached on the releases overlay
+		// (if any) so the tag field can prefill instantly without an extra fetch.
+		const cachedLatest = releasesModal.repository === repository ? (releasesModal.releases.find((r) => r.id === releasesModal.latestReleaseId) ?? null) : null
+		setReleaseForm({
+			...initialReleaseFormState,
+			mode: "create",
+			repository,
+			focus: "tag",
+			tag: cachedLatest?.tagName ?? "",
+			latestTagName: cachedLatest?.tagName ?? null,
+		})
+		loadDefaultBranchInto(repository)
+		// Refresh in the background; only overwrite the tag field if the user
+		// hasn't typed anything yet (matches the GitHub web UI's "only fill empty
+		// fields" behaviour for generate-notes).
+		void loadLatestRelease(repository)
+			.then((latest) => {
+				if (!latest) return
+				setReleaseForm((current) => {
+					if (current.repository !== repository || current.mode !== "create") return current
+					return {
+						...current,
+						latestTagName: latest.tagName,
+						tag: current.tag.length === 0 ? latest.tagName : current.tag,
+					}
+				})
+			})
+			.catch(() => {
+				/* non-fatal — the form is still usable without the previous tag hint */
+			})
+	}
+
+	const openReleaseFormForSelectedListItem = () => {
+		const current = releasesModal
+		if (!current.repository || current.releases.length === 0) return
+		const summary = current.releases[Math.max(0, Math.min(current.listSelectedIndex, current.releases.length - 1))]
+		if (!summary) return
+		setReleaseForm({
+			...initialReleaseFormState,
+			mode: "edit",
+			repository: current.repository,
+			editingReleaseId: summary.id,
+			originalTagName: summary.tagName,
+			tag: summary.tagName,
+			target: summary.targetCommitish,
+			title: summary.name ?? "",
+			body: { body: "", cursor: 0 },
+			isPrerelease: summary.isPrerelease,
+			makeLatest: summary.isPrerelease ? "false" : "true",
+			focus: "title",
+		})
+		loadDefaultBranchInto(current.repository)
+		// Hydrate body from full release.
+		void loadRelease({ repository: current.repository, releaseId: summary.id })
+			.then((release: Release) => {
+				setReleaseForm((prev) =>
+					prev.editingReleaseId === release.id ? { ...prev, body: { body: release.body ?? "", cursor: 0 }, target: release.targetCommitish || prev.target } : prev,
+				)
+			})
+			.catch((error) => flashNotice(errorMessage(error)))
+	}
+
+	const nextReleaseFormFocus = (delta: -1 | 1) => {
+		const order = ["tag", "target", "title", "body", "prerelease", "makeLatest"] as const
+		setReleaseForm((current) => {
+			const idx = order.indexOf(current.focus)
+			const next = order[(idx + delta + order.length) % order.length] as ReleaseFormFocus
+			return next === current.focus ? current : { ...current, focus: next }
+		})
+	}
+
+	const toggleReleaseFormField = () => {
+		setReleaseForm((current) => {
+			if (current.focus === "prerelease") return { ...current, isPrerelease: !current.isPrerelease }
+			if (current.focus === "makeLatest") {
+				const order: readonly MakeLatest[] = ["true", "false", "legacy"]
+				const idx = order.indexOf(current.makeLatest)
+				const next = order[(idx + 1) % order.length] as MakeLatest
+				return { ...current, makeLatest: next }
+			}
+			return current
+		})
+	}
+
+	const editReleaseFormBody = (mutator: (value: ReleaseFormState["body"]) => ReleaseFormState["body"]) => setReleaseForm((current) => ({ ...current, body: mutator(current.body) }))
+
+	const editReleaseFormSingleLine = (key: Parameters<typeof editSingleLineInput>[1]) => {
+		setReleaseForm((current) => {
+			const applyTo = (value: string) => editSingleLineInput(value, key) ?? value
+			switch (current.focus) {
+				case "tag":
+					return { ...current, tag: applyTo(current.tag) }
+				case "target":
+					return { ...current, target: applyTo(current.target) }
+				case "title":
+					return { ...current, title: applyTo(current.title) }
+				default:
+					return current
+			}
+		})
+	}
+
+	const insertReleaseFormText = (text: string) => {
+		if (text.length === 0) return
+		setReleaseForm((current) => {
+			if (current.focus === "body") return { ...current, body: insertText(current.body, text.replace(/\r\n?/g, "\n")) }
+			const flat = singleLineText(text)
+			if (flat.length === 0) return current
+			switch (current.focus) {
+				case "tag":
+					return { ...current, tag: current.tag + flat }
+				case "target":
+					return { ...current, target: current.target + flat }
+				case "title":
+					return { ...current, title: current.title + flat }
+				default:
+					return current
+			}
+		})
+	}
+
+	const submitReleaseForm = (asDraft: boolean) => {
+		const current = releaseForm
+		if (current.tag.trim().length === 0) {
+			setReleaseForm((prev) => ({ ...prev, error: "Tag is required.", focus: "tag" }))
+			return
+		}
+		if (current.submitting) return
+		const tag = current.tag.trim()
+		const target = current.target.trim().length > 0 ? current.target.trim() : (current.defaultBranch ?? "main")
+		const title = current.title.trim()
+		const body = current.body.body
+		setReleaseForm((prev) => ({ ...prev, submitting: true, error: null }))
+
+		const onError = (error: unknown) => {
+			const message = errorMessage(error)
+			setReleaseForm((prev) => ({ ...prev, submitting: false, error: message }))
+			flashNotice(message)
+		}
+
+		if (current.mode === "edit" && current.editingReleaseId !== null) {
+			const input: UpdateReleaseInput = {
+				tagName: tag,
+				targetCommitish: target,
+				name: title,
+				body,
+				draft: asDraft,
+				prerelease: current.isPrerelease,
+				makeLatest: current.makeLatest,
+			}
+			void submitUpdateRelease({ repository: current.repository, releaseId: current.editingReleaseId, input })
+				.then((release) => {
+					flashNotice(`Updated release ${release.tagName}`)
+					setReleaseForm(initialReleaseFormState)
+					if (releasesModalActive) {
+						setActiveModal(Modal.Releases({ ...releasesModal }))
+						refreshReleases()
+					} else {
+						closeActiveModal()
+					}
+				})
+				.catch(onError)
+			return
+		}
+
+		const input: CreateReleaseInput = {
+			tagName: tag,
+			targetCommitish: target,
+			name: title,
+			body,
+			draft: asDraft,
+			prerelease: current.isPrerelease,
+			makeLatest: current.makeLatest,
+		}
+		void submitCreateRelease({ repository: current.repository, input })
+			.then((release) => {
+				flashNotice(asDraft ? `Saved draft ${release.tagName}` : `Published ${release.tagName}`)
+				if (releasesModalActive && releasesModal.repository === current.repository) {
+					setActiveModal(Modal.Releases({ ...releasesModal }))
+					refreshReleases()
+				} else {
+					closeActiveModal()
+				}
+			})
+			.catch(onError)
+	}
+
+	const generateReleaseFormNotes = () => {
+		const current = releaseForm
+		const tag = current.tag.trim()
+		if (tag.length === 0) {
+			setReleaseForm((prev) => ({ ...prev, error: "Enter a tag before generating notes.", focus: "tag" }))
+			return
+		}
+		if (current.generatingNotes) return
+		setReleaseForm((prev) => ({ ...prev, generatingNotes: true, error: null }))
+		const args = {
+			repository: current.repository,
+			tagName: tag,
+			...(current.target.trim().length > 0 ? { targetCommitish: current.target.trim() } : {}),
+		}
+		void fetchGenerateReleaseNotes(args)
+			.then((notes) => {
+				setReleaseForm((prev) => ({
+					...prev,
+					generatingNotes: false,
+					title: prev.title.length === 0 ? notes.name : prev.title,
+					body: prev.body.body.length === 0 ? { body: notes.body, cursor: notes.body.length } : prev.body,
+				}))
+			})
+			.catch((error) => {
+				const message = errorMessage(error)
+				setReleaseForm((prev) => ({ ...prev, generatingNotes: false, error: message }))
+				flashNotice(message)
+			})
+	}
+
+	const cancelReleaseForm = () => {
+		setReleaseForm(initialReleaseFormState)
+		if (releasesModal.repository) {
+			setActiveModal(Modal.Releases({ ...releasesModal }))
+		} else {
+			closeActiveModal()
+		}
+	}
+
+	const openDeleteReleaseConfirm = () => {
+		const current = releasesModal
+		if (!current.repository || current.releases.length === 0) {
+			flashNotice("No release selected")
+			return
+		}
+		if (current.panel === "details") {
+			const release = current.detailsRelease
+			if (!release) {
+				flashNotice("No release loaded")
+				return
+			}
+			setDeleteReleaseModal({
+				repository: current.repository,
+				releaseId: release.id,
+				tagName: release.tagName,
+				name: release.name,
+				isDraft: release.isDraft,
+				running: false,
+				error: null,
+			})
+			return
+		}
+		const summary = current.releases[Math.max(0, Math.min(current.listSelectedIndex, current.releases.length - 1))]
+		if (!summary) return
+		setDeleteReleaseModal({
+			repository: current.repository,
+			releaseId: summary.id,
+			tagName: summary.tagName,
+			name: summary.name,
+			isDraft: summary.isDraft,
+			running: false,
+			error: null,
+		})
+	}
+
+	const confirmDeleteRelease = () => {
+		const current = deleteReleaseModal
+		if (!current.repository || current.releaseId === null || current.running) return
+		setDeleteReleaseModal((prev) => ({ ...prev, running: true, error: null }))
+		void submitDeleteRelease({ repository: current.repository, releaseId: current.releaseId })
+			.then(() => {
+				flashNotice(`Deleted release ${current.tagName}`)
+				// Optimistically drop from the list cache and bounce back to the releases overlay.
+				const nextReleases = releasesModal.releases.filter((r) => r.id !== current.releaseId)
+				const clampedIndex = Math.max(0, Math.min(releasesModal.listSelectedIndex, nextReleases.length - 1))
+				if (releasesModal.repository) {
+					setActiveModal(
+						Modal.Releases({
+							...releasesModal,
+							panel: "list",
+							releases: nextReleases,
+							listSelectedIndex: clampedIndex,
+							detailsRelease: null,
+							detailsReleaseId: null,
+							detailsLoading: false,
+							detailsError: null,
+							detailsScrollOffset: 0,
+						}),
+					)
+				} else {
+					closeActiveModal()
+				}
+			})
+			.catch((error) => {
+				const message = errorMessage(error)
+				setDeleteReleaseModal((prev) => ({ ...prev, running: false, error: message }))
+				flashNotice(message)
+			})
+	}
+
 	const insertPastedText = (text: string) => {
 		if (text.length === 0) return false
 		if (commandPaletteActive) {
@@ -2663,6 +3194,10 @@ export const App = () => {
 		}
 		if (openRepositoryModalActive) {
 			setOpenRepositoryModal((current) => ({ ...current, query: current.query + singleLineText(text), error: null }))
+			return true
+		}
+		if (releaseFormActive) {
+			insertReleaseFormText(text)
 			return true
 		}
 		if (themeModalActive && themeModal.filterMode) {
@@ -2711,6 +3246,7 @@ export const App = () => {
 		renderer,
 		commandPaletteActive,
 		openRepositoryModalActive,
+		releaseFormActive,
 		themeModalActive,
 		themeModal.filterMode,
 		commentModalActive,
@@ -2760,6 +3296,8 @@ export const App = () => {
 			},
 			openThemeModal,
 			openRepositoryPicker,
+			openReleasesModal,
+			openReleaseFormForCreate,
 			loadMorePullRequests,
 			switchViewTo,
 			openDetails: () => {
@@ -2966,6 +3504,9 @@ export const App = () => {
 		labelModalActive,
 		themeModalActive,
 		openRepositoryModalActive,
+		releasesModalActive,
+		releaseFormActive,
+		deleteReleaseModalActive,
 		commentModalActive,
 		deleteCommentModalActive,
 		commandPaletteActive,
@@ -2980,6 +3521,7 @@ export const App = () => {
 			changedFilesModalActive ||
 			submitReviewModalActive ||
 			labelModalActive ||
+			releaseFormActive ||
 			filterMode ||
 			(themeModalActive && themeModal.filterMode),
 		closeModal: {
@@ -3055,6 +3597,63 @@ export const App = () => {
 		openRepositoryModal: {
 			closeModal: closeActiveModal,
 			openFromInput: openRepositoryFromInput,
+		},
+		releasesModal: {
+			panel: releasesModal.panel,
+			hasReleases: releasesModal.releases.length > 0,
+			hasSelection: releasesModal.releases.length > 0,
+			hasNextPage: releasesModal.hasNextPage,
+			loadingMore: releasesModal.loadingMore,
+			closeOrBack: closeOrBackReleases,
+			moveSelection: moveReleaseSelection,
+			jumpSelection: jumpReleaseSelection,
+			openDetails: openSelectedReleaseDetails,
+			scrollDetails: (delta) => scrollReleaseDetails(delta),
+			scrollDetailsPage: (delta) => scrollReleaseDetails(delta * 10),
+			openInBrowser: openSelectedReleaseInBrowser,
+			copyUrl: copySelectedReleaseUrl,
+			refresh: refreshReleases,
+			loadMore: loadMoreReleases,
+			newRelease: openReleaseFormForCreate,
+			editRelease: openReleaseFormForSelectedListItem,
+			deleteRelease: openDeleteReleaseConfirm,
+		},
+		deleteReleaseModal: {
+			running: deleteReleaseModal.running,
+			closeModal: () => {
+				setDeleteReleaseModal(initialDeleteReleaseModalState)
+				if (releasesModal.repository) setActiveModal(Modal.Releases({ ...releasesModal }))
+				else closeActiveModal()
+			},
+			confirmDelete: confirmDeleteRelease,
+		},
+		releaseForm: {
+			bodyFocused: releaseForm.focus === "body",
+			toggleFocused: releaseForm.focus === "prerelease" || releaseForm.focus === "makeLatest",
+			canSubmit: releaseForm.tag.trim().length > 0 && !releaseForm.submitting,
+			canGenerate: releaseForm.tag.trim().length > 0 && !releaseForm.generatingNotes,
+			nextFocus: () => nextReleaseFormFocus(1),
+			previousFocus: () => nextReleaseFormFocus(-1),
+			cancel: cancelReleaseForm,
+			publish: () => submitReleaseForm(false),
+			saveDraft: () => submitReleaseForm(true),
+			generateNotes: generateReleaseFormNotes,
+			toggleField: toggleReleaseFormField,
+			insertNewline: () => editReleaseFormBody((state) => insertText(state, "\n")),
+			moveLeft: () => editReleaseFormBody(editorMoveLeft),
+			moveRight: () => editReleaseFormBody(editorMoveRight),
+			moveUp: () => editReleaseFormBody((state) => moveVertically(state, -1)),
+			moveDown: () => editReleaseFormBody((state) => moveVertically(state, 1)),
+			moveLineStart: () => editReleaseFormBody(moveLineStart),
+			moveLineEnd: () => editReleaseFormBody(moveLineEnd),
+			moveWordBackward: () => editReleaseFormBody(moveWordBackward),
+			moveWordForward: () => editReleaseFormBody(moveWordForward),
+			backspace: () => editReleaseFormBody(editorBackspace),
+			deleteForward: () => editReleaseFormBody(editorDeleteForward),
+			deleteWordBackward: () => editReleaseFormBody(deleteWordBackward),
+			deleteWordForward: () => editReleaseFormBody(deleteWordForward),
+			deleteToLineStart: () => editReleaseFormBody(deleteToLineStart),
+			deleteToLineEnd: () => editReleaseFormBody(deleteToLineEnd),
 		},
 		commentModal: {
 			closeModal: closeActiveModal,
@@ -3226,6 +3825,19 @@ export const App = () => {
 			return
 		}
 
+		if (releaseFormActive) {
+			if (releaseForm.focus === "body") {
+				const text = printableKeyText(key)
+				if (text) editReleaseFormBody((state) => insertText(state, text))
+				return
+			}
+			if (releaseForm.focus === "tag" || releaseForm.focus === "target" || releaseForm.focus === "title") {
+				if (isSingleLineInputKey(key)) editReleaseFormSingleLine(key)
+				return
+			}
+			return
+		}
+
 		if (changedFilesModalActive) {
 			if (isSingleLineInputKey(key)) {
 				setChangedFilesModal((current) => {
@@ -3384,6 +3996,21 @@ export const App = () => {
 	const openRepositoryModalHeight = openRepositoryLayout.height
 	const openRepositoryModalLeft = openRepositoryLayout.left
 	const openRepositoryModalTop = openRepositoryLayout.top
+	const releasesLayout = sizedModal(70, 110, 18, 28)
+	const releasesModalWidth = releasesLayout.width
+	const releasesModalHeight = releasesLayout.height
+	const releasesModalLeft = releasesLayout.left
+	const releasesModalTop = releasesLayout.top
+	const releaseFormLayout = sizedModal(64, 96, 12, 28)
+	const releaseFormModalWidth = releaseFormLayout.width
+	const releaseFormModalHeight = releaseFormLayout.height
+	const releaseFormModalLeft = releaseFormLayout.left
+	const releaseFormModalTop = releaseFormLayout.top
+	const deleteReleaseLayout = sizedModal(46, 68, 12, 12)
+	const deleteReleaseModalWidth = deleteReleaseLayout.width
+	const deleteReleaseModalHeight = deleteReleaseLayout.height
+	const deleteReleaseModalLeft = deleteReleaseLayout.left
+	const deleteReleaseModalTop = deleteReleaseLayout.top
 	const commandPaletteLayout = sizedModal(50, 88, 8, 24)
 	const commandPaletteWidth = commandPaletteLayout.width
 	const commandPaletteHeight = commandPaletteLayout.height
@@ -3742,6 +4369,36 @@ export const App = () => {
 					modalHeight={openRepositoryModalHeight}
 					offsetLeft={openRepositoryModalLeft}
 					offsetTop={openRepositoryModalTop}
+				/>
+			) : null}
+			{releasesModalActive ? (
+				<ReleasesModal
+					state={releasesModal}
+					modalWidth={releasesModalWidth}
+					modalHeight={releasesModalHeight}
+					offsetLeft={releasesModalLeft}
+					offsetTop={releasesModalTop}
+					loadingIndicator={loadingIndicator}
+				/>
+			) : null}
+			{releaseFormActive ? (
+				<ReleaseForm
+					state={releaseForm}
+					modalWidth={releaseFormModalWidth}
+					modalHeight={releaseFormModalHeight}
+					offsetLeft={releaseFormModalLeft}
+					offsetTop={releaseFormModalTop}
+					loadingIndicator={loadingIndicator}
+				/>
+			) : null}
+			{deleteReleaseModalActive ? (
+				<DeleteReleaseModal
+					state={deleteReleaseModal}
+					modalWidth={deleteReleaseModalWidth}
+					modalHeight={deleteReleaseModalHeight}
+					offsetLeft={deleteReleaseModalLeft}
+					offsetTop={deleteReleaseModalTop}
+					loadingIndicator={loadingIndicator}
 				/>
 			) : null}
 			{commandPaletteActive ? (

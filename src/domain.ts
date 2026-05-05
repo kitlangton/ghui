@@ -167,6 +167,104 @@ export interface ListPullRequestPageInput {
 	readonly pageSize: number
 }
 
+export const makeLatestValues = ["true", "false", "legacy"] as const
+export type MakeLatest = (typeof makeLatestValues)[number]
+
+export interface Tag {
+	readonly name: string
+	readonly commitSha: string
+}
+
+export interface Branch {
+	readonly name: string
+	readonly commitSha: string
+	readonly isDefault: boolean
+}
+
+export interface DiscussionCategory {
+	readonly id: string
+	readonly name: string
+	readonly slug: string
+	readonly emoji: string | null
+}
+
+export interface ReleaseAuthor {
+	readonly login: string
+}
+
+export interface ReleaseAsset {
+	readonly id: number
+	readonly name: string
+	readonly label: string | null
+	readonly size: number
+	readonly downloadCount: number
+	readonly contentType: string
+	readonly downloadUrl: string
+	readonly htmlUrl: string | null
+	readonly createdAt: Date | null
+	readonly updatedAt: Date | null
+}
+
+export interface ReleaseSummary {
+	readonly id: number
+	readonly tagName: string
+	readonly name: string | null
+	readonly isDraft: boolean
+	readonly isPrerelease: boolean
+	readonly targetCommitish: string
+	readonly author: ReleaseAuthor | null
+	readonly createdAt: Date | null
+	readonly publishedAt: Date | null
+	readonly htmlUrl: string
+}
+
+export interface Release extends ReleaseSummary {
+	readonly body: string
+	readonly assets: readonly ReleaseAsset[]
+	readonly discussionUrl: string | null
+}
+
+export interface ReleasePage {
+	readonly items: readonly ReleaseSummary[]
+	readonly hasNextPage: boolean
+	readonly nextPage: number | null
+}
+
+export interface CreateReleaseInput {
+	readonly tagName: string
+	readonly targetCommitish?: string
+	readonly name?: string
+	readonly body?: string
+	readonly draft?: boolean
+	readonly prerelease?: boolean
+	readonly makeLatest?: MakeLatest
+	readonly discussionCategoryName?: string
+	readonly generateReleaseNotes?: boolean
+}
+
+export interface UpdateReleaseInput {
+	readonly tagName?: string
+	readonly targetCommitish?: string
+	readonly name?: string
+	readonly body?: string
+	readonly draft?: boolean
+	readonly prerelease?: boolean
+	readonly makeLatest?: MakeLatest
+	readonly discussionCategoryName?: string
+}
+
+export interface GenerateReleaseNotesInput {
+	readonly tagName: string
+	readonly previousTagName?: string
+	readonly targetCommitish?: string
+	readonly configurationFilePath?: string
+}
+
+export interface GeneratedReleaseNotes {
+	readonly name: string
+	readonly body: string
+}
+
 export interface PullRequestMergeInfo {
 	readonly repository: string
 	readonly number: number

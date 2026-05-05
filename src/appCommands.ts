@@ -11,6 +11,8 @@ interface AppCommandActions {
 	readonly clearFilter: () => void
 	readonly openThemeModal: () => void
 	readonly openRepositoryPicker: () => void
+	readonly openReleasesModal: () => void
+	readonly openReleaseFormForCreate: () => void
 	readonly loadMorePullRequests: () => void
 	readonly switchViewTo: (view: PullRequestView) => void
 	readonly openDetails: () => void
@@ -174,6 +176,22 @@ export const buildAppCommands = ({
 			subtitle: selectedRepository ? `Current repository: ${selectedRepository}` : "Enter owner/name or a GitHub URL",
 			keywords: ["repo", "repository", "owner", "github"],
 			run: actions.openRepositoryPicker,
+		}),
+		defineCommand({
+			id: "release.list",
+			title: "Releases\u2026",
+			scope: "View",
+			subtitle: selectedRepository ? `Browse releases in ${selectedRepository}` : "Open a repository first",
+			keywords: ["release", "tag", "changelog", "version"],
+			run: actions.openReleasesModal,
+		}),
+		defineCommand({
+			id: "release.new",
+			title: "New release\u2026",
+			scope: "View",
+			subtitle: selectedRepository ? `Cut a release in ${selectedRepository}` : "Open a repository first",
+			keywords: ["release", "publish", "draft", "tag", "new"],
+			run: actions.openReleaseFormForCreate,
 		}),
 		...activeViews.map((view) =>
 			defineCommand({

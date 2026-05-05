@@ -1,14 +1,18 @@
 import { TextAttributes } from "@opentui/core"
 import { Data } from "effect"
 import type {
+	MakeLatest,
 	PullRequestLabel,
 	PullRequestMergeInfo,
 	PullRequestMergeKind,
 	PullRequestMergeMethod,
 	PullRequestReviewComment,
 	PullRequestReviewEvent,
+	Release,
+	ReleaseSummary,
 	RepositoryMergeMethods,
 } from "../domain.js"
+import type { CommentEditorValue } from "./commentEditor.js"
 import { allowedMergeMethodList } from "../domain.js"
 import { getMergeKindDefinition, mergeKindRowTitle, visibleMergeKinds } from "../mergeActions.js"
 import { clampCursor, commentEditorLines, cursorLineIndexForLines } from "./commentEditor.js"
@@ -415,10 +419,113 @@ export const initialOpenRepositoryModalState: OpenRepositoryModalState = {
 	error: null,
 }
 
+export type ReleasesPanel = "list" | "details"
+
+export interface ReleasesModalState {
+	readonly repository: string | null
+	readonly panel: ReleasesPanel
+	readonly releases: readonly ReleaseSummary[]
+	readonly loading: boolean
+	readonly loadingMore: boolean
+	readonly error: string | null
+	readonly hasNextPage: boolean
+	readonly nextPage: number | null
+	readonly listSelectedIndex: number
+	readonly detailsReleaseId: number | null
+	readonly detailsRelease: Release | null
+	readonly detailsLoading: boolean
+	readonly detailsError: string | null
+	readonly detailsScrollOffset: number
+	readonly latestReleaseId: number | null
+}
+
+export const releaseFormFocuses = ["tag", "target", "title", "body", "prerelease", "makeLatest"] as const
+export type ReleaseFormFocus = (typeof releaseFormFocuses)[number]
+
+export interface ReleaseFormState {
+	readonly mode: "create" | "edit"
+	readonly repository: string
+	readonly editingReleaseId: number | null
+	readonly originalTagName: string | null
+	readonly tag: string
+	readonly target: string
+	readonly title: string
+	readonly body: CommentEditorValue
+	readonly isPrerelease: boolean
+	readonly makeLatest: MakeLatest
+	readonly focus: ReleaseFormFocus
+	readonly defaultBranch: string | null
+	readonly defaultBranchLoading: boolean
+	readonly latestTagName: string | null
+	readonly submitting: boolean
+	readonly generatingNotes: boolean
+	readonly error: string | null
+}
+
+export interface DeleteReleaseModalState {
+	readonly repository: string | null
+	readonly releaseId: number | null
+	readonly tagName: string
+	readonly name: string | null
+	readonly isDraft: boolean
+	readonly running: boolean
+	readonly error: string | null
+}
+
+export const initialDeleteReleaseModalState: DeleteReleaseModalState = {
+	repository: null,
+	releaseId: null,
+	tagName: "",
+	name: null,
+	isDraft: false,
+	running: false,
+	error: null,
+}
+
+export const initialReleaseFormState: ReleaseFormState = {
+	mode: "create",
+	repository: "",
+	editingReleaseId: null,
+	originalTagName: null,
+	tag: "",
+	target: "",
+	title: "",
+	body: { body: "", cursor: 0 },
+	isPrerelease: false,
+	makeLatest: "true",
+	focus: "tag",
+	defaultBranch: null,
+	defaultBranchLoading: false,
+	latestTagName: null,
+	submitting: false,
+	generatingNotes: false,
+	error: null,
+}
+
+export const initialReleasesModalState: ReleasesModalState = {
+	repository: null,
+	panel: "list",
+	releases: [],
+	loading: false,
+	loadingMore: false,
+	error: null,
+	hasNextPage: false,
+	nextPage: null,
+	listSelectedIndex: 0,
+	detailsReleaseId: null,
+	detailsRelease: null,
+	detailsLoading: false,
+	detailsError: null,
+	detailsScrollOffset: 0,
+	latestReleaseId: null,
+}
+
 export type Modal = Data.TaggedEnum<{
 	None: {}
 	Label: LabelModalState
 	Close: CloseModalState
+	ReleaseForm: ReleaseFormState
+	DeleteRelease: DeleteReleaseModalState
 	PullRequestState: PullRequestStateModalState
 	Merge: MergeModalState
 	Comment: CommentModalState
@@ -429,6 +536,7 @@ export type Modal = Data.TaggedEnum<{
 	Theme: ThemeModalState
 	CommandPalette: CommandPaletteState
 	OpenRepository: OpenRepositoryModalState
+	Releases: ReleasesModalState
 }>
 
 export const Modal = Data.taggedEnum<Modal>()
@@ -450,6 +558,9 @@ export const modalInitialStates = {
 	Theme: initialThemeModalState,
 	CommandPalette: initialCommandPaletteState,
 	OpenRepository: initialOpenRepositoryModalState,
+	Releases: initialReleasesModalState,
+	ReleaseForm: initialReleaseFormState,
+	DeleteRelease: initialDeleteReleaseModalState,
 } as const satisfies { [Tag in Exclude<ModalTag, "None">]: ModalState<Tag> }
 
 export const OpenRepositoryModal = ({
@@ -1032,6 +1143,64 @@ export const CommentModal = ({
 		>
 			{state.error ? <PlainLine text={fitCell(state.error, contentWidth)} fg={colors.error} /> : null}
 			{visibleLines.map(renderEditorLine)}
+		</StandardModal>
+	)
+}
+
+export const DeleteReleaseModal = ({
+	state,
+	modalWidth,
+	modalHeight,
+	offsetLeft,
+	offsetTop,
+	loadingIndicator,
+}: {
+	state: DeleteReleaseModalState
+	modalWidth: number
+	modalHeight: number
+	offsetLeft: number
+	offsetTop: number
+	loadingIndicator: string
+}) => {
+	const { contentWidth, bodyHeight } = standardModalDims(modalWidth, modalHeight)
+	const title = state.isDraft ? "Delete draft release" : "Delete release"
+	const rightText = state.running ? `${loadingIndicator} deleting` : "confirm"
+	const nameLine = state.name && state.name.length > 0 ? state.name : state.tagName
+	const titleLines = [fitCell(state.tagName, contentWidth), fitCell(nameLine, contentWidth)]
+	const topRows = Math.max(0, Math.floor((bodyHeight - titleLines.length - 2) / 2))
+	const bottomRows = Math.max(0, bodyHeight - topRows - titleLines.length - 2)
+	const caution = state.isDraft ? "Discards this draft. The tag is unaffected." : "Removes the release on GitHub. The underlying git tag is kept."
+
+	return (
+		<StandardModal
+			left={offsetLeft}
+			top={offsetTop}
+			width={modalWidth}
+			height={modalHeight}
+			title={title}
+			titleFg={colors.error}
+			headerRight={{ text: rightText, pending: state.running }}
+			subtitle={<PlainLine text={fitCell(caution, contentWidth)} fg={colors.muted} />}
+			bodyPadding={1}
+			footer={
+				<HintRow
+					items={[
+						{ key: "enter", label: "delete" },
+						{ key: "esc", label: "cancel" },
+					]}
+				/>
+			}
+		>
+			{state.error ? (
+				<PlainLine text={fitCell(state.error, contentWidth)} fg={colors.error} />
+			) : (
+				<>
+					<Filler rows={topRows} prefix="top" />
+					<PlainLine text={titleLines[0]!} fg={colors.accent} />
+					<PlainLine text={titleLines[1]!} fg={colors.text} />
+					<Filler rows={bottomRows} prefix="bottom" />
+				</>
+			)}
 		</StandardModal>
 	)
 }

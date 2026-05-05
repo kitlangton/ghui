@@ -3,8 +3,13 @@ import { config } from "../config.js"
 import {
 	DiffCommentSide,
 	pullRequestQueueSearchQualifier,
+	type Branch,
 	type CheckItem,
 	type CreatePullRequestCommentInput,
+	type CreateReleaseInput,
+	type DiscussionCategory,
+	type GeneratedReleaseNotes,
+	type GenerateReleaseNotesInput,
 	type ListPullRequestPageInput,
 	type Mergeable,
 	type PullRequestComment,
@@ -14,9 +19,14 @@ import {
 	type PullRequestPage,
 	type PullRequestQueueMode,
 	type PullRequestReviewComment,
+	type Release,
+	type ReleasePage,
+	type ReleaseSummary,
 	type RepositoryMergeMethods,
 	type ReviewStatus,
 	type SubmitPullRequestReviewInput,
+	type Tag,
+	type UpdateReleaseInput,
 } from "../domain.js"
 import { mergeActionCliArgs } from "../mergeActions.js"
 import { CommandError, CommandRunner, type JsonParseError } from "./CommandRunner.js"
@@ -184,6 +194,78 @@ const RepoLabelsResponseSchema = Schema.Array(
 		color: Schema.String,
 	}),
 )
+
+const ReleaseAuthorSchema = Schema.NullOr(Schema.Struct({ login: Schema.String }))
+
+const ReleaseAssetSchema = Schema.Struct({
+	id: Schema.Number,
+	name: Schema.String,
+	label: OptionalNullableString,
+	size: Schema.Number,
+	download_count: Schema.Number,
+	content_type: Schema.String,
+	browser_download_url: Schema.String,
+	url: Schema.String,
+	created_at: OptionalNullableString,
+	updated_at: OptionalNullableString,
+})
+
+const ReleaseSchema = Schema.Struct({
+	id: Schema.Number,
+	tag_name: Schema.String,
+	target_commitish: Schema.String,
+	name: NullableString,
+	body: Schema.NullOr(Schema.String).pipe(Schema.optionalKey),
+	draft: Schema.Boolean,
+	prerelease: Schema.Boolean,
+	created_at: OptionalNullableString,
+	published_at: OptionalNullableString,
+	html_url: Schema.String,
+	discussion_url: OptionalNullableString,
+	author: ReleaseAuthorSchema,
+	assets: Schema.optionalKey(Schema.Array(ReleaseAssetSchema)),
+})
+
+const ReleaseListResponseSchema = Schema.Array(ReleaseSchema)
+
+const TagSchema = Schema.Struct({
+	name: Schema.String,
+	commit: Schema.Struct({ sha: Schema.String }),
+})
+const TagListResponseSchema = Schema.Union([Schema.Array(TagSchema), Schema.Array(Schema.Array(TagSchema))])
+
+const BranchSchema = Schema.Struct({
+	name: Schema.String,
+	commit: Schema.Struct({ sha: Schema.String }),
+})
+const BranchListResponseSchema = Schema.Union([Schema.Array(BranchSchema), Schema.Array(Schema.Array(BranchSchema))])
+
+const RepositoryMetaSchema = Schema.Struct({ default_branch: Schema.String })
+
+const GenerateReleaseNotesResponseSchema = Schema.Struct({
+	name: Schema.String,
+	body: Schema.String,
+})
+
+const DiscussionCategoriesResponseSchema = Schema.Struct({
+	data: Schema.Struct({
+		repository: Schema.NullOr(
+			Schema.Struct({
+				hasDiscussionsEnabled: Schema.Boolean,
+				discussionCategories: Schema.Struct({
+					nodes: Schema.Array(
+						Schema.Struct({
+							id: Schema.String,
+							name: Schema.String,
+							slug: Schema.String,
+							emoji: OptionalNullableString,
+						}),
+					),
+				}),
+			}),
+		),
+	}),
+})
 
 type RawPullRequestSummaryNode = Schema.Schema.Type<typeof RawPullRequestSummaryNodeSchema>
 type RawPullRequestNode = Schema.Schema.Type<typeof RawPullRequestNodeSchema>
@@ -568,6 +650,37 @@ const MERGEABLE_BY_RAW: Record<string, Mergeable> = {
 
 const normalizeMergeable = (value: string): Mergeable => MERGEABLE_BY_RAW[value] ?? "unknown"
 
+const parseReleaseSummary = (raw: Schema.Schema.Type<typeof ReleaseSchema>): ReleaseSummary => ({
+	id: raw.id,
+	tagName: raw.tag_name,
+	name: raw.name,
+	isDraft: raw.draft,
+	isPrerelease: raw.prerelease,
+	targetCommitish: raw.target_commitish,
+	author: raw.author ? { login: raw.author.login } : null,
+	createdAt: normalizeDate(raw.created_at),
+	publishedAt: normalizeDate(raw.published_at),
+	htmlUrl: raw.html_url,
+})
+
+const parseRelease = (raw: Schema.Schema.Type<typeof ReleaseSchema>): Release => ({
+	...parseReleaseSummary(raw),
+	body: raw.body ?? "",
+	discussionUrl: raw.discussion_url ?? null,
+	assets: (raw.assets ?? []).map((asset) => ({
+		id: asset.id,
+		name: asset.name,
+		label: asset.label ?? null,
+		size: asset.size,
+		downloadCount: asset.download_count,
+		contentType: asset.content_type,
+		downloadUrl: asset.browser_download_url,
+		htmlUrl: asset.url,
+		createdAt: normalizeDate(asset.created_at),
+		updatedAt: normalizeDate(asset.updated_at),
+	})),
+})
+
 const REVIEW_EVENT_CLI_FLAG = {
 	COMMENT: "--comment",
 	APPROVE: "--approve",
@@ -601,6 +714,17 @@ export class GitHubService extends Context.Service<
 		readonly listRepoLabels: (repository: string) => Effect.Effect<readonly { readonly name: string; readonly color: string | null }[], GitHubError>
 		readonly addPullRequestLabel: (repository: string, number: number, label: string) => Effect.Effect<void, CommandError>
 		readonly removePullRequestLabel: (repository: string, number: number, label: string) => Effect.Effect<void, CommandError>
+		readonly listReleases: (repository: string, page: number, perPage?: number) => Effect.Effect<ReleasePage, GitHubError>
+		readonly getRelease: (repository: string, releaseId: number) => Effect.Effect<Release, GitHubError>
+		readonly getLatestRelease: (repository: string) => Effect.Effect<Release | null, GitHubError>
+		readonly listTags: (repository: string) => Effect.Effect<readonly Tag[], GitHubError>
+		readonly listBranches: (repository: string) => Effect.Effect<readonly Branch[], GitHubError>
+		readonly getDefaultBranch: (repository: string) => Effect.Effect<string, GitHubError>
+		readonly generateReleaseNotes: (repository: string, input: GenerateReleaseNotesInput) => Effect.Effect<GeneratedReleaseNotes, GitHubError>
+		readonly listDiscussionCategories: (repository: string) => Effect.Effect<readonly DiscussionCategory[], GitHubError>
+		readonly createRelease: (repository: string, input: CreateReleaseInput) => Effect.Effect<Release, GitHubError>
+		readonly updateRelease: (repository: string, releaseId: number, input: UpdateReleaseInput) => Effect.Effect<Release, GitHubError>
+		readonly deleteRelease: (repository: string, releaseId: number) => Effect.Effect<void, CommandError>
 	}
 >()("ghui/GitHubService") {
 	static readonly layerNoDeps = Layer.effect(
@@ -931,6 +1055,119 @@ export class GitHubService extends Context.Service<
 			const removePullRequestLabel = (repository: string, number: number, label: string) =>
 				ghVoid("removePullRequestLabel", ["pr", "edit", String(number), "--repo", repository, "--remove-label", label])
 
+			const listReleases = Effect.fn("GitHubService.listReleases")(function* (repository: string, page: number, perPage = 30) {
+				const safePage = Math.max(1, Math.floor(page))
+				const safePerPage = Math.max(1, Math.min(100, Math.floor(perPage)))
+				const response = yield* ghJson("listReleases", ReleaseListResponseSchema, ["api", `repos/${repository}/releases?per_page=${safePerPage}&page=${safePage}`])
+				return {
+					items: response.map(parseReleaseSummary),
+					hasNextPage: response.length === safePerPage,
+					nextPage: response.length === safePerPage ? safePage + 1 : null,
+				} satisfies ReleasePage
+			})
+
+			const getRelease = (repository: string, releaseId: number) =>
+				ghJson("getRelease", ReleaseSchema, ["api", `repos/${repository}/releases/${releaseId}`]).pipe(Effect.map(parseRelease))
+
+			const getLatestRelease = (repository: string) =>
+				ghJson("getLatestRelease", ReleaseSchema, ["api", `repos/${repository}/releases/latest`]).pipe(
+					Effect.map((value): Release | null => parseRelease(value)),
+					Effect.catchTag("CommandError", (error) => (error.detail.includes("404") ? Effect.succeed(null) : Effect.fail(error))),
+				)
+
+			const listTags = (repository: string) =>
+				ghJson("listTags", TagListResponseSchema, ["api", "--paginate", "--slurp", `repos/${repository}/tags?per_page=100`]).pipe(
+					Effect.map((response) =>
+						flattenSlurpedPages(response).map(
+							(tag): Tag => ({
+								name: tag.name,
+								commitSha: tag.commit.sha,
+							}),
+						),
+					),
+				)
+
+			const getDefaultBranch = (repository: string) =>
+				ghJson("getDefaultBranch", RepositoryMetaSchema, ["api", `repos/${repository}`]).pipe(Effect.map((meta) => meta.default_branch))
+
+			const listBranches = Effect.fn("GitHubService.listBranches")(function* (repository: string) {
+				const [response, defaultBranch] = yield* Effect.all(
+					[ghJson("listBranchesPaged", BranchListResponseSchema, ["api", "--paginate", "--slurp", `repos/${repository}/branches?per_page=100`]), getDefaultBranch(repository)],
+					{ concurrency: "unbounded" },
+				)
+				return flattenSlurpedPages(response).map(
+					(branch): Branch => ({
+						name: branch.name,
+						commitSha: branch.commit.sha,
+						isDefault: branch.name === defaultBranch,
+					}),
+				)
+			})
+
+			const generateReleaseNotes = Effect.fn("GitHubService.generateReleaseNotes")(function* (repository: string, input: GenerateReleaseNotesInput) {
+				const args = [
+					"api",
+					"--method",
+					"POST",
+					`repos/${repository}/releases/generate-notes`,
+					"-f",
+					`tag_name=${input.tagName}`,
+					...(input.previousTagName ? ["-f", `previous_tag_name=${input.previousTagName}`] : []),
+					...(input.targetCommitish ? ["-f", `target_commitish=${input.targetCommitish}`] : []),
+					...(input.configurationFilePath ? ["-f", `configuration_file_path=${input.configurationFilePath}`] : []),
+				]
+				return yield* ghJson("generateReleaseNotes", GenerateReleaseNotesResponseSchema, args)
+			})
+
+			const listDiscussionCategories = Effect.fn("GitHubService.listDiscussionCategories")(function* (repository: string) {
+				const repo = repositoryParts(repository)
+				if (!repo) {
+					return yield* new CommandError({ command: "gh", args: [], detail: `Invalid repository: ${repository}`, cause: repository })
+				}
+				const response = yield* ghJson("listDiscussionCategories", DiscussionCategoriesResponseSchema, [
+					"api",
+					"graphql",
+					"-f",
+					"query=query($owner: String!, $name: String!) { repository(owner: $owner, name: $name) { hasDiscussionsEnabled discussionCategories(first: 50) { nodes { id name slug emoji } } } }",
+					"-F",
+					`owner=${repo.owner}`,
+					"-F",
+					`name=${repo.name}`,
+				])
+				const repoNode = response.data.repository
+				if (!repoNode || !repoNode.hasDiscussionsEnabled) return [] as readonly DiscussionCategory[]
+				return repoNode.discussionCategories.nodes.map(
+					(node): DiscussionCategory => ({
+						id: node.id,
+						name: node.name,
+						slug: node.slug,
+						emoji: node.emoji ?? null,
+					}),
+				)
+			})
+
+			const releaseBodyArgs = (input: CreateReleaseInput | UpdateReleaseInput): readonly string[] => {
+				const out: string[] = []
+				if (input.tagName !== undefined) out.push("-f", `tag_name=${input.tagName}`)
+				if (input.targetCommitish !== undefined) out.push("-f", `target_commitish=${input.targetCommitish}`)
+				if (input.name !== undefined) out.push("-f", `name=${input.name}`)
+				if (input.body !== undefined) out.push("-f", `body=${input.body}`)
+				if (input.draft !== undefined) out.push("-F", `draft=${input.draft}`)
+				if (input.prerelease !== undefined) out.push("-F", `prerelease=${input.prerelease}`)
+				if (input.makeLatest !== undefined) out.push("-f", `make_latest=${input.makeLatest}`)
+				if (input.discussionCategoryName !== undefined) out.push("-f", `discussion_category_name=${input.discussionCategoryName}`)
+				if ("generateReleaseNotes" in input && input.generateReleaseNotes !== undefined) out.push("-F", `generate_release_notes=${input.generateReleaseNotes}`)
+				return out
+			}
+
+			const createRelease = (repository: string, input: CreateReleaseInput) =>
+				ghJson("createRelease", ReleaseSchema, ["api", "--method", "POST", `repos/${repository}/releases`, ...releaseBodyArgs(input)]).pipe(Effect.map(parseRelease))
+
+			const updateRelease = (repository: string, releaseId: number, input: UpdateReleaseInput) =>
+				ghJson("updateRelease", ReleaseSchema, ["api", "--method", "PATCH", `repos/${repository}/releases/${releaseId}`, ...releaseBodyArgs(input)]).pipe(Effect.map(parseRelease))
+
+			const deleteRelease = (repository: string, releaseId: number) => ghVoid("deleteRelease", ["api", "--method", "DELETE", `repos/${repository}/releases/${releaseId}`])
+
 			return GitHubService.of({
 				listOpenPullRequests,
 				listOpenPullRequestPage,
@@ -956,6 +1193,17 @@ export class GitHubService extends Context.Service<
 				listRepoLabels,
 				addPullRequestLabel,
 				removePullRequestLabel,
+				listReleases,
+				getRelease,
+				getLatestRelease,
+				listTags,
+				listBranches,
+				getDefaultBranch,
+				generateReleaseNotes,
+				listDiscussionCategories,
+				createRelease,
+				updateRelease,
+				deleteRelease,
 			})
 		}),
 	)

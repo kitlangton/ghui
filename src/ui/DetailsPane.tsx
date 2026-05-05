@@ -619,6 +619,7 @@ export const DetailBody = ({
 	bodyLineLimit = bodyLines,
 	loadingIndicator,
 	themeId,
+	themeGeneration,
 	onLinkOpen,
 }: {
 	pullRequest: PullRequestItem
@@ -627,12 +628,13 @@ export const DetailBody = ({
 	bodyLineLimit?: number
 	loadingIndicator: string
 	themeId: ThemeId
+	themeGeneration: number
 	onLinkOpen?: (url: string) => void
 }) => {
 	const renderer = useRenderer()
 	const [hoveredUrl, setHoveredUrl] = useState<string | null>(null)
 
-	const previewLines = useMemo(() => bodyPreview(pullRequest.body, contentWidth, bodyLineLimit), [pullRequest, contentWidth, bodyLineLimit, themeId])
+	const previewLines = useMemo(() => bodyPreview(pullRequest.body, contentWidth, bodyLineLimit), [pullRequest, contentWidth, bodyLineLimit, themeId, themeGeneration])
 
 	const urlPositions = useMemo(() => collectUrlPositions(previewLines), [previewLines])
 
@@ -749,6 +751,7 @@ export const DetailsPane = ({
 	placeholderContent,
 	loadingIndicator,
 	themeId,
+	themeGeneration,
 	onLinkOpen,
 }: {
 	pullRequest: PullRequestItem | null
@@ -763,6 +766,7 @@ export const DetailsPane = ({
 	placeholderContent: DetailPlaceholderContent
 	loadingIndicator: string
 	themeId: ThemeId
+	themeGeneration: number
 	onLinkOpen?: (url: string) => void
 }) => {
 	const contentHeight = getDetailsPaneHeight({ pullRequest, contentWidth, bodyLines: bodyLineLimit, paneWidth, showChecks, comments, commentsStatus })
@@ -787,6 +791,7 @@ export const DetailsPane = ({
 						bodyLineLimit={bodyLineLimit}
 						loadingIndicator={loadingIndicator}
 						themeId={themeId}
+						themeGeneration={themeGeneration}
 						{...(onLinkOpen ? { onLinkOpen } : {})}
 					/>
 				</>

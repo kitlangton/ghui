@@ -230,6 +230,10 @@ interface DetailHydration {
 	notifyError: boolean
 }
 
+interface AppProps {
+	readonly systemThemeGeneration?: number
+}
+
 const PR_FETCH_RETRIES = 6
 const FOCUS_RETURN_REFRESH_MIN_MS = 60_000
 const FOCUSED_IDLE_REFRESH_MS = 5 * 60_000
@@ -678,7 +682,7 @@ const getDetailPlaceholderContent = ({ status, retryProgress, loadingIndicator, 
 	}
 }
 
-export const App = () => {
+export const App = ({ systemThemeGeneration = 0 }: AppProps) => {
 	const renderer = useRenderer()
 	const { width, height } = useTerminalDimensions()
 	const registry = useContext(RegistryContext)
@@ -851,7 +855,7 @@ export const App = () => {
 
 	useEffect(() => {
 		renderer.setBackgroundColor(colors.background)
-	}, [renderer, themeId])
+	}, [renderer, themeId, systemThemeGeneration])
 
 	useEffect(
 		() => () => {
@@ -3411,6 +3415,7 @@ export const App = () => {
 					paneWidth={contentWidth}
 					height={wideBodyHeight}
 					loadingIndicator={loadingIndicator}
+					themeGeneration={systemThemeGeneration}
 				/>
 			) : diffFullView ? (
 				<PullRequestDiffPane
@@ -3431,6 +3436,7 @@ export const App = () => {
 					selectedCommentThread={selectedDiffCommentThread}
 					onSelectCommentLine={selectDiffCommentLine}
 					themeId={themeId}
+					themeGeneration={systemThemeGeneration}
 				/>
 			) : detailFullView && isSelectedPullRequestDetailLoading && selectedPullRequest ? (
 				<box flexGrow={1} flexDirection="column">
@@ -3466,6 +3472,7 @@ export const App = () => {
 									bodyLineLimit={DETAIL_BODY_SCROLL_LIMIT}
 									loadingIndicator={loadingIndicator}
 									themeId={themeId}
+									themeGeneration={systemThemeGeneration}
 									onLinkOpen={openLinkInBrowser}
 								/>
 							</scrollbox>
@@ -3479,6 +3486,7 @@ export const App = () => {
 							placeholderContent={detailPlaceholderContent}
 							loadingIndicator={loadingIndicator}
 							themeId={themeId}
+							themeGeneration={systemThemeGeneration}
 							onLinkOpen={openLinkInBrowser}
 						/>
 					)}
@@ -3530,6 +3538,7 @@ export const App = () => {
 										bodyLineLimit={DETAIL_BODY_SCROLL_LIMIT}
 										loadingIndicator={loadingIndicator}
 										themeId={themeId}
+										themeGeneration={systemThemeGeneration}
 										onLinkOpen={openLinkInBrowser}
 									/>
 								</scrollbox>
@@ -3559,6 +3568,7 @@ export const App = () => {
 									bodyLineLimit={DETAIL_BODY_SCROLL_LIMIT}
 									loadingIndicator={loadingIndicator}
 									themeId={themeId}
+									themeGeneration={systemThemeGeneration}
 									onLinkOpen={openLinkInBrowser}
 								/>
 							</scrollbox>
@@ -3572,6 +3582,7 @@ export const App = () => {
 							placeholderContent={detailPlaceholderContent}
 							loadingIndicator={loadingIndicator}
 							themeId={themeId}
+							themeGeneration={systemThemeGeneration}
 							onLinkOpen={openLinkInBrowser}
 						/>
 					)}
@@ -3588,6 +3599,7 @@ export const App = () => {
 						placeholderContent={detailPlaceholderContent}
 						loadingIndicator={loadingIndicator}
 						themeId={themeId}
+						themeGeneration={systemThemeGeneration}
 						onLinkOpen={openLinkInBrowser}
 					/>
 					<Divider width={contentWidth} />

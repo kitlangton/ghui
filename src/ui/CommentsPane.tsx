@@ -179,6 +179,7 @@ export const CommentsPane = ({
 	paneWidth,
 	height,
 	loadingIndicator,
+	themeGeneration,
 }: {
 	pullRequest: PullRequestItem
 	comments: readonly PullRequestComment[]
@@ -189,8 +190,9 @@ export const CommentsPane = ({
 	paneWidth: number
 	height: number
 	loadingIndicator: string
+	themeGeneration: number
 }) => {
-	const realBlocks = useMemo(() => buildBlocks(orderedComments, contentWidth), [orderedComments, contentWidth])
+	const realBlocks = useMemo(() => buildBlocks(orderedComments, contentWidth), [orderedComments, contentWidth, themeGeneration])
 	const blocks = useMemo<readonly CommentBlock[]>(() => [...realBlocks, placeholderBlock], [realBlocks])
 	const offsets = useMemo(() => blockOffsets(blocks), [blocks])
 	const scrollboxRef = useRef<ScrollBoxRenderable | null>(null)

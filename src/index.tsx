@@ -31,6 +31,8 @@ type AppBundle = {
 	readonly App: (typeof import("./App.js"))["App"]
 }
 
+let notifySystemThemeReload = () => {}
+
 const StartupLogo = () => {
 	const startupRenderer = useRenderer()
 	const { width, height } = useTerminalDimensions()
@@ -67,6 +69,7 @@ const reloadSystemThemeColors = async () => {
 	const terminalColors = await renderer.getPalette({ timeout: 150, size: 16 })
 	setSystemThemeColors(terminalColors)
 	renderer.setBackgroundColor(colors.background)
+	notifySystemThemeReload()
 }
 
 const reloadSystemThemeColorsFromSignal = async () => {
@@ -81,9 +84,11 @@ process.on("SIGUSR2", () => {
 
 const Bootstrap = () => {
 	const [appBundle, setAppBundle] = useState<AppBundle | null>(null)
+	const [systemThemeGeneration, setSystemThemeGeneration] = useState(0)
 
 	useEffect(() => {
 		let cancelled = false
+		notifySystemThemeReload = () => setSystemThemeGeneration((current) => current + 1)
 		const timer = globalThis.setTimeout(() => {
 			addGhUiParsers()
 
@@ -98,6 +103,7 @@ const Bootstrap = () => {
 
 		return () => {
 			cancelled = true
+			notifySystemThemeReload = () => {}
 			globalThis.clearTimeout(timer)
 		}
 	}, [])
@@ -106,7 +112,7 @@ const Bootstrap = () => {
 		const { RegistryProvider, App } = appBundle
 		return (
 			<RegistryProvider>
-				<App />
+				<App systemThemeGeneration={systemThemeGeneration} />
 			</RegistryProvider>
 		)
 	}

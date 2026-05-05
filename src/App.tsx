@@ -2446,11 +2446,13 @@ export const App = () => {
 	}
 
 	const moveThemeSelection = (delta: number) => {
-		const filteredThemes = filterThemeDefinitions(themeModalRef.current.query, themeModalRef.current.tone)
+		const current = themeModalRef.current
+		const filteredThemes = filterThemeDefinitions(current.query, current.tone)
 		if (filteredThemes.length === 0) return
+		const selectedThemeId = current.mode === "fixed" ? current.fixedTheme : current.tone === "dark" ? current.darkTheme : current.lightTheme
 		const currentIndex = Math.max(
 			0,
-			filteredThemes.findIndex((theme) => theme.id === themeIdRef.current),
+			filteredThemes.findIndex((theme) => theme.id === selectedThemeId),
 		)
 		const selectedIndex = wrapIndex(currentIndex + delta, filteredThemes.length)
 		if (selectedIndex === currentIndex) return

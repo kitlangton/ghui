@@ -24,6 +24,7 @@ import {
 	type PullRequestMergeAction,
 	type PullRequestMergeMethod,
 	type PullRequestReviewComment,
+	type Release,
 	type RepositoryMergeMethods,
 	type SubmitPullRequestReviewInput,
 } from "./domain.js"
@@ -110,6 +111,7 @@ import { FooterHints, initialRetryProgress, RetryProgress } from "./ui/FooterHin
 import { LoadingLogoPane } from "./ui/LoadingLogo.js"
 import { Divider, Filler, fitCell, PlainLine, SeparatorColumn } from "./ui/primitives.js"
 import { CommandPalette } from "./ui/CommandPalette.js"
+import { ReleasesModal } from "./ui/ReleasesModal.js"
 import {
 	ChangedFilesModal,
 	CloseModal,
@@ -129,6 +131,7 @@ import {
 	initialModal,
 	initialOpenRepositoryModalState,
 	initialPullRequestStateModalState,
+	initialReleasesModalState,
 	initialSubmitReviewModalState,
 	initialThemeModalState,
 	LabelModal,
@@ -151,6 +154,7 @@ import {
 	type ModalTag,
 	type OpenRepositoryModalState,
 	type PullRequestStateModalState,
+	type ReleasesModalState,
 	type SubmitReviewModalState,
 	type ThemeModalState,
 } from "./ui/modals.js"
@@ -507,6 +511,13 @@ const submitPullRequestReviewAtom = githubRuntime.fn<SubmitPullRequestReviewInpu
 const copyToClipboardAtom = githubRuntime.fn<string>()((text) => Clipboard.use((clipboard) => clipboard.copy(text)))
 const openInBrowserAtom = githubRuntime.fn<PullRequestItem>()((pullRequest) => BrowserOpener.use((browser) => browser.openPullRequest(pullRequest)))
 const openUrlAtom = githubRuntime.fn<string>()((url) => BrowserOpener.use((browser) => browser.openUrl(url)))
+const listReleasesAtom = githubRuntime.fn<{ readonly repository: string; readonly page: number }>()((input) =>
+	GitHubService.use((github) => github.listReleases(input.repository, input.page)),
+)
+const getReleaseAtom = githubRuntime.fn<{ readonly repository: string; readonly releaseId: number }>()((input) =>
+	GitHubService.use((github) => github.getRelease(input.repository, input.releaseId)),
+)
+const getLatestReleaseAtom = githubRuntime.fn<string>()((repository) => GitHubService.use((github) => github.getLatestRelease(repository)))
 
 const pickInitialMergeMethod = (allowed: RepositoryMergeMethods | null, preferred: PullRequestMergeMethod | undefined): PullRequestMergeMethod => {
 	if (!allowed) return preferred ?? pullRequestMergeMethods[0]
@@ -725,6 +736,7 @@ export const App = () => {
 	const themeModalActive = Modal.$is("Theme")(activeModal)
 	const commandPaletteActive = Modal.$is("CommandPalette")(activeModal)
 	const openRepositoryModalActive = Modal.$is("OpenRepository")(activeModal)
+	const releasesModalActive = Modal.$is("Releases")(activeModal)
 	const labelModal: LabelModalState = labelModalActive ? activeModal : initialLabelModalState
 	const closeModal: CloseModalState = closeModalActive ? activeModal : initialCloseModalState
 	const pullRequestStateModal: PullRequestStateModalState = pullRequestStateModalActive ? activeModal : initialPullRequestStateModalState
@@ -737,6 +749,7 @@ export const App = () => {
 	const themeModal: ThemeModalState = themeModalActive ? activeModal : initialThemeModalState
 	const commandPalette: CommandPaletteState = commandPaletteActive ? activeModal : initialCommandPaletteState
 	const openRepositoryModal: OpenRepositoryModalState = openRepositoryModalActive ? activeModal : initialOpenRepositoryModalState
+	const releasesModal: ReleasesModalState = releasesModalActive ? activeModal : initialReleasesModalState
 	const makeModalSetter =
 		<Tag extends Exclude<ModalTag, "None">>(tag: Tag) =>
 		(next: ModalState<Tag> | ((prev: ModalState<Tag>) => ModalState<Tag>)) =>
@@ -761,6 +774,7 @@ export const App = () => {
 	const setThemeModal = makeModalSetter("Theme")
 	const setCommandPalette = makeModalSetter("CommandPalette")
 	const setOpenRepositoryModal = makeModalSetter("OpenRepository")
+	const setReleasesModal = makeModalSetter("Releases")
 	const themeIdRef = useRef(themeId)
 	const themeModalRef = useRef(themeModal)
 	themeIdRef.current = themeId
@@ -804,6 +818,9 @@ export const App = () => {
 	const copyToClipboard = useAtomSet(copyToClipboardAtom, { mode: "promise" })
 	const openInBrowser = useAtomSet(openInBrowserAtom, { mode: "promise" })
 	const openUrl = useAtomSet(openUrlAtom, { mode: "promise" })
+	const loadReleases = useAtomSet(listReleasesAtom, { mode: "promise" })
+	const loadRelease = useAtomSet(getReleaseAtom, { mode: "promise" })
+	const loadLatestRelease = useAtomSet(getLatestReleaseAtom, { mode: "promise" })
 	const terminalWidth = width ?? 100
 	const terminalHeight = height ?? 24
 	const contentWidth = Math.max(1, terminalWidth)
@@ -2655,6 +2672,157 @@ export const App = () => {
 		switchViewTo({ _tag: "Repository", repository })
 		flashNotice(`Opened ${repository}`)
 	}
+
+	const loadReleasesPage = (repository: string, page: number, mode: "initial" | "refresh" | "more") => {
+		if (mode === "initial" || mode === "refresh") {
+			setReleasesModal((current) => ({ ...current, loading: true, error: null }))
+		} else {
+			setReleasesModal((current) => ({ ...current, loadingMore: true, error: null }))
+		}
+		void loadReleases({ repository, page })
+			.then((result) => {
+				setReleasesModal((current) => {
+					if (current.repository !== repository) return current
+					const items = mode === "more" ? [...current.releases, ...result.items] : result.items
+					return {
+						...current,
+						releases: items,
+						loading: false,
+						loadingMore: false,
+						hasNextPage: result.hasNextPage,
+						nextPage: result.nextPage,
+						listSelectedIndex: mode === "more" ? current.listSelectedIndex : 0,
+						error: null,
+					}
+				})
+			})
+			.catch((error) => {
+				const message = errorMessage(error)
+				setReleasesModal((current) => (current.repository === repository ? { ...current, loading: false, loadingMore: false, error: message } : current))
+				flashNotice(message)
+			})
+		if (mode === "initial" || mode === "refresh") {
+			void loadLatestRelease(repository)
+				.then((latest) => {
+					setReleasesModal((current) => (current.repository === repository ? { ...current, latestReleaseId: latest?.id ?? null } : current))
+				})
+				.catch(() => {
+					/* non-fatal — "latest" badge just stays absent */
+				})
+		}
+	}
+
+	const openReleasesModal = () => {
+		if (!selectedRepository) {
+			flashNotice("Open a repository first.")
+			return
+		}
+		setReleasesModal({ ...initialReleasesModalState, repository: selectedRepository, loading: true })
+		loadReleasesPage(selectedRepository, 1, "initial")
+	}
+
+	const refreshReleases = () => {
+		if (!releasesModal.repository) return
+		loadReleasesPage(releasesModal.repository, 1, "refresh")
+	}
+
+	const loadMoreReleases = () => {
+		if (!releasesModal.repository || !releasesModal.hasNextPage || releasesModal.loadingMore) return
+		const page = releasesModal.nextPage ?? 2
+		loadReleasesPage(releasesModal.repository, page, "more")
+	}
+
+	const moveReleaseSelection = (delta: -1 | 1) => {
+		setReleasesModal((current) => {
+			if (current.releases.length === 0) return current
+			const next = Math.max(0, Math.min(current.releases.length - 1, current.listSelectedIndex + delta))
+			return next === current.listSelectedIndex ? current : { ...current, listSelectedIndex: next }
+		})
+	}
+
+	const jumpReleaseSelection = (target: "top" | "bottom") => {
+		setReleasesModal((current) => {
+			if (current.releases.length === 0) return current
+			const index = target === "top" ? 0 : current.releases.length - 1
+			return index === current.listSelectedIndex ? current : { ...current, listSelectedIndex: index }
+		})
+	}
+
+	const openSelectedReleaseDetails = () => {
+		const current = releasesModal
+		if (!current.repository || current.releases.length === 0) return
+		const selected = current.releases[Math.max(0, Math.min(current.listSelectedIndex, current.releases.length - 1))]
+		if (!selected) return
+		setReleasesModal((prev) => ({
+			...prev,
+			panel: "details",
+			detailsReleaseId: selected.id,
+			detailsRelease: null,
+			detailsLoading: true,
+			detailsError: null,
+			detailsScrollOffset: 0,
+		}))
+		void loadRelease({ repository: current.repository, releaseId: selected.id })
+			.then((release: Release) => {
+				setReleasesModal((prev) => (prev.detailsReleaseId === release.id ? { ...prev, detailsRelease: release, detailsLoading: false, detailsError: null } : prev))
+			})
+			.catch((error) => {
+				const message = errorMessage(error)
+				setReleasesModal((prev) => (prev.detailsReleaseId === selected.id ? { ...prev, detailsLoading: false, detailsError: message } : prev))
+			})
+	}
+
+	const scrollReleaseDetails = (delta: number) => {
+		setReleasesModal((current) => {
+			if (current.panel !== "details") return current
+			const next = Math.max(0, current.detailsScrollOffset + delta)
+			return next === current.detailsScrollOffset ? current : { ...current, detailsScrollOffset: next }
+		})
+	}
+
+	const closeOrBackReleases = () => {
+		if (releasesModal.panel === "details") {
+			setReleasesModal((current) => ({
+				...current,
+				panel: "list",
+				detailsRelease: null,
+				detailsReleaseId: null,
+				detailsLoading: false,
+				detailsError: null,
+				detailsScrollOffset: 0,
+			}))
+			return
+		}
+		closeActiveModal()
+	}
+
+	const selectedReleaseUrl = (): string | null => {
+		if (releasesModal.panel === "details") return releasesModal.detailsRelease?.htmlUrl ?? null
+		const selected = releasesModal.releases[releasesModal.listSelectedIndex]
+		return selected?.htmlUrl ?? null
+	}
+
+	const openSelectedReleaseInBrowser = () => {
+		const url = selectedReleaseUrl()
+		if (!url) {
+			flashNotice("No release selected")
+			return
+		}
+		void openUrl(url)
+			.then(() => flashNotice(`Opened ${url}`))
+			.catch((error) => flashNotice(errorMessage(error)))
+	}
+
+	const copySelectedReleaseUrl = () => {
+		const url = selectedReleaseUrl()
+		if (!url) {
+			flashNotice("No release selected")
+			return
+		}
+		void copyToClipboard(url)
+			.then(() => flashNotice(`Copied ${url}`))
+			.catch((error) => flashNotice(errorMessage(error)))
+	}
 	const insertPastedText = (text: string) => {
 		if (text.length === 0) return false
 		if (commandPaletteActive) {
@@ -2760,6 +2928,7 @@ export const App = () => {
 			},
 			openThemeModal,
 			openRepositoryPicker,
+			openReleasesModal,
 			loadMorePullRequests,
 			switchViewTo,
 			openDetails: () => {
@@ -2966,6 +3135,7 @@ export const App = () => {
 		labelModalActive,
 		themeModalActive,
 		openRepositoryModalActive,
+		releasesModalActive,
 		commentModalActive,
 		deleteCommentModalActive,
 		commandPaletteActive,
@@ -3055,6 +3225,23 @@ export const App = () => {
 		openRepositoryModal: {
 			closeModal: closeActiveModal,
 			openFromInput: openRepositoryFromInput,
+		},
+		releasesModal: {
+			panel: releasesModal.panel,
+			hasReleases: releasesModal.releases.length > 0,
+			hasSelection: releasesModal.releases.length > 0,
+			hasNextPage: releasesModal.hasNextPage,
+			loadingMore: releasesModal.loadingMore,
+			closeOrBack: closeOrBackReleases,
+			moveSelection: moveReleaseSelection,
+			jumpSelection: jumpReleaseSelection,
+			openDetails: openSelectedReleaseDetails,
+			scrollDetails: (delta) => scrollReleaseDetails(delta),
+			scrollDetailsPage: (delta) => scrollReleaseDetails(delta * 10),
+			openInBrowser: openSelectedReleaseInBrowser,
+			copyUrl: copySelectedReleaseUrl,
+			refresh: refreshReleases,
+			loadMore: loadMoreReleases,
 		},
 		commentModal: {
 			closeModal: closeActiveModal,
@@ -3384,6 +3571,11 @@ export const App = () => {
 	const openRepositoryModalHeight = openRepositoryLayout.height
 	const openRepositoryModalLeft = openRepositoryLayout.left
 	const openRepositoryModalTop = openRepositoryLayout.top
+	const releasesLayout = sizedModal(70, 110, 18, 28)
+	const releasesModalWidth = releasesLayout.width
+	const releasesModalHeight = releasesLayout.height
+	const releasesModalLeft = releasesLayout.left
+	const releasesModalTop = releasesLayout.top
 	const commandPaletteLayout = sizedModal(50, 88, 8, 24)
 	const commandPaletteWidth = commandPaletteLayout.width
 	const commandPaletteHeight = commandPaletteLayout.height
@@ -3742,6 +3934,16 @@ export const App = () => {
 					modalHeight={openRepositoryModalHeight}
 					offsetLeft={openRepositoryModalLeft}
 					offsetTop={openRepositoryModalTop}
+				/>
+			) : null}
+			{releasesModalActive ? (
+				<ReleasesModal
+					state={releasesModal}
+					modalWidth={releasesModalWidth}
+					modalHeight={releasesModalHeight}
+					offsetLeft={releasesModalLeft}
+					offsetTop={releasesModalTop}
+					loadingIndicator={loadingIndicator}
 				/>
 			) : null}
 			{commandPaletteActive ? (

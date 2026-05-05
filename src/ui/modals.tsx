@@ -7,6 +7,8 @@ import type {
 	PullRequestMergeMethod,
 	PullRequestReviewComment,
 	PullRequestReviewEvent,
+	Release,
+	ReleaseSummary,
 	RepositoryMergeMethods,
 } from "../domain.js"
 import { allowedMergeMethodList } from "../domain.js"
@@ -415,6 +417,44 @@ export const initialOpenRepositoryModalState: OpenRepositoryModalState = {
 	error: null,
 }
 
+export type ReleasesPanel = "list" | "details"
+
+export interface ReleasesModalState {
+	readonly repository: string | null
+	readonly panel: ReleasesPanel
+	readonly releases: readonly ReleaseSummary[]
+	readonly loading: boolean
+	readonly loadingMore: boolean
+	readonly error: string | null
+	readonly hasNextPage: boolean
+	readonly nextPage: number | null
+	readonly listSelectedIndex: number
+	readonly detailsReleaseId: number | null
+	readonly detailsRelease: Release | null
+	readonly detailsLoading: boolean
+	readonly detailsError: string | null
+	readonly detailsScrollOffset: number
+	readonly latestReleaseId: number | null
+}
+
+export const initialReleasesModalState: ReleasesModalState = {
+	repository: null,
+	panel: "list",
+	releases: [],
+	loading: false,
+	loadingMore: false,
+	error: null,
+	hasNextPage: false,
+	nextPage: null,
+	listSelectedIndex: 0,
+	detailsReleaseId: null,
+	detailsRelease: null,
+	detailsLoading: false,
+	detailsError: null,
+	detailsScrollOffset: 0,
+	latestReleaseId: null,
+}
+
 export type Modal = Data.TaggedEnum<{
 	None: {}
 	Label: LabelModalState
@@ -429,6 +469,7 @@ export type Modal = Data.TaggedEnum<{
 	Theme: ThemeModalState
 	CommandPalette: CommandPaletteState
 	OpenRepository: OpenRepositoryModalState
+	Releases: ReleasesModalState
 }>
 
 export const Modal = Data.taggedEnum<Modal>()
@@ -450,6 +491,7 @@ export const modalInitialStates = {
 	Theme: initialThemeModalState,
 	CommandPalette: initialCommandPaletteState,
 	OpenRepository: initialOpenRepositoryModalState,
+	Releases: initialReleasesModalState,
 } as const satisfies { [Tag in Exclude<ModalTag, "None">]: ModalState<Tag> }
 
 export const OpenRepositoryModal = ({

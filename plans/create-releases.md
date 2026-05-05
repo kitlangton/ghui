@@ -97,7 +97,7 @@ Use REST via `gh api` (already the pattern in `GitHubService` for non-GraphQL fl
 In progress.
 
 - [x] Phase 1 — domain types, `GitHubService` methods, mock mirror, unit tests.
-- [ ] Phase 2 — release list + details view, `:release list` command, cache wiring.
+- [x] Phase 2 — release list + details overlay, command-palette entry, async loaders. (Persistent cache deferred; releases are refetched each time the modal opens.)
 - [ ] Phase 3 — create/edit form, tag autocomplete, generate-notes, draft/publish submit.
 - [ ] Phase 4 — delete confirm, footer hints, lazy discussion categories, doc updates.
 

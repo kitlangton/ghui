@@ -6,6 +6,7 @@ export interface ThemeModalCtx {
 	readonly closeWithoutSaving: () => void
 	readonly clearFilter: () => void
 	readonly enterFilterMode: () => void
+	readonly toggleMode: () => void
 	readonly toggleTone: () => void
 	readonly confirmSelection: () => void
 	readonly moveSelection: (delta: -1 | 1) => void
@@ -24,6 +25,7 @@ export const themeModalKeymap = Theme(
 		},
 	},
 	{ id: "theme-modal.filter", title: "Filter themes", keys: ["/"], run: (s) => s.enterFilterMode() },
+	{ id: "theme-modal.toggle-mode", title: "Toggle fixed/system theme mode", keys: ["m"], when: (s) => !s.filterMode, run: (s) => s.toggleMode() },
 	{ id: "theme-modal.toggle-tone", title: "Toggle light/dark themes", keys: ["tab"], run: (s) => s.toggleTone() },
 	{
 		id: "theme-modal.confirm",

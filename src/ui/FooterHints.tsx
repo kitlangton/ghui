@@ -17,6 +17,8 @@ interface HintsContext {
 	readonly diffFullView: boolean
 	readonly diffRangeActive: boolean
 	readonly commentsViewActive: boolean
+	readonly actionsViewActive: boolean
+	readonly actionsLevel: "runs" | "jobs" | "logs"
 	readonly commentsViewOnRealComment: boolean
 	readonly commentsViewCanEditSelected: boolean
 	readonly commentsViewCount: number
@@ -50,6 +52,7 @@ const detailFullViewHints = (ctx: HintsContext): readonly HintItem[] => [
 	{ key: "↑↓", label: "scroll" },
 	{ key: "r", label: ctx.hasError ? "retry" : "refresh" },
 	{ key: "d", label: "diff", when: ctx.hasSelection },
+	{ key: "a", label: "actions", when: ctx.hasSelection },
 ]
 
 const commentsViewHints = (ctx: HintsContext): readonly HintItem[] => [
@@ -61,6 +64,16 @@ const commentsViewHints = (ctx: HintsContext): readonly HintItem[] => [
 	{ key: "o", label: "open", disabled: !ctx.commentsViewOnRealComment },
 	{ key: "r", label: "refresh" },
 	{ key: "esc", label: "close" },
+]
+
+const actionsViewHints = (ctx: HintsContext): readonly HintItem[] => [
+	{ key: "↑↓", label: ctx.actionsLevel === "logs" ? "scroll" : "move" },
+	{ key: "←→", label: "graph", when: ctx.actionsLevel === "jobs" },
+	{ key: "←→", label: "step", when: ctx.actionsLevel === "logs" },
+	{ key: "enter", label: "open", when: ctx.actionsLevel !== "logs" },
+	{ key: "o", label: "browser" },
+	{ key: "r", label: "refresh" },
+	{ key: "esc", label: "back" },
 ]
 
 const defaultHints = (ctx: HintsContext): readonly HintItem[] => {
@@ -85,6 +98,7 @@ const defaultHints = (ctx: HintsContext): readonly HintItem[] => {
 const footerHints = (ctx: HintsContext): readonly HintItem[] => {
 	if (ctx.filterEditing) return filterEditingHints
 	if (ctx.commentsViewActive) return commentsViewHints(ctx)
+	if (ctx.actionsViewActive) return actionsViewHints(ctx)
 	if (ctx.diffFullView) return diffViewHints(ctx)
 	if (ctx.detailFullView) return detailFullViewHints(ctx)
 	return defaultHints(ctx)

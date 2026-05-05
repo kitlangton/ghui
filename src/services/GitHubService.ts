@@ -4,6 +4,8 @@ import {
 	DiffCommentSide,
 	pullRequestQueueSearchQualifier,
 	type CheckItem,
+	type CheckRunStatus,
+	type CheckConclusion,
 	type CreatePullRequestCommentInput,
 	type ListPullRequestPageInput,
 	type Mergeable,
@@ -17,6 +19,9 @@ import {
 	type RepositoryMergeMethods,
 	type ReviewStatus,
 	type SubmitPullRequestReviewInput,
+	type WorkflowJob,
+	type WorkflowJobDependency,
+	type WorkflowRun,
 } from "../domain.js"
 import { mergeActionCliArgs } from "../mergeActions.js"
 import { CommandError, CommandRunner, type JsonParseError } from "./CommandRunner.js"
@@ -31,6 +36,22 @@ const RawCheckContextSchema = Schema.Union([
 		name: OptionalNullableString,
 		status: OptionalNullableString,
 		conclusion: OptionalNullableString,
+		databaseId: OptionalNullableNumber,
+		detailsUrl: OptionalNullableString,
+		checkSuite: Schema.optionalKey(
+			Schema.NullOr(
+				Schema.Struct({
+					workflowRun: Schema.optionalKey(
+						Schema.NullOr(
+							Schema.Struct({
+								databaseId: OptionalNullableNumber,
+								workflow: Schema.optionalKey(Schema.NullOr(Schema.Struct({ name: OptionalNullableString }))),
+							}),
+						),
+					),
+				}),
+			),
+		),
 	}),
 	Schema.Struct({
 		__typename: Schema.tag("StatusContext"),
@@ -185,6 +206,51 @@ const RepoLabelsResponseSchema = Schema.Array(
 	}),
 )
 
+const WorkflowRunsResponseSchema = Schema.Struct({
+	workflow_runs: Schema.Array(
+		Schema.Struct({
+			id: Schema.Number,
+			name: OptionalNullableString,
+			status: OptionalNullableString,
+			conclusion: OptionalNullableString,
+			html_url: Schema.String,
+			event: OptionalNullableString,
+			head_branch: OptionalNullableString,
+			created_at: OptionalNullableString,
+			updated_at: OptionalNullableString,
+		}),
+	),
+})
+
+const WorkflowRunJobsResponseSchema = Schema.Struct({
+	jobs: Schema.Array(
+		Schema.Struct({
+			id: Schema.Number,
+			name: OptionalNullableString,
+			status: OptionalNullableString,
+			conclusion: OptionalNullableString,
+			started_at: OptionalNullableString,
+			completed_at: OptionalNullableString,
+			steps: Schema.optionalKey(
+				Schema.NullOr(
+					Schema.Array(
+						Schema.Struct({
+							number: Schema.Number,
+							name: OptionalNullableString,
+							status: OptionalNullableString,
+							conclusion: OptionalNullableString,
+						}),
+					),
+				),
+			),
+		}),
+	),
+})
+
+const WorkflowRunInfoResponseSchema = Schema.Struct({
+	path: OptionalNullableString,
+})
+
 type RawPullRequestSummaryNode = Schema.Schema.Type<typeof RawPullRequestSummaryNodeSchema>
 type RawPullRequestNode = Schema.Schema.Type<typeof RawPullRequestNodeSchema>
 type RawCheckContext = Schema.Schema.Type<typeof RawCheckContextSchema>
@@ -216,7 +282,19 @@ const STATUS_CHECK_FRAGMENT = `
           contexts(first: 100) {
             nodes {
               __typename
-              ... on CheckRun { name status conclusion }
+              ... on CheckRun {
+                name
+                status
+                conclusion
+                databaseId
+                detailsUrl
+                checkSuite {
+                  workflowRun {
+                    databaseId
+                    workflow { name }
+                  }
+                }
+              }
               ... on StatusContext { context state }
             }
           }
@@ -342,6 +420,10 @@ const normalizeCheckStatus = (raw: string | null | undefined): CheckItem["status
 
 const normalizeCheckConclusion = (raw: string | null | undefined): CheckItem["conclusion"] => (raw ? (CHECK_CONCLUSION_BY_RAW[raw] ?? null) : null)
 
+const toCheckStatus = (raw: string | null | undefined): CheckRunStatus => (raw ? (CHECK_STATUS_BY_RAW[raw.toUpperCase()] ?? "pending") : "pending")
+
+const toCheckConclusion = (raw: string | null | undefined): CheckConclusion | null => (raw ? (CHECK_CONCLUSION_BY_RAW[raw.toUpperCase()] ?? null) : null)
+
 const getContextStatus = (context: RawCheckContext): CheckItem["status"] =>
 	RawCheckContextSchema.match(context, {
 		CheckRun: (run) => normalizeCheckStatus(run.status),
@@ -376,7 +458,19 @@ const getCheckInfoFromContexts = (contexts: readonly RawCheckContext[]): Pick<Pu
 		const status = getContextStatus(check)
 		const conclusion = getContextConclusion(check)
 
-		checks.push({ name, status, conclusion })
+		if (check.__typename === "CheckRun") {
+			checks.push({
+				name,
+				status,
+				conclusion,
+				...(check.databaseId != null ? { databaseId: check.databaseId } : {}),
+				detailsUrl: check.detailsUrl ?? null,
+				...(check.checkSuite?.workflowRun?.databaseId != null ? { workflowRunId: check.checkSuite.workflowRun.databaseId } : {}),
+				workflowName: check.checkSuite?.workflowRun?.workflow?.name ?? null,
+			})
+		} else {
+			checks.push({ name, status, conclusion })
+		}
 
 		if (status === "completed") {
 			completed += 1
@@ -526,6 +620,113 @@ const flattenSlurpedPages = <Item>(response: readonly Item[] | readonly (readonl
 
 const parsePullRequestFiles = (response: Schema.Schema.Type<typeof PullRequestFilesResponseSchema>): readonly RawPullRequestFile[] => flattenSlurpedPages(response)
 
+const parseWorkflowRunJobs = (response: Schema.Schema.Type<typeof WorkflowRunJobsResponseSchema>): readonly WorkflowJob[] =>
+	response.jobs.map((job) => ({
+		id: job.id,
+		name: job.name ?? `job-${job.id}`,
+		status: toCheckStatus(job.status),
+		conclusion: toCheckConclusion(job.conclusion),
+		startedAt: normalizeDate(job.started_at),
+		completedAt: normalizeDate(job.completed_at),
+		steps: (job.steps ?? []).map((step) => ({
+			number: step.number,
+			name: step.name ?? `step-${step.number}`,
+			status: toCheckStatus(step.status),
+			conclusion: toCheckConclusion(step.conclusion),
+		})),
+	}))
+
+const parseWorkflowRuns = (response: Schema.Schema.Type<typeof WorkflowRunsResponseSchema>): readonly WorkflowRun[] =>
+	response.workflow_runs.map((run) => ({
+		id: run.id,
+		name: run.name ?? `run-${run.id}`,
+		status: toCheckStatus(run.status),
+		conclusion: toCheckConclusion(run.conclusion),
+		url: run.html_url,
+		event: run.event ?? "pull_request",
+		branch: run.head_branch ?? "",
+		createdAt: normalizeDate(run.created_at),
+		updatedAt: normalizeDate(run.updated_at),
+		jobs: [],
+	}))
+
+const parseWorkflowDependenciesFromYaml = (source: string): readonly WorkflowJobDependency[] => {
+	const lines = source.replace(/\t/g, "  ").split("\n")
+	const jobsIndex = lines.findIndex((line) => /^jobs:\s*(#.*)?$/.test(line.trimEnd()))
+	if (jobsIndex < 0) return []
+
+	const dependencies: WorkflowJobDependency[] = []
+	let currentId: string | null = null
+	let currentName: string | null = null
+	let currentNeeds: string[] = []
+
+	const flush = () => {
+		if (!currentId) return
+		dependencies.push({ id: currentId, name: currentName ?? currentId, needs: [...new Set(currentNeeds)] })
+		currentId = null
+		currentName = null
+		currentNeeds = []
+	}
+
+	const parseInlineNeeds = (value: string): string[] => {
+		const trimmed = value.trim()
+		if (trimmed.startsWith("[")) {
+			return trimmed
+				.replace(/^\[/, "")
+				.replace(/\]$/, "")
+				.split(",")
+				.map((entry) => entry.trim().replace(/^['"]|['"]$/g, ""))
+				.filter((entry) => entry.length > 0)
+		}
+		return trimmed.length > 0 ? [trimmed.replace(/^['"]|['"]$/g, "")] : []
+	}
+
+	for (let index = jobsIndex + 1; index < lines.length; index++) {
+		const raw = lines[index] ?? ""
+		if (raw.trim().length === 0 || raw.trimStart().startsWith("#")) continue
+		const indent = raw.length - raw.trimStart().length
+		if (indent < 2) break
+
+		const trimmed = raw.trim()
+		const jobMatch = /^([A-Za-z0-9_.-]+):\s*(?:#.*)?$/.exec(trimmed)
+		if (indent === 2 && jobMatch) {
+			flush()
+			currentId = jobMatch[1] ?? null
+			continue
+		}
+
+		if (!currentId) continue
+
+		if (indent >= 4) {
+			const nameMatch = /^name:\s*(.+)\s*$/.exec(trimmed)
+			if (nameMatch) {
+				currentName = nameMatch[1]?.trim().replace(/^['"]|['"]$/g, "") ?? null
+				continue
+			}
+
+			const needsMatch = /^needs:\s*(.*)$/.exec(trimmed)
+			if (needsMatch) {
+				const value = needsMatch[1] ?? ""
+				if (value.trim().length === 0) {
+					for (let child = index + 1; child < lines.length; child++) {
+						const nextRaw = lines[child] ?? ""
+						if (nextRaw.trim().length === 0 || nextRaw.trimStart().startsWith("#")) continue
+						const childIndent = nextRaw.length - nextRaw.trimStart().length
+						if (childIndent <= indent) break
+						const childMatch = /^-\s*(.+)$/.exec(nextRaw.trim())
+						if (childMatch?.[1]) currentNeeds.push(childMatch[1].trim().replace(/^['"]|['"]$/g, ""))
+					}
+				} else {
+					currentNeeds.push(...parseInlineNeeds(value))
+				}
+			}
+		}
+	}
+
+	flush()
+	return dependencies
+}
+
 const diffPath = (path: string) => (/\s|"/.test(path) ? JSON.stringify(path) : path)
 
 const prefixedDiffPath = (prefix: "a" | "b", path: string) => diffPath(`${prefix}/${path}`)
@@ -601,6 +802,10 @@ export class GitHubService extends Context.Service<
 		readonly listRepoLabels: (repository: string) => Effect.Effect<readonly { readonly name: string; readonly color: string | null }[], GitHubError>
 		readonly addPullRequestLabel: (repository: string, number: number, label: string) => Effect.Effect<void, CommandError>
 		readonly removePullRequestLabel: (repository: string, number: number, label: string) => Effect.Effect<void, CommandError>
+		readonly listWorkflowRunsForPullRequest: (repository: string, headSha: string) => Effect.Effect<readonly WorkflowRun[], GitHubError>
+		readonly getWorkflowRunJobs: (repository: string, runId: number) => Effect.Effect<readonly WorkflowJob[], GitHubError>
+		readonly getWorkflowJobLog: (repository: string, jobId: number) => Effect.Effect<string, CommandError>
+		readonly getWorkflowRunDependencies: (repository: string, runId: number, headSha: string) => Effect.Effect<readonly WorkflowJobDependency[], GitHubError>
 	}
 >()("ghui/GitHubService") {
 	static readonly layerNoDeps = Layer.effect(
@@ -931,6 +1136,32 @@ export class GitHubService extends Context.Service<
 			const removePullRequestLabel = (repository: string, number: number, label: string) =>
 				ghVoid("removePullRequestLabel", ["pr", "edit", String(number), "--repo", repository, "--remove-label", label])
 
+			const listWorkflowRunsForPullRequest = (repository: string, headSha: string) =>
+				ghJson("listWorkflowRunsForPullRequest", WorkflowRunsResponseSchema, ["api", `repos/${repository}/actions/runs?head_sha=${encodeURIComponent(headSha)}&per_page=30`]).pipe(
+					Effect.map(parseWorkflowRuns),
+				)
+
+			const getWorkflowRunJobs = (repository: string, runId: number) =>
+				ghJson("getWorkflowRunJobs", WorkflowRunJobsResponseSchema, ["api", `repos/${repository}/actions/runs/${runId}/jobs?per_page=100`]).pipe(Effect.map(parseWorkflowRunJobs))
+
+			const getWorkflowJobLog = (repository: string, jobId: number) =>
+				command.run("gh", ["api", `repos/${repository}/actions/jobs/${jobId}/logs`]).pipe(
+					Effect.map((result) => result.stdout),
+					Effect.withSpan("GitHubService.getWorkflowJobLog"),
+				)
+
+			const getWorkflowRunDependencies = Effect.fn("GitHubService.getWorkflowRunDependencies")(function* (repository: string, runId: number, headSha: string) {
+				const runInfo = yield* ghJson("getWorkflowRunInfo", WorkflowRunInfoResponseSchema, ["api", `repos/${repository}/actions/runs/${runId}`])
+				const workflowPath = runInfo.path
+				if (!workflowPath) return []
+				const workflowFile = yield* command.runSchema(Schema.Struct({ content: Schema.String, encoding: Schema.String }), "gh", [
+					"api",
+					`repos/${repository}/contents/${workflowPath}?ref=${encodeURIComponent(headSha)}`,
+				])
+				const source = workflowFile.encoding === "base64" ? Buffer.from(workflowFile.content, "base64").toString("utf8") : workflowFile.content
+				return parseWorkflowDependenciesFromYaml(source)
+			})
+
 			return GitHubService.of({
 				listOpenPullRequests,
 				listOpenPullRequestPage,
@@ -956,6 +1187,10 @@ export class GitHubService extends Context.Service<
 				listRepoLabels,
 				addPullRequestLabel,
 				removePullRequestLabel,
+				listWorkflowRunsForPullRequest,
+				getWorkflowRunJobs,
+				getWorkflowJobLog,
+				getWorkflowRunDependencies,
 			})
 		}),
 	)

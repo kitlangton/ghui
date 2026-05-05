@@ -26,6 +26,9 @@ import {
 	type PullRequestReviewComment,
 	type RepositoryMergeMethods,
 	type SubmitPullRequestReviewInput,
+	type WorkflowJob,
+	type WorkflowJobDependency,
+	type WorkflowRun,
 } from "./domain.js"
 import { allowedMergeMethodList, pullRequestMergeMethods } from "./domain.js"
 import { formatShortDate, formatTimestamp } from "./date.js"
@@ -109,6 +112,8 @@ import {
 import { FooterHints, initialRetryProgress, RetryProgress } from "./ui/FooterHints.js"
 import { LoadingLogoPane } from "./ui/LoadingLogo.js"
 import { Divider, Filler, fitCell, PlainLine, SeparatorColumn } from "./ui/primitives.js"
+import { ActionsPane, parseActionsLogSteps } from "./ui/ActionsPane.js"
+import { workflowGraphMaxScrollOffset } from "./ui/workflowGraph.js"
 import { CommandPalette } from "./ui/CommandPalette.js"
 import {
 	ChangedFilesModal,
@@ -242,6 +247,7 @@ const DETAIL_PREFETCH_BEHIND = 1
 const DETAIL_PREFETCH_AHEAD = 3
 const DETAIL_PREFETCH_CONCURRENCY = 3
 const DETAIL_PREFETCH_DELAY_MS = 120
+const ACTIONS_LIVE_REFRESH_MS = 5_000
 const appendPullRequestPage = (existing: readonly PullRequestItem[], incoming: readonly PullRequestItem[]) => {
 	const seen = new Set(existing.map((pullRequest) => pullRequest.url))
 	const mergedIncoming = mergeCachedDetails(incoming, existing)
@@ -330,7 +336,13 @@ const detailFullViewAtom = Atom.make(false)
 const detailScrollOffsetAtom = Atom.make(0)
 const diffFullViewAtom = Atom.make(false)
 const commentsViewActiveAtom = Atom.make(false)
+const actionsViewActiveAtom = Atom.make(false)
 const commentsViewSelectionAtom = Atom.make(0)
+const actionsRunSelectionAtom = Atom.make(0)
+const actionsJobSelectionAtom = Atom.make(0)
+const actionsStepSelectionAtom = Atom.make(0)
+const actionsGraphScrollOffsetAtom = Atom.make(0)
+const actionsLogScrollOffsetAtom = Atom.make(0)
 const diffFileIndexAtom = Atom.make(0)
 const diffScrollTopAtom = Atom.make(0)
 const diffRenderViewAtom = Atom.make<DiffView>("split")
@@ -473,6 +485,18 @@ const listPullRequestReviewCommentsAtom = githubRuntime.fn<{ readonly repository
 )
 const listPullRequestCommentsAtom = githubRuntime.fn<{ readonly repository: string; readonly number: number }>()((input) =>
 	GitHubService.use((github) => github.listPullRequestComments(input.repository, input.number)),
+)
+const listWorkflowRunsForPullRequestAtom = githubRuntime.fn<{ readonly repository: string; readonly headSha: string }>()((input) =>
+	GitHubService.use((github) => github.listWorkflowRunsForPullRequest(input.repository, input.headSha)),
+)
+const getWorkflowRunJobsAtom = githubRuntime.fn<{ readonly repository: string; readonly runId: number }>()((input) =>
+	GitHubService.use((github) => github.getWorkflowRunJobs(input.repository, input.runId)),
+)
+const getWorkflowJobLogAtom = githubRuntime.fn<{ readonly repository: string; readonly jobId: number }>()((input) =>
+	GitHubService.use((github) => github.getWorkflowJobLog(input.repository, input.jobId)),
+)
+const getWorkflowRunDependenciesAtom = githubRuntime.fn<{ readonly repository: string; readonly runId: number; readonly headSha: string }>()((input) =>
+	GitHubService.use((github) => github.getWorkflowRunDependencies(input.repository, input.runId, input.headSha)),
 )
 const getPullRequestMergeInfoAtom = githubRuntime.fn<{ readonly repository: string; readonly number: number }>()((input) =>
 	GitHubService.use((github) => github.getPullRequestMergeInfo(input.repository, input.number)),
@@ -696,7 +720,13 @@ export const App = () => {
 	const setDetailScrollOffset = useAtomSet(detailScrollOffsetAtom)
 	const [diffFullView, setDiffFullView] = useAtom(diffFullViewAtom)
 	const [commentsViewActive, setCommentsViewActive] = useAtom(commentsViewActiveAtom)
+	const [actionsViewActive, setActionsViewActive] = useAtom(actionsViewActiveAtom)
 	const [commentsViewSelection, setCommentsViewSelection] = useAtom(commentsViewSelectionAtom)
+	const [actionsRunSelection, setActionsRunSelection] = useAtom(actionsRunSelectionAtom)
+	const [actionsJobSelection, setActionsJobSelection] = useAtom(actionsJobSelectionAtom)
+	const [actionsStepSelection, setActionsStepSelection] = useAtom(actionsStepSelectionAtom)
+	const [actionsGraphScrollOffset, setActionsGraphScrollOffset] = useAtom(actionsGraphScrollOffsetAtom)
+	const [actionsLogScrollOffset, setActionsLogScrollOffset] = useAtom(actionsLogScrollOffsetAtom)
 	const [diffFileIndex, setDiffFileIndex] = useAtom(diffFileIndexAtom)
 	const [diffScrollTop, setDiffScrollTop] = useAtom(diffScrollTopAtom)
 	const [diffRenderView, setDiffRenderView] = useAtom(diffRenderViewAtom)
@@ -772,6 +802,13 @@ export const App = () => {
 	const setRecentlyCompletedPullRequests = useAtomSet(recentlyCompletedPullRequestsAtom)
 	const retryProgress = useAtomValue(retryProgressAtom)
 	const [loadingFrame, setLoadingFrame] = useState(0)
+	const [actionsLevel, setActionsLevel] = useState<"runs" | "jobs" | "logs">("runs")
+	const [actionsRuns, setActionsRuns] = useState<readonly WorkflowRun[]>([])
+	const [actionsJobsByRun, setActionsJobsByRun] = useState<Record<number, readonly WorkflowJob[]>>({})
+	const [actionsDependenciesByRun, setActionsDependenciesByRun] = useState<Record<number, readonly WorkflowJobDependency[]>>({})
+	const [actionsLogsByJob, setActionsLogsByJob] = useState<Record<number, string>>({})
+	const [actionsLoading, setActionsLoading] = useState(false)
+	const [actionsError, setActionsError] = useState<string | null>(null)
 	const [refreshCompletionMessage, setRefreshCompletionMessage] = useState<string | null>(null)
 	const [refreshStartedAt, setRefreshStartedAt] = useState<number | null>(null)
 	const [terminalFocused, setTerminalFocused] = useState(true)
@@ -785,6 +822,10 @@ export const App = () => {
 	const toggleDraftStatus = useAtomSet(toggleDraftAtom, { mode: "promise" })
 	const listPullRequestReviewComments = useAtomSet(listPullRequestReviewCommentsAtom, { mode: "promise" })
 	const listPullRequestComments = useAtomSet(listPullRequestCommentsAtom, { mode: "promise" })
+	const listWorkflowRunsForPullRequest = useAtomSet(listWorkflowRunsForPullRequestAtom, { mode: "promise" })
+	const getWorkflowRunJobs = useAtomSet(getWorkflowRunJobsAtom, { mode: "promise" })
+	const getWorkflowJobLog = useAtomSet(getWorkflowJobLogAtom, { mode: "promise" })
+	const getWorkflowRunDependencies = useAtomSet(getWorkflowRunDependenciesAtom, { mode: "promise" })
 	const readCachedPullRequest = useAtomSet(readCachedPullRequestAtom, { mode: "promise" })
 	const writeCachedPullRequest = useAtomSet(writeCachedPullRequestAtom, { mode: "promise" })
 	const writeQueueCache = useAtomSet(writeQueueCacheAtom, { mode: "promise" })
@@ -827,6 +868,7 @@ export const App = () => {
 	const terminalFocusedRef = useRef(true)
 	const terminalWasBlurredRef = useRef(false)
 	const pullRequestStatusRef = useRef<LoadStatus>("loading")
+	const actionsRefreshGenerationRef = useRef(0)
 	const refreshPullRequestsRef = useRef<(message?: string, options?: { readonly resetTransientState?: boolean }) => void>(() => {})
 	const maybeRefreshPullRequestsRef = useRef<(minimumAgeMs: number) => void>(() => {})
 	const detailScrollRef = useRef<ScrollBoxRenderable | null>(null)
@@ -882,6 +924,12 @@ export const App = () => {
 	const visibleGroups = useAtomValue(visibleGroupsAtom)
 	const visiblePullRequests = useAtomValue(visiblePullRequestsAtom)
 	const selectedPullRequest = useAtomValue(selectedPullRequestAtom)
+	const selectedActionsRun = actionsRuns[actionsRunSelection] ?? null
+	const selectedActionsJobs = selectedActionsRun ? (actionsJobsByRun[selectedActionsRun.id] ?? []) : []
+	const selectedActionsDependencies = selectedActionsRun ? (actionsDependenciesByRun[selectedActionsRun.id] ?? []) : []
+	const selectedActionsJob = selectedActionsJobs[actionsJobSelection] ?? null
+	const selectedActionsJobLog = selectedActionsJob ? (actionsLogsByJob[selectedActionsJob.id] ?? "") : ""
+	const selectedActionLogSteps = useMemo(() => parseActionsLogSteps(selectedActionsJobLog, selectedActionsJob?.steps ?? []), [selectedActionsJobLog, selectedActionsJob?.id])
 	const pullRequestComments = useAtomValue(pullRequestCommentsAtom)
 	const pullRequestCommentsLoaded = useAtomValue(pullRequestCommentsLoadedAtom)
 	const selectedRepository = viewRepository(activeView)
@@ -1258,6 +1306,16 @@ export const App = () => {
 	}, [terminalFocused, pullRequestLoad?.fetchedAt])
 
 	useEffect(() => {
+		if (!actionsViewActive || !selectedPullRequest) return
+		const hasInFlight = actionsRuns.some((run) => run.status === "in_progress" || run.status === "queued" || run.status === "pending")
+		if (!hasInFlight) return
+		const interval = globalThis.setInterval(() => {
+			loadActionsRuns(selectedPullRequest)
+		}, ACTIONS_LIVE_REFRESH_MS)
+		return () => globalThis.clearInterval(interval)
+	}, [actionsViewActive, selectedPullRequest?.url, selectedPullRequest?.headRefOid, actionsRuns, actionsRunSelection])
+
+	useEffect(() => {
 		setSelectedIndex((current) => {
 			if (visiblePullRequests.length === 0) return 0
 			return Math.max(0, Math.min(current, visiblePullRequests.length - 1))
@@ -1275,7 +1333,7 @@ export const App = () => {
 	}, [selectedIndex, visiblePullRequests.length, filterMode, filterQuery, hasMorePullRequests, isLoadingMorePullRequests, currentQueueCacheKey])
 
 	useEffect(() => {
-		if (filterMode || filterQuery.length > 0 || visiblePullRequests.length === 0 || detailFullView || diffFullView) return
+		if (filterMode || filterQuery.length > 0 || visiblePullRequests.length === 0 || detailFullView || diffFullView || commentsViewActive || actionsViewActive) return
 		if (!hasMorePullRequests || isLoadingMorePullRequests) return
 		const checkScroll = () => {
 			const scroll = prListScrollRef.current
@@ -1286,7 +1344,18 @@ export const App = () => {
 		checkScroll()
 		const interval = globalThis.setInterval(checkScroll, 120)
 		return () => globalThis.clearInterval(interval)
-	}, [visiblePullRequests.length, filterMode, filterQuery, detailFullView, diffFullView, hasMorePullRequests, isLoadingMorePullRequests, currentQueueCacheKey])
+	}, [
+		visiblePullRequests.length,
+		filterMode,
+		filterQuery,
+		detailFullView,
+		diffFullView,
+		commentsViewActive,
+		actionsViewActive,
+		hasMorePullRequests,
+		isLoadingMorePullRequests,
+		currentQueueCacheKey,
+	])
 
 	useEffect(() => {
 		const scroll = prListScrollRef.current
@@ -1303,8 +1372,28 @@ export const App = () => {
 		setDiffCommentAnchorIndex(0)
 		setDiffPreferredSide(null)
 		setDiffCommentRangeStartIndex(null)
+		setActionsRuns([])
+		setActionsJobsByRun({})
+		setActionsDependenciesByRun({})
+		setActionsLogsByJob({})
+		setActionsRunSelection(0)
+		setActionsJobSelection(0)
+		setActionsStepSelection(0)
+		setActionsGraphScrollOffset(0)
+		setActionsLogScrollOffset(0)
+		setActionsLevel("runs")
 		detailPreviewScrollRef.current?.scrollTo({ x: 0, y: 0 })
 	}, [selectedIndex])
+
+	useEffect(() => {
+		setActionsStepSelection(0)
+		setActionsGraphScrollOffset(0)
+		setActionsLogScrollOffset(0)
+	}, [selectedActionsJob?.id])
+
+	useEffect(() => {
+		setActionsGraphScrollOffset(0)
+	}, [selectedActionsRun?.id])
 
 	useEffect(() => {
 		setDiffFileIndex((current) => safeDiffFileIndex(readyDiffFiles, current))
@@ -1394,6 +1483,7 @@ export const App = () => {
 		pullRequestResult.waiting ||
 		isHydratingPullRequestDetails ||
 		isLoadingMorePullRequests ||
+		actionsLoading ||
 		selectedCommentsStatus === "loading" ||
 		labelModal.loading ||
 		closeModal.running ||
@@ -1559,6 +1649,7 @@ export const App = () => {
 		setDiffFullView(true)
 		setDetailFullView(false)
 		setCommentsViewActive(false)
+		setActionsViewActive(false)
 		setDiffFileIndex(0)
 		setDiffScrollTop(0)
 		setDiffCommentAnchorIndex(0)
@@ -1575,6 +1666,7 @@ export const App = () => {
 		setCommentsViewActive(true)
 		setDetailFullView(false)
 		setDiffFullView(false)
+		setActionsViewActive(false)
 		setCommentsViewSelection(0)
 	}
 
@@ -1619,6 +1711,191 @@ export const App = () => {
 	const refreshSelectedComments = () => {
 		if (!selectedPullRequest) return
 		loadPullRequestComments(selectedPullRequest, true)
+	}
+
+	const loadActionsRuns = (pullRequest: PullRequestItem, options: { readonly force?: boolean } = {}) => {
+		const force = options.force ?? false
+		const generation = ++actionsRefreshGenerationRef.current
+		if (force) {
+			setActionsLogsByJob({})
+		}
+		setActionsLoading(true)
+		setActionsError(null)
+		void listWorkflowRunsForPullRequest({ repository: pullRequest.repository, headSha: pullRequest.headRefOid })
+			.then((runs) => {
+				if (generation !== actionsRefreshGenerationRef.current) return
+				setActionsRuns(runs)
+				setActionsRunSelection((current) => (runs.length === 0 ? 0 : Math.max(0, Math.min(current, runs.length - 1))))
+				const selectedRun = runs[Math.max(0, Math.min(actionsRunSelection, runs.length - 1))]
+				if (!selectedRun) {
+					setActionsJobsByRun({})
+					setActionsDependenciesByRun({})
+					setActionsLoading(false)
+					return
+				}
+				return Promise.all([
+					getWorkflowRunJobs({ repository: pullRequest.repository, runId: selectedRun.id }),
+					getWorkflowRunDependencies({ repository: pullRequest.repository, runId: selectedRun.id, headSha: pullRequest.headRefOid }).catch(() => []),
+				]).then(([jobs, deps]) => {
+					if (generation !== actionsRefreshGenerationRef.current) return
+					setActionsJobsByRun((current) => ({ ...current, [selectedRun.id]: jobs }))
+					setActionsDependenciesByRun((current) => ({ ...current, [selectedRun.id]: deps }))
+					setActionsJobSelection((current) => (jobs.length === 0 ? 0 : Math.max(0, Math.min(current, jobs.length - 1))))
+					setActionsLoading(false)
+				})
+			})
+			.catch((error) => {
+				if (generation !== actionsRefreshGenerationRef.current) return
+				setActionsLoading(false)
+				setActionsError(errorMessage(error))
+			})
+	}
+
+	const openActionsView = () => {
+		if (!selectedPullRequest) return
+		setActionsViewActive(true)
+		setCommentsViewActive(false)
+		setDetailFullView(false)
+		setDiffFullView(false)
+		setActionsLevel("runs")
+		setActionsRunSelection(0)
+		setActionsJobSelection(0)
+		setActionsStepSelection(0)
+		setActionsGraphScrollOffset(0)
+		setActionsLogScrollOffset(0)
+		loadActionsRuns(selectedPullRequest, { force: true })
+	}
+
+	const closeActionsView = () => {
+		setActionsViewActive(false)
+		setActionsLevel("runs")
+	}
+
+	const openSelectedActionInBrowser = () => {
+		const url = actionsLevel === "runs" ? selectedActionsRun?.url : selectedPullRequest?.url
+		if (!url) return
+		void openUrl(url)
+			.then(() => flashNotice(`Opened ${url}`))
+			.catch((error) => flashNotice(errorMessage(error)))
+	}
+
+	const refreshActionsView = () => {
+		if (!selectedPullRequest) return
+		loadActionsRuns(selectedPullRequest, { force: true })
+	}
+
+	const confirmActionsSelection = () => {
+		if (!selectedPullRequest) return
+		if (actionsLevel === "runs") {
+			const run = selectedActionsRun
+			if (!run) return
+			setActionsLoading(true)
+			setActionsError(null)
+			void Promise.all([
+				getWorkflowRunJobs({ repository: selectedPullRequest.repository, runId: run.id }),
+				getWorkflowRunDependencies({ repository: selectedPullRequest.repository, runId: run.id, headSha: selectedPullRequest.headRefOid }).catch(() => []),
+			])
+				.then(([jobs, deps]) => {
+					setActionsJobsByRun((current) => ({ ...current, [run.id]: jobs }))
+					setActionsDependenciesByRun((current) => ({ ...current, [run.id]: deps }))
+					setActionsJobSelection(0)
+					setActionsGraphScrollOffset(0)
+					setActionsLevel("jobs")
+					setActionsLoading(false)
+				})
+				.catch((error) => {
+					setActionsLoading(false)
+					setActionsError(errorMessage(error))
+				})
+			return
+		}
+		if (actionsLevel === "jobs") {
+			const job = selectedActionsJob
+			if (!job) return
+			setActionsLoading(true)
+			setActionsError(null)
+			void getWorkflowJobLog({ repository: selectedPullRequest.repository, jobId: job.id })
+				.then((log) => {
+					setActionsLogsByJob((current) => ({ ...current, [job.id]: log }))
+					setActionsStepSelection(0)
+					setActionsLogScrollOffset(0)
+					setActionsLevel("logs")
+					setActionsLoading(false)
+				})
+				.catch((error) => {
+					setActionsLoading(false)
+					setActionsError(errorMessage(error))
+				})
+		}
+	}
+
+	const closeOrBackActionsView = () => {
+		if (actionsLevel === "logs") {
+			setActionsLevel("jobs")
+			return
+		}
+		if (actionsLevel === "jobs") {
+			setActionsLevel("runs")
+			return
+		}
+		closeActionsView()
+	}
+
+	const moveActionsRunSelection = (delta: number) => {
+		setActionsRunSelection((current) => {
+			if (actionsRuns.length === 0) return 0
+			return Math.max(0, Math.min(actionsRuns.length - 1, current + delta))
+		})
+	}
+
+	const setActionsRunSelectionIndex = (index: number) => {
+		setActionsRunSelection(actionsRuns.length === 0 ? 0 : Math.max(0, Math.min(actionsRuns.length - 1, index)))
+	}
+
+	const moveActionsJobSelection = (delta: number) => {
+		setActionsJobSelection((current) => {
+			if (selectedActionsJobs.length === 0) return 0
+			return Math.max(0, Math.min(selectedActionsJobs.length - 1, current + delta))
+		})
+	}
+
+	const setActionsJobSelectionIndex = (index: number) => {
+		setActionsJobSelection(selectedActionsJobs.length === 0 ? 0 : Math.max(0, Math.min(selectedActionsJobs.length - 1, index)))
+	}
+
+	const scrollActionsLogBy = (delta: number) => {
+		const clampedStep = Math.max(0, Math.min(selectedActionLogSteps.length - 1, actionsStepSelection))
+		const lines = selectedActionLogSteps[clampedStep]?.lines.length ?? 0
+		const selectedJobRows = selectedActionsJob ? 1 : 0
+		const stepBarRows = 1
+		const visible = Math.max(1, wideBodyHeight - 2 - selectedJobRows - stepBarRows)
+		const max = Math.max(0, lines - visible)
+		setActionsLogScrollOffset((current) => Math.max(0, Math.min(max, current + delta)))
+	}
+
+	const scrollActionsLogTo = (index: number) => {
+		const clampedStep = Math.max(0, Math.min(selectedActionLogSteps.length - 1, actionsStepSelection))
+		const lines = selectedActionLogSteps[clampedStep]?.lines.length ?? 0
+		const selectedJobRows = selectedActionsJob ? 1 : 0
+		const stepBarRows = 1
+		const visible = Math.max(1, wideBodyHeight - 2 - selectedJobRows - stepBarRows)
+		const max = Math.max(0, lines - visible)
+		setActionsLogScrollOffset(Math.max(0, Math.min(max, index)))
+	}
+
+	const moveActionsStepSelection = (delta: number) => {
+		if (actionsLevel === "jobs") {
+			const max = workflowGraphMaxScrollOffset({ dependencies: selectedActionsDependencies, jobs: selectedActionsJobs, contentWidth: fullscreenContentWidth })
+			setActionsGraphScrollOffset((current) => Math.max(0, Math.min(max, current + delta * 6)))
+			return
+		}
+		if (actionsLevel !== "logs") return
+		setActionsStepSelection((current) => {
+			if (selectedActionLogSteps.length === 0) return 0
+			const next = Math.max(0, Math.min(selectedActionLogSteps.length - 1, current + delta))
+			if (next !== current) setActionsLogScrollOffset(0)
+			return next
+		})
 	}
 
 	const setDiffRenderableRef = (index: number, diff: DiffRenderable | null) => {
@@ -2734,6 +3011,7 @@ export const App = () => {
 		detailFullView,
 		diffFullView,
 		commentsViewActive,
+		actionsViewActive,
 		hasSelectedComment: selectedCommentsStatus === "ready" && selectedOrderedComment !== null,
 		canEditSelectedComment: canEditComment(selectedOrderedComment),
 		diffReady: selectedDiffState?._tag === "Ready",
@@ -2764,6 +3042,7 @@ export const App = () => {
 			switchViewTo,
 			openDetails: () => {
 				setDetailFullView(true)
+				setActionsViewActive(false)
 				setDetailScrollOffset(0)
 			},
 			closeDetails: () => {
@@ -2777,6 +3056,10 @@ export const App = () => {
 			},
 			openCommentsView,
 			closeCommentsView,
+			openActionsView,
+			closeActionsView,
+			refreshActionsView,
+			openSelectedActionInBrowser,
 			openNewIssueCommentModal,
 			openReplyToSelectedComment,
 			openEditSelectedComment,
@@ -2844,7 +3127,7 @@ export const App = () => {
 				commandPalette.query,
 			)
 		: []
-	const activePaletteScope: CommandScope | null = commentsViewActive ? "Comments" : diffFullView ? "Diff" : detailFullView ? "Pull request" : null
+	const activePaletteScope: CommandScope | null = actionsViewActive ? "Actions" : commentsViewActive ? "Comments" : diffFullView ? "Diff" : detailFullView ? "Pull request" : null
 	const commandPaletteCommands = commandPaletteActive
 		? [...dynamicPaletteCommands, ...(commandPalette.query.trim().length > 0 ? staticPaletteCommands : sortCommandsByActiveScope(staticPaletteCommands, activePaletteScope))]
 		: []
@@ -2952,6 +3235,10 @@ export const App = () => {
 			closeActiveModal()
 			return
 		}
+		if (actionsViewActive) {
+			closeOrBackActionsView()
+			return
+		}
 		runCommandById("app.quit")
 	}
 
@@ -2973,6 +3260,7 @@ export const App = () => {
 		diffFullView,
 		detailFullView,
 		commentsViewActive,
+		actionsViewActive,
 		textInputActive:
 			commentModalActive ||
 			commandPaletteActive ||
@@ -3126,6 +3414,7 @@ export const App = () => {
 			closeDetail: () => runCommandById("detail.close"),
 			openTheme: () => runCommandById("theme.open"),
 			openDiff: () => runCommandById("diff.open"),
+			openActions: () => runCommandById("actions.open"),
 			closePullRequest: () => runCommandById("pull.close"),
 			openLabels: () => runCommandById("pull.labels"),
 			openMerge: () => runCommandById("pull.merge"),
@@ -3148,6 +3437,24 @@ export const App = () => {
 			confirmSelection: confirmCommentSelection,
 			editSelected: () => runCommandById("comments.edit"),
 			deleteSelected: () => runCommandById("comments.delete"),
+		},
+		actionsView: {
+			halfPage,
+			scrollBy: (delta) => {
+				if (actionsLevel === "runs") moveActionsRunSelection(delta)
+				else if (actionsLevel === "jobs") moveActionsJobSelection(delta)
+				else scrollActionsLogBy(delta)
+			},
+			scrollTo: (line) => {
+				if (actionsLevel === "runs") setActionsRunSelectionIndex(line)
+				else if (actionsLevel === "jobs") setActionsJobSelectionIndex(line)
+				else scrollActionsLogTo(line)
+			},
+			closeOrBack: closeOrBackActionsView,
+			confirmSelection: confirmActionsSelection,
+			refresh: refreshActionsView,
+			openInBrowser: openSelectedActionInBrowser,
+			stepBy: moveActionsStepSelection,
 		},
 		listNav: {
 			halfPage,
@@ -3395,12 +3702,33 @@ export const App = () => {
 			<box paddingLeft={1} paddingRight={1} flexDirection="column" backgroundColor={colors.background}>
 				<PlainLine text={headerLine} fg={colors.muted} bold />
 			</box>
-			{isWideLayout && !detailFullView && !diffFullView && !commentsViewActive ? (
+			{isWideLayout && !detailFullView && !diffFullView && !commentsViewActive && !actionsViewActive ? (
 				<Divider width={contentWidth} junctionAt={dividerJunctionAt} junctionChar="┬" />
 			) : (
 				<Divider width={contentWidth} />
 			)}
-			{commentsViewActive && selectedPullRequest ? (
+			{actionsViewActive && selectedPullRequest ? (
+				<ActionsPane
+					repository={selectedPullRequest.repository}
+					number={selectedPullRequest.number}
+					level={actionsLevel}
+					workflowRuns={actionsRuns}
+					selectedRunIndex={actionsRunSelection}
+					selectedJobIndex={actionsJobSelection}
+					selectedRunJobs={selectedActionsJobs}
+					selectedRunDependencies={selectedActionsDependencies}
+					selectedJobLog={selectedActionsJobLog}
+					selectedStepIndex={actionsStepSelection}
+					graphScrollOffset={actionsGraphScrollOffset}
+					logScrollOffset={actionsLogScrollOffset}
+					contentWidth={fullscreenContentWidth}
+					paneWidth={contentWidth}
+					height={wideBodyHeight}
+					loading={actionsLoading}
+					loadingIndicator={loadingIndicator}
+					error={actionsError}
+				/>
+			) : commentsViewActive && selectedPullRequest ? (
 				<CommentsPane
 					pullRequest={selectedPullRequest}
 					comments={selectedComments}
@@ -3605,7 +3933,7 @@ export const App = () => {
 				</box>
 			)}
 
-			{isWideLayout && !detailFullView && !diffFullView && !commentsViewActive ? (
+			{isWideLayout && !detailFullView && !diffFullView && !commentsViewActive && !actionsViewActive ? (
 				<Divider width={contentWidth} junctionAt={dividerJunctionAt} junctionChar="┴" />
 			) : (
 				<Divider width={contentWidth} />
@@ -3621,6 +3949,8 @@ export const App = () => {
 						diffFullView={diffFullView}
 						diffRangeActive={diffCommentRangeActive}
 						commentsViewActive={commentsViewActive}
+						actionsViewActive={actionsViewActive}
+						actionsLevel={actionsLevel}
 						commentsViewOnRealComment={commentsViewActive && selectedCommentsStatus === "ready" && selectedOrderedComment !== null}
 						commentsViewCanEditSelected={canEditComment(selectedOrderedComment)}
 						commentsViewCount={selectedComments.length}
@@ -3630,6 +3960,7 @@ export const App = () => {
 							pullRequestStatus === "loading" ||
 							isRefreshingPullRequests ||
 							isHydratingPullRequestDetails ||
+							actionsLoading ||
 							closeModal.running ||
 							pullRequestStateModal.running ||
 							mergeModal.running ||

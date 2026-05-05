@@ -14,6 +14,7 @@ const scopeLabels = {
 	Comments: "Comments",
 	Navigation: "Navigation",
 	System: "System",
+	Actions: "Actions",
 } as const satisfies Record<AppCommand["scope"], string>
 
 export type CommandPaletteRow =

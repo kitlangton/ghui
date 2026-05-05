@@ -3,7 +3,7 @@ import type { ReleaseAsset, ReleaseSummary } from "../domain.js"
 import { formatShortDate } from "../date.js"
 import { colors } from "./colors.js"
 import type { ReleasesModalState } from "./modals.js"
-import { centerCell, fitCell, Filler, HintRow, PlainLine, StandardModal, TextLine, type Token, TokenLine } from "./primitives.js"
+import { centerCell, fitCell, Filler, HintRow, PlainLine, StandardModal, TextLine, type Token } from "./primitives.js"
 import { shortRepoName } from "./pullRequests.js"
 
 interface ReleasesModalProps {
@@ -216,7 +216,12 @@ const ReleaseDetailsBody = ({ state, rowWidth, bodyHeight, loadingIndicator }: {
 	if (tokens.length > 0) {
 		headerLines.push(
 			<TextLine key="badges" width={rowWidth}>
-				<TokenLine tokens={tokens} />
+				{tokens.flatMap((token, idx) => [
+					<span key={`tok-${idx}`} fg={token.fg}>
+						{token.text}
+					</span>,
+					...(idx < tokens.length - 1 ? [<span key={`sep-${idx}`}>{"  "}</span>] : []),
+				])}
 			</TextLine>,
 		)
 	}

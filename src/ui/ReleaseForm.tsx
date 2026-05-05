@@ -2,7 +2,7 @@ import { TextAttributes } from "@opentui/core"
 import { type CommentEditorValue, commentEditorLines, cursorLineIndexForLines } from "./commentEditor.js"
 import { colors } from "./colors.js"
 import type { ReleaseFormFocus, ReleaseFormState } from "./modals.js"
-import { Divider, fitCell, HintRow, ModalFrame, PaddedRow, PlainLine, TextLine, type Token, TokenLine } from "./primitives.js"
+import { Divider, fitCell, HintRow, ModalFrame, PaddedRow, PlainLine, TextLine } from "./primitives.js"
 import { shortRepoName } from "./pullRequests.js"
 
 interface ReleaseFormProps {
@@ -62,25 +62,38 @@ const PrereleaseRow = ({ checked, focused, rowWidth }: { checked: boolean; focus
 
 const MakeLatestRow = ({ value, focused, rowWidth }: { value: ReleaseFormState["makeLatest"]; focused: boolean; rowWidth: number }) => {
 	const labelText = fitCell("Latest", labelWidth)
-	const tokens: readonly Token[] = (
-		[
-			["true", "yes"],
-			["false", "no"],
-			["legacy", "auto"],
-		] as const
-	).map(
-		([key, display]): Token =>
-			key === value
-				? focused
-					? { text: ` ${display} `, fg: colors.selectedText, bg: colors.selectedBg, bold: true }
-					: { text: ` ${display} `, fg: colors.text, bold: true }
-				: { text: ` ${display} `, fg: colors.muted },
-	)
+	const options = [
+		["true", "yes"],
+		["false", "no"],
+		["legacy", "auto"],
+	] as const
 	return (
 		<TextLine width={rowWidth}>
 			<span fg={focused ? colors.accent : colors.muted}>{labelText}</span>
 			<span fg={focused ? colors.accent : colors.muted}> {focused ? "›" : " "} </span>
-			<TokenLine tokens={tokens} separator="" />
+			{options.map(([key, display]) => {
+				const selected = key === value
+				const text = ` ${display} `
+				if (selected && focused) {
+					return (
+						<span key={key} fg={colors.selectedText} bg={colors.selectedBg} attributes={TextAttributes.BOLD}>
+							{text}
+						</span>
+					)
+				}
+				if (selected) {
+					return (
+						<span key={key} fg={colors.text} attributes={TextAttributes.BOLD}>
+							{text}
+						</span>
+					)
+				}
+				return (
+					<span key={key} fg={colors.muted}>
+						{text}
+					</span>
+				)
+			})}
 		</TextLine>
 	)
 }

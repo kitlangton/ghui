@@ -8,6 +8,7 @@ import { DiffWhitespaceMode } from "./ui/diff.js"
 interface StoredConfig {
 	readonly theme?: unknown
 	readonly diffWhitespaceMode?: unknown
+	readonly systemThemeAutoReload?: unknown
 }
 
 const configDirectory = () => {
@@ -49,6 +50,14 @@ export const loadStoredDiffWhitespaceMode: Effect.Effect<DiffWhitespaceMode> = E
 		return Schema.is(DiffWhitespaceMode)(config.diffWhitespaceMode) ? config.diffWhitespaceMode : "ignore"
 	}),
 	() => Effect.succeed("ignore" satisfies DiffWhitespaceMode),
+)
+
+export const loadStoredSystemThemeAutoReload: Effect.Effect<boolean> = Effect.catchCause(
+	Effect.tryPromise(async () => {
+		const config = await readStoredConfig()
+		return typeof config.systemThemeAutoReload === "boolean" ? config.systemThemeAutoReload : false
+	}),
+	() => Effect.succeed(false),
 )
 
 export const saveStoredThemeId = (theme: ThemeId): Effect.Effect<void> =>

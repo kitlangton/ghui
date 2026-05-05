@@ -2,7 +2,9 @@
 
 import { addDefaultParsers, createCliRenderer } from "@opentui/core"
 import { createRoot, useRenderer, useTerminalDimensions } from "@opentui/react"
+import { Effect } from "effect"
 import { useEffect, useState } from "react"
+import { loadStoredSystemThemeAutoReload } from "./themeStore.js"
 import { colors, setSystemThemeColors } from "./ui/colors.js"
 import { LoadingLogoPane } from "./ui/LoadingLogo.js"
 import { SPINNER_INTERVAL_MS } from "./ui/spinner.js"
@@ -60,6 +62,23 @@ const renderer = await createCliRenderer({
 	},
 })
 
+const reloadSystemThemeColors = async () => {
+	renderer.clearPaletteCache()
+	const terminalColors = await renderer.getPalette({ timeout: 150, size: 16 })
+	setSystemThemeColors(terminalColors)
+	renderer.setBackgroundColor(colors.background)
+}
+
+const reloadSystemThemeColorsFromSignal = async () => {
+	const systemThemeAutoReload = await Effect.runPromise(loadStoredSystemThemeAutoReload)
+	if (!systemThemeAutoReload) return
+	await reloadSystemThemeColors()
+}
+
+process.on("SIGUSR2", () => {
+	void reloadSystemThemeColorsFromSignal().catch(() => {})
+})
+
 const Bootstrap = () => {
 	const [appBundle, setAppBundle] = useState<AppBundle | null>(null)
 
@@ -69,13 +88,7 @@ const Bootstrap = () => {
 			addGhUiParsers()
 
 			const appBundlePromise = Promise.all([import("@effect/atom-react"), import("./App.js")])
-			const palettePromise = renderer
-				.getPalette({ timeout: 150, size: 16 })
-				.then((terminalColors) => {
-					if (cancelled) return
-					setSystemThemeColors(terminalColors)
-				})
-				.catch(() => {})
+			const palettePromise = reloadSystemThemeColors().catch(() => {})
 
 			void Promise.all([appBundlePromise, palettePromise]).then(([[{ RegistryProvider }, { App }]]) => {
 				if (cancelled) return

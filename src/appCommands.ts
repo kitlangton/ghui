@@ -183,7 +183,6 @@ export const buildAppCommands = ({
 			scope: "View",
 			subtitle: selectedRepository ? `Browse releases in ${selectedRepository}` : "Open a repository first",
 			keywords: ["release", "tag", "changelog", "version"],
-			disabledReason: selectedRepository ? null : "Open a repository first.",
 			run: actions.openReleasesModal,
 		}),
 		defineCommand({
@@ -192,7 +191,6 @@ export const buildAppCommands = ({
 			scope: "View",
 			subtitle: selectedRepository ? `Cut a release in ${selectedRepository}` : "Open a repository first",
 			keywords: ["release", "publish", "draft", "tag", "new"],
-			disabledReason: selectedRepository ? null : "Open a repository first.",
 			run: actions.openReleaseFormForCreate,
 		}),
 		...activeViews.map((view) =>

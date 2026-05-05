@@ -1,6 +1,7 @@
 import { TextAttributes } from "@opentui/core"
 import { Data } from "effect"
 import type {
+	MakeLatest,
 	PullRequestLabel,
 	PullRequestMergeInfo,
 	PullRequestMergeKind,
@@ -11,6 +12,7 @@ import type {
 	ReleaseSummary,
 	RepositoryMergeMethods,
 } from "../domain.js"
+import type { CommentEditorValue } from "./commentEditor.js"
 import { allowedMergeMethodList } from "../domain.js"
 import { getMergeKindDefinition, mergeKindRowTitle, visibleMergeKinds } from "../mergeActions.js"
 import { clampCursor, commentEditorLines, cursorLineIndexForLines } from "./commentEditor.js"
@@ -437,6 +439,47 @@ export interface ReleasesModalState {
 	readonly latestReleaseId: number | null
 }
 
+export const releaseFormFocuses = ["tag", "target", "title", "body", "prerelease", "makeLatest"] as const
+export type ReleaseFormFocus = (typeof releaseFormFocuses)[number]
+
+export interface ReleaseFormState {
+	readonly mode: "create" | "edit"
+	readonly repository: string
+	readonly editingReleaseId: number | null
+	readonly originalTagName: string | null
+	readonly tag: string
+	readonly target: string
+	readonly title: string
+	readonly body: CommentEditorValue
+	readonly isPrerelease: boolean
+	readonly makeLatest: MakeLatest
+	readonly focus: ReleaseFormFocus
+	readonly defaultBranch: string | null
+	readonly defaultBranchLoading: boolean
+	readonly submitting: boolean
+	readonly generatingNotes: boolean
+	readonly error: string | null
+}
+
+export const initialReleaseFormState: ReleaseFormState = {
+	mode: "create",
+	repository: "",
+	editingReleaseId: null,
+	originalTagName: null,
+	tag: "",
+	target: "",
+	title: "",
+	body: { body: "", cursor: 0 },
+	isPrerelease: false,
+	makeLatest: "true",
+	focus: "tag",
+	defaultBranch: null,
+	defaultBranchLoading: false,
+	submitting: false,
+	generatingNotes: false,
+	error: null,
+}
+
 export const initialReleasesModalState: ReleasesModalState = {
 	repository: null,
 	panel: "list",
@@ -459,6 +502,7 @@ export type Modal = Data.TaggedEnum<{
 	None: {}
 	Label: LabelModalState
 	Close: CloseModalState
+	ReleaseForm: ReleaseFormState
 	PullRequestState: PullRequestStateModalState
 	Merge: MergeModalState
 	Comment: CommentModalState
@@ -492,6 +536,7 @@ export const modalInitialStates = {
 	CommandPalette: initialCommandPaletteState,
 	OpenRepository: initialOpenRepositoryModalState,
 	Releases: initialReleasesModalState,
+	ReleaseForm: initialReleaseFormState,
 } as const satisfies { [Tag in Exclude<ModalTag, "None">]: ModalState<Tag> }
 
 export const OpenRepositoryModal = ({

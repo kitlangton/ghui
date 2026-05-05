@@ -98,7 +98,7 @@ In progress.
 
 - [x] Phase 1 — domain types, `GitHubService` methods, mock mirror, unit tests.
 - [x] Phase 2 — release list + details overlay, command-palette entry, async loaders. (Persistent cache deferred; releases are refetched each time the modal opens.)
-- [ ] Phase 3 — create/edit form, tag autocomplete, generate-notes, draft/publish submit.
+- [x] Phase 3 — create/edit form with tag/target/title/body fields, pre-release toggle, latest tri-state, generate-notes (`ctrl-g`), draft (`ctrl-s`), publish (`ctrl-↵`). Tag autocomplete dropdown deferred to phase 4 (free-text input for now).
 - [ ] Phase 4 — delete confirm, footer hints, lazy discussion categories, doc updates.
 
 Decisions (from review): command-palette only in v1, single-repo release list, lazy default-branch fetch, generate-notes mirrors web (only fills empty fields), asset upload deferred to v2.

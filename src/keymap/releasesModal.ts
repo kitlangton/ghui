@@ -16,6 +16,8 @@ export interface ReleasesModalCtx {
 	readonly copyUrl: () => void
 	readonly refresh: () => void
 	readonly loadMore: () => void
+	readonly newRelease: () => void
+	readonly editRelease: () => void
 }
 
 const Releases = context<ReleasesModalCtx>()
@@ -98,5 +100,20 @@ export const releasesModalKeymap = Releases(
 		when: (s) => s.panel === "list",
 		enabled: (s) => (s.loadingMore ? "Already loading more." : s.hasNextPage ? true : "No more releases."),
 		run: (s) => s.loadMore(),
+	},
+	{
+		id: "releases.new",
+		title: "New release",
+		keys: ["n"],
+		when: (s) => s.panel === "list",
+		run: (s) => s.newRelease(),
+	},
+	{
+		id: "releases.edit",
+		title: "Edit release",
+		keys: ["e"],
+		when: (s) => s.panel === "list",
+		enabled: (s) => (s.hasSelection ? true : "No release selected."),
+		run: (s) => s.editRelease(),
 	},
 )

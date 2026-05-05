@@ -12,6 +12,7 @@ interface AppCommandActions {
 	readonly openThemeModal: () => void
 	readonly openRepositoryPicker: () => void
 	readonly openReleasesModal: () => void
+	readonly openReleaseFormForCreate: () => void
 	readonly loadMorePullRequests: () => void
 	readonly switchViewTo: (view: PullRequestView) => void
 	readonly openDetails: () => void
@@ -184,6 +185,15 @@ export const buildAppCommands = ({
 			keywords: ["release", "tag", "changelog", "version"],
 			disabledReason: selectedRepository ? null : "Open a repository first.",
 			run: actions.openReleasesModal,
+		}),
+		defineCommand({
+			id: "release.new",
+			title: "New release\u2026",
+			scope: "View",
+			subtitle: selectedRepository ? `Cut a release in ${selectedRepository}` : "Open a repository first",
+			keywords: ["release", "publish", "draft", "tag", "new"],
+			disabledReason: selectedRepository ? null : "Open a repository first.",
+			run: actions.openReleaseFormForCreate,
 		}),
 		...activeViews.map((view) =>
 			defineCommand({

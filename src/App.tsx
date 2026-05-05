@@ -2889,13 +2889,36 @@ export const App = () => {
 			flashNotice("Open a repository first.")
 			return
 		}
+		// Reuse the latest release we already have cached on the releases overlay
+		// (if any) so the tag field can prefill instantly without an extra fetch.
+		const cachedLatest = releasesModal.repository === repository ? (releasesModal.releases.find((r) => r.id === releasesModal.latestReleaseId) ?? null) : null
 		setReleaseForm({
 			...initialReleaseFormState,
 			mode: "create",
 			repository,
 			focus: "tag",
+			tag: cachedLatest?.tagName ?? "",
+			latestTagName: cachedLatest?.tagName ?? null,
 		})
 		loadDefaultBranchInto(repository)
+		// Refresh in the background; only overwrite the tag field if the user
+		// hasn't typed anything yet (matches the GitHub web UI's "only fill empty
+		// fields" behaviour for generate-notes).
+		void loadLatestRelease(repository)
+			.then((latest) => {
+				if (!latest) return
+				setReleaseForm((current) => {
+					if (current.repository !== repository || current.mode !== "create") return current
+					return {
+						...current,
+						latestTagName: latest.tagName,
+						tag: current.tag.length === 0 ? latest.tagName : current.tag,
+					}
+				})
+			})
+			.catch(() => {
+				/* non-fatal — the form is still usable without the previous tag hint */
+			})
 	}
 
 	const openReleaseFormForSelectedListItem = () => {

@@ -456,6 +456,7 @@ export interface ReleaseFormState {
 	readonly focus: ReleaseFormFocus
 	readonly defaultBranch: string | null
 	readonly defaultBranchLoading: boolean
+	readonly latestTagName: string | null
 	readonly submitting: boolean
 	readonly generatingNotes: boolean
 	readonly error: string | null
@@ -495,6 +496,7 @@ export const initialReleaseFormState: ReleaseFormState = {
 	focus: "tag",
 	defaultBranch: null,
 	defaultBranchLoading: false,
+	latestTagName: null,
 	submitting: false,
 	generatingNotes: false,
 	error: null,

@@ -157,7 +157,10 @@ export const ReleaseForm = ({ state, modalWidth, modalHeight, offsetLeft, offset
 	// Header
 	const repoText = shortRepoName(state.repository)
 	const modeText = state.mode === "edit" ? "Edit release" : "New release"
-	const subtitleText = `${repoText}${state.originalTagName ? ` · ${state.originalTagName}` : ""}`
+	const subtitleText =
+		state.mode === "edit"
+			? `${repoText}${state.originalTagName ? ` · ${state.originalTagName}` : ""}`
+			: `${repoText}${state.latestTagName ? ` · previous: ${state.latestTagName}` : ""}`
 	const headerRightText = state.submitting ? `${loadingIndicator} submitting…` : state.generatingNotes ? `${loadingIndicator} generating…` : ""
 
 	const focusIndex = focusOrder.indexOf(state.focus)

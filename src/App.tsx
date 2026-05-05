@@ -891,7 +891,7 @@ export const App = () => {
 				previewActiveTheme(resolveThemeId(themeConfigRef.current, appearance))
 			})
 		}
-		const interval = globalThis.setInterval(refreshAppearance, 5000)
+		const interval = globalThis.setInterval(refreshAppearance, 1000)
 		refreshAppearance()
 		return () => {
 			cancelled = true

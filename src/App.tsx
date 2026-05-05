@@ -3126,6 +3126,7 @@ export const App = () => {
 			closeDetail: () => runCommandById("detail.close"),
 			openTheme: () => runCommandById("theme.open"),
 			openDiff: () => runCommandById("diff.open"),
+			openComments: () => runCommandById("comments.open"),
 			closePullRequest: () => runCommandById("pull.close"),
 			openLabels: () => runCommandById("pull.labels"),
 			openMerge: () => runCommandById("pull.merge"),

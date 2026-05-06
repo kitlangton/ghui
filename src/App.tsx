@@ -272,6 +272,14 @@ const trimQueueLoadCache = (cache: Partial<Record<string, PullRequestLoad>>) => 
 	const remove = new Set(repositoryKeys.slice(0, repositoryKeys.length - MAX_REPOSITORY_CACHE_ENTRIES))
 	return Object.fromEntries(Object.entries(cache).filter(([key]) => !remove.has(key))) as Partial<Record<string, PullRequestLoad>>
 }
+const isRateLimitError = (error: unknown): boolean => {
+	if (typeof error !== "object" || error === null) return false
+	if (!("_tag" in error) || (error as Record<string, unknown>)._tag !== "CommandError") return false
+	const detail = (error as Record<string, unknown>).detail
+	if (typeof detail !== "string") return false
+	const lower = detail.toLowerCase()
+	return lower.includes("rate limit")
+}
 const pullRequestsAtom = githubRuntime
 	.atom(
 		GitHubService.use((github) =>
@@ -307,7 +315,11 @@ const pullRequestsAtom = githubRuntime
 								}),
 							),
 						),
-						Effect.retry({ times: PR_FETCH_RETRIES, schedule: Schedule.exponential("300 millis", 2) }),
+						Effect.retry({
+							times: PR_FETCH_RETRIES,
+							schedule: Schedule.exponential("300 millis", 2),
+							while: (error) => !isRateLimitError(error),
+						}),
 						Effect.tapError(() => Atom.set(retryProgressAtom, initialRetryProgress)),
 					)
 
@@ -842,17 +854,12 @@ export const App = ({ systemThemeGeneration = 0 }: AppProps) => {
 	const detailPrefetchTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 	const detailHydrationRef = useRef(new Map<string, DetailHydration>())
 	const refreshGenerationRef = useRef(0)
-	const didMountQueueModeRef = useRef(false)
 	const lastPullRequestRefreshAtRef = useRef(0)
 	const terminalFocusedRef = useRef(true)
 	const terminalWasBlurredRef = useRef(false)
 	const pullRequestStatusRef = useRef<LoadStatus>("loading")
 	const detectedRemotesRef = useRef<readonly string[]>([])
-	const registryRef = useRef(registry)
-	registryRef.current = registry
-	const refreshPullRequestsAtomRef = useRef(refreshPullRequestsAtom)
-	refreshPullRequestsAtomRef.current = refreshPullRequestsAtom
-	const lastAutoRefreshedKeyRef = useRef<string | null>(null)
+	const refreshInFlightRef = useRef(false)
 	const refreshPullRequestsRef = useRef<(message?: string, options?: { readonly resetTransientState?: boolean }) => void>(() => {})
 	const maybeRefreshPullRequestsRef = useRef<(minimumAgeMs: number) => void>(() => {})
 	const detailScrollRef = useRef<ScrollBoxRenderable | null>(null)
@@ -1074,6 +1081,8 @@ export const App = ({ systemThemeGeneration = 0 }: AppProps) => {
 		updatePullRequest(pullRequest.url, () => pullRequest)
 	}
 	const refreshPullRequests = (message?: string, options: { readonly resetTransientState?: boolean } = {}) => {
+		if (refreshInFlightRef.current) return
+		refreshInFlightRef.current = true
 		refreshGenerationRef.current += 1
 		detailHydrationRef.current.clear()
 		if (detailPrefetchTimeoutRef.current !== null) clearTimeout(detailPrefetchTimeoutRef.current)
@@ -1251,15 +1260,10 @@ export const App = ({ systemThemeGeneration = 0 }: AppProps) => {
 	}, [pullRequestLoad?.fetchedAt])
 
 	useEffect(() => {
-		if (!didMountQueueModeRef.current) {
-			didMountQueueModeRef.current = true
-			return
+		if (!pullRequestResult.waiting) {
+			refreshInFlightRef.current = false
 		}
-		if (lastAutoRefreshedKeyRef.current === currentQueueCacheKey) return
-		if (registryRef.current.get(queueLoadCacheAtom)[currentQueueCacheKey]) return
-		lastAutoRefreshedKeyRef.current = currentQueueCacheKey
-		refreshPullRequestsAtomRef.current()
-	}, [currentQueueCacheKey])
+	}, [pullRequestResult])
 
 	useEffect(() => {
 		if (!refreshCompletionMessage || refreshStartedAt === null) return

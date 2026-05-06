@@ -137,6 +137,7 @@ export interface CommandPaletteState {
 
 export interface OpenRepositoryModalState {
 	readonly query: string
+	readonly selectedIndex: number
 	readonly error: string | null
 }
 
@@ -421,6 +422,7 @@ export const initialCommandPaletteState: CommandPaletteState = {
 
 export const initialOpenRepositoryModalState: OpenRepositoryModalState = {
 	query: "",
+	selectedIndex: 0,
 	error: null,
 }
 
@@ -463,38 +465,43 @@ export const modalInitialStates = {
 
 export const OpenRepositoryModal = ({
 	state,
+	suggestions,
 	modalWidth,
 	modalHeight,
 	offsetLeft,
 	offsetTop,
 }: {
 	state: OpenRepositoryModalState
+	suggestions: readonly string[]
 	modalWidth: number
 	modalHeight: number
 	offsetLeft: number
 	offsetTop: number
 }) => {
-	const { contentWidth } = standardModalDims(modalWidth, modalHeight)
-	const inputText = state.query.length > 0 ? state.query : "owner/name or GitHub URL"
+	const { bodyHeight: maxVisible, rowWidth } = searchModalDims(modalWidth, modalHeight)
+	const normalized = state.query.trim().toLowerCase()
+	const filtered = normalized.length === 0 ? suggestions : suggestions.filter((s) => s.toLowerCase().includes(normalized))
+	const selectedIndex = filtered.length === 0 ? 0 : Math.max(0, Math.min(state.selectedIndex, filtered.length - 1))
+	const scrollStart = Math.min(Math.max(0, filtered.length - maxVisible), Math.max(0, selectedIndex - maxVisible + 1))
+	const visible = filtered.slice(scrollStart, scrollStart + maxVisible)
+	const countText = `${filtered.length}/${suggestions.length}`
+	const messageTopRows = Math.max(0, Math.floor((maxVisible - 1) / 2))
+	const messageBottomRows = Math.max(0, maxVisible - messageTopRows - 1)
 
 	return (
-		<StandardModal
+		<SearchModalFrame
 			left={offsetLeft}
 			top={offsetTop}
 			width={modalWidth}
 			height={modalHeight}
 			title="Open Repository"
-			headerRight={{ text: "owner/name" }}
-			subtitle={
-				<TextLine>
-					<span fg={colors.count}>› </span>
-					<span fg={state.query.length > 0 ? colors.text : colors.muted}>{fitCell(inputText, Math.max(1, contentWidth - 2))}</span>
-				</TextLine>
-			}
-			bodyPadding={1}
+			query={state.query}
+			placeholder="owner/name or GitHub URL"
+			countText={countText}
 			footer={
 				<HintRow
 					items={[
+						{ key: "↑↓", label: "move" },
 						{ key: "enter", label: "open" },
 						{ key: "ctrl-u", label: "clear" },
 						{ key: "ctrl-w", label: "word" },
@@ -504,11 +511,26 @@ export const OpenRepositoryModal = ({
 			}
 		>
 			{state.error ? (
-				<PlainLine text={fitCell(state.error, contentWidth)} fg={colors.error} />
+				<PlainLine text={fitCell(state.error, rowWidth)} fg={colors.error} />
+			) : visible.length === 0 ? (
+				<>
+					<Filler rows={messageTopRows} prefix="top" />
+					<PlainLine text={centerCell(normalized.length > 0 ? "No matching remotes" : "Type owner/name or a GitHub URL", rowWidth)} fg={colors.muted} />
+					<Filler rows={messageBottomRows} prefix="bottom" />
+				</>
 			) : (
-				<PlainLine text={fitCell("Switches to the selected repository view.", contentWidth)} fg={colors.muted} />
+				visible.map((repo, index) => {
+					const actualIndex = scrollStart + index
+					const isSelected = actualIndex === selectedIndex
+					return (
+						<TextLine key={repo} bg={isSelected ? colors.selectedBg : undefined} fg={isSelected ? colors.selectedText : colors.text}>
+							<span fg={isSelected ? colors.accent : colors.muted}>{isSelected ? "▸" : " "}</span>
+							<span> {fitCell(repo, Math.max(1, rowWidth - 2))}</span>
+						</TextLine>
+					)
+				})
 			)}
-		</StandardModal>
+		</SearchModalFrame>
 	)
 }
 

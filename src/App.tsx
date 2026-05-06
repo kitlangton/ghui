@@ -46,6 +46,7 @@ import {
 	viewMode,
 	viewRepository,
 } from "./pullRequestViews.js"
+import { detectGitHubRemotes } from "./gitRemotes.js"
 import { BrowserOpener } from "./services/BrowserOpener.js"
 import { CacheService, type PullRequestCacheKey } from "./services/CacheService.js"
 import { Clipboard } from "./services/Clipboard.js"
@@ -846,6 +847,7 @@ export const App = ({ systemThemeGeneration = 0 }: AppProps) => {
 	const terminalFocusedRef = useRef(true)
 	const terminalWasBlurredRef = useRef(false)
 	const pullRequestStatusRef = useRef<LoadStatus>("loading")
+	const detectedRemotesRef = useRef<readonly string[]>([])
 	const refreshPullRequestsRef = useRef<(message?: string, options?: { readonly resetTransientState?: boolean }) => void>(() => {})
 	const maybeRefreshPullRequestsRef = useRef<(minimumAgeMs: number) => void>(() => {})
 	const detailScrollRef = useRef<ScrollBoxRenderable | null>(null)
@@ -1273,6 +1275,16 @@ export const App = ({ systemThemeGeneration = 0 }: AppProps) => {
 	useEffect(() => {
 		void pruneCache().catch(() => {})
 	}, [pruneCache])
+
+	useEffect(() => {
+		if (mockPrCount !== null) return
+		detectGitHubRemotes().then((remotes) => {
+			detectedRemotesRef.current = remotes
+			if (remotes.length > 0 && viewEquals(registry.get(activeViewAtom), initialPullRequestView())) {
+				switchViewTo({ _tag: "Repository", repository: remotes[0]! })
+			}
+		})
+	}, [])
 
 	useEffect(() => {
 		const handleFocus = () => {
@@ -2720,11 +2732,27 @@ export const App = ({ systemThemeGeneration = 0 }: AppProps) => {
 	const openCommandPalette = () => {
 		setCommandPalette(initialCommandPaletteState)
 	}
+	const moveRepositorySelection = (delta: -1 | 1) => {
+		const normalized = openRepositoryModal.query.trim().toLowerCase()
+		const filtered = normalized.length === 0 ? detectedRemotesRef.current : detectedRemotesRef.current.filter((s) => s.toLowerCase().includes(normalized))
+		if (filtered.length === 0) return
+		setOpenRepositoryModal((current) => {
+			const selectedIndex = wrapIndex(current.selectedIndex + delta, filtered.length)
+			return selectedIndex === current.selectedIndex ? current : { ...current, selectedIndex }
+		})
+	}
 	const openRepositoryPicker = () => {
-		setOpenRepositoryModal({ query: selectedRepository ?? "", error: null })
+		setOpenRepositoryModal({ query: "", selectedIndex: 0, error: null })
 	}
 	const openRepositoryFromInput = () => {
-		const repository = parseRepositoryInput(openRepositoryModal.query)
+		const normalized = openRepositoryModal.query.trim().toLowerCase()
+		const filtered = normalized.length === 0 ? detectedRemotesRef.current : detectedRemotesRef.current.filter((s) => s.toLowerCase().includes(normalized))
+		let repository: string | null = null
+		if (filtered.length > 0 && openRepositoryModal.selectedIndex < filtered.length) {
+			repository = filtered[openRepositoryModal.selectedIndex]!
+		} else {
+			repository = parseRepositoryInput(openRepositoryModal.query)
+		}
 		if (!repository) {
 			setOpenRepositoryModal((current) => ({ ...current, error: "Enter a repository as owner/name or a GitHub URL." }))
 			return
@@ -2740,7 +2768,7 @@ export const App = ({ systemThemeGeneration = 0 }: AppProps) => {
 			return true
 		}
 		if (openRepositoryModalActive) {
-			setOpenRepositoryModal((current) => ({ ...current, query: current.query + singleLineText(text), error: null }))
+			setOpenRepositoryModal((current) => ({ ...current, query: current.query + singleLineText(text), selectedIndex: 0, error: null }))
 			return true
 		}
 		if (themeModalActive && themeModal.filterMode) {
@@ -3134,6 +3162,7 @@ export const App = ({ systemThemeGeneration = 0 }: AppProps) => {
 		openRepositoryModal: {
 			closeModal: closeActiveModal,
 			openFromInput: openRepositoryFromInput,
+			moveSelection: moveRepositorySelection,
 		},
 		commentModal: {
 			closeModal: closeActiveModal,
@@ -3273,11 +3302,10 @@ export const App = ({ systemThemeGeneration = 0 }: AppProps) => {
 
 		if (openRepositoryModalActive) {
 			if (isSingleLineInputKey(key)) {
-				setOpenRepositoryModal((current) => ({
-					...current,
-					query: editSingleLineInput(current.query, key) ?? current.query,
-					error: null,
-				}))
+				setOpenRepositoryModal((current) => {
+					const query = editSingleLineInput(current.query, key) ?? current.query
+					return current.query === query && current.selectedIndex === 0 && current.error === null ? current : { ...current, query, selectedIndex: 0, error: null }
+				})
 			}
 			return
 		}
@@ -3459,7 +3487,7 @@ export const App = ({ systemThemeGeneration = 0 }: AppProps) => {
 	const themeModalHeight = themeLayout.height
 	const themeModalLeft = themeLayout.left
 	const themeModalTop = themeLayout.top
-	const openRepositoryLayout = sizedModal(46, 76, 8, 8)
+	const openRepositoryLayout = sizedModal(46, 76, 8, 14)
 	const openRepositoryModalWidth = openRepositoryLayout.width
 	const openRepositoryModalHeight = openRepositoryLayout.height
 	const openRepositoryModalLeft = openRepositoryLayout.left
@@ -3826,6 +3854,7 @@ export const App = ({ systemThemeGeneration = 0 }: AppProps) => {
 			{openRepositoryModalActive ? (
 				<OpenRepositoryModal
 					state={openRepositoryModal}
+					suggestions={detectedRemotesRef.current}
 					modalWidth={openRepositoryModalWidth}
 					modalHeight={openRepositoryModalHeight}
 					offsetLeft={openRepositoryModalLeft}

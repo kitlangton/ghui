@@ -13,6 +13,7 @@ import {
 	type PullRequestMergeInfo,
 	type PullRequestPage,
 	type PullRequestQueueMode,
+	type PullRequestStateFilter,
 	type PullRequestReviewComment,
 	type RepositoryMergeMethods,
 	type ReviewStatus,
@@ -294,9 +295,9 @@ query PullRequests($searchQuery: String!, $first: Int!, $after: String) {
 `
 
 const repositoryPullRequestsQuery = `
-query RepositoryPullRequests($owner: String!, $name: String!, $first: Int!, $after: String) {
+query RepositoryPullRequests($owner: String!, $name: String!, $first: Int!, $after: String, $state: PullRequestState!) {
   repository(owner: $owner, name: $name) {
-    pullRequests(states: OPEN, first: $first, after: $after, orderBy: { field: UPDATED_AT, direction: DESC }) {
+    pullRequests(states: [$state], first: $first, after: $after, orderBy: { field: UPDATED_AT, direction: DESC }) {
       nodes {${SUMMARY_FIELDS_FRAGMENT}
       }
       pageInfo { hasNextPage endCursor }
@@ -451,9 +452,15 @@ const parsePullRequest = (item: RawPullRequestNode): PullRequestItem => {
 	}
 }
 
-const searchQuery = (mode: PullRequestQueueMode, repository: string | null) => {
+const searchQuery = (mode: PullRequestQueueMode, repository: string | null, stateFilter: PullRequestStateFilter) => {
 	const sort = mode === "repository" ? "sort:updated-desc" : "sort:created-desc"
-	return `${pullRequestQueueSearchQualifier(mode, repository)} is:pr is:open ${sort}`
+	return `${pullRequestQueueSearchQualifier(mode, repository)} is:pr is:${stateFilter} ${sort}`
+}
+
+const pullRequestStateArg = (stateFilter: PullRequestStateFilter): string => {
+	if (stateFilter === "open") return "OPEN"
+	if (stateFilter === "closed") return "CLOSED"
+	return "MERGED"
 }
 
 const pullRequestPage = <Item>(connection: PullRequestConnection<Item>, parse: (node: Item) => PullRequestItem): PullRequestPage => ({
@@ -581,9 +588,17 @@ const REVIEW_EVENT_CLI_FLAG = {
 export class GitHubService extends Context.Service<
 	GitHubService,
 	{
-		readonly listOpenPullRequests: (mode: PullRequestQueueMode, repository: string | null) => Effect.Effect<readonly PullRequestItem[], GitHubError>
+		readonly listOpenPullRequests: (
+			mode: PullRequestQueueMode,
+			repository: string | null,
+			stateFilter: PullRequestStateFilter,
+		) => Effect.Effect<readonly PullRequestItem[], GitHubError>
 		readonly listOpenPullRequestPage: (input: ListPullRequestPageInput) => Effect.Effect<PullRequestPage, GitHubError>
-		readonly listOpenPullRequestDetails: (mode: PullRequestQueueMode, repository: string | null) => Effect.Effect<readonly PullRequestItem[], GitHubError>
+		readonly listOpenPullRequestDetails: (
+			mode: PullRequestQueueMode,
+			repository: string | null,
+			stateFilter: PullRequestStateFilter,
+		) => Effect.Effect<readonly PullRequestItem[], GitHubError>
 		readonly getPullRequestDetails: (repository: string, number: number) => Effect.Effect<PullRequestItem, GitHubError>
 		readonly getAuthenticatedUser: () => Effect.Effect<string, GitHubError>
 		readonly getPullRequestDiff: (repository: string, number: number) => Effect.Effect<string, GitHubError>
@@ -626,7 +641,7 @@ export class GitHubService extends Context.Service<
 						"-f",
 						`query=${query}`,
 						"-F",
-						`searchQuery=${searchQuery(input.mode, input.repository)}`,
+						`searchQuery=${searchQuery(input.mode, input.repository, input.stateFilter)}`,
 						"-F",
 						`first=${input.pageSize}`,
 						...(input.cursor ? ["-F", `after=${input.cursor}`] : []),
@@ -655,6 +670,8 @@ export class GitHubService extends Context.Service<
 					"-F",
 					`name=${repo.name}`,
 					"-F",
+					`state=${pullRequestStateArg(input.stateFilter)}`,
+					"-F",
 					`first=${input.pageSize}`,
 					...(input.cursor ? ["-F", `after=${input.cursor}`] : []),
 				])
@@ -675,13 +692,14 @@ export class GitHubService extends Context.Service<
 			const paginatePages = Effect.fn("GitHubService.paginatePages")(function* (
 				mode: PullRequestQueueMode,
 				repository: string | null,
+				stateFilter: PullRequestStateFilter,
 				loadPage: (input: ListPullRequestPageInput) => Effect.Effect<PullRequestPage, GitHubError>,
 			) {
 				const pullRequests: PullRequestItem[] = []
 				let cursor: string | null = null
 
 				while (pullRequests.length < config.prFetchLimit) {
-					const page: PullRequestPage = yield* loadPage({ mode, repository, cursor, pageSize: Math.min(100, config.prFetchLimit - pullRequests.length) })
+					const page: PullRequestPage = yield* loadPage({ mode, repository, stateFilter, cursor, pageSize: Math.min(100, config.prFetchLimit - pullRequests.length) })
 					pullRequests.push(...page.items)
 					if (!page.hasNextPage || !page.endCursor) break
 					cursor = page.endCursor
@@ -690,11 +708,19 @@ export class GitHubService extends Context.Service<
 				return pullRequests
 			})
 
-			const listOpenPullRequests = Effect.fn("GitHubService.listOpenPullRequests")(function* (mode: PullRequestQueueMode, repository: string | null) {
-				return yield* paginatePages(mode, repository, listOpenPullRequestPage)
+			const listOpenPullRequests = Effect.fn("GitHubService.listOpenPullRequests")(function* (
+				mode: PullRequestQueueMode,
+				repository: string | null,
+				stateFilter: PullRequestStateFilter,
+			) {
+				return yield* paginatePages(mode, repository, stateFilter, listOpenPullRequestPage)
 			})
-			const listOpenPullRequestDetails = Effect.fn("GitHubService.listOpenPullRequestDetails")(function* (mode: PullRequestQueueMode, repository: string | null) {
-				return yield* paginatePages(mode, repository, listOpenPullRequestDetailsPage)
+			const listOpenPullRequestDetails = Effect.fn("GitHubService.listOpenPullRequestDetails")(function* (
+				mode: PullRequestQueueMode,
+				repository: string | null,
+				stateFilter: PullRequestStateFilter,
+			) {
+				return yield* paginatePages(mode, repository, stateFilter, listOpenPullRequestDetailsPage)
 			})
 
 			const getPullRequestDetails = Effect.fn("GitHubService.getPullRequestDetails")(function* (repository: string, number: number) {

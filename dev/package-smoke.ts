@@ -54,7 +54,7 @@ const assertCacheServiceOpens = async () => {
 		const cached = await Effect.runPromise(
 			Effect.gen(function* () {
 				const cache = yield* CacheService
-				return yield* cache.readQueue("smoke", { _tag: "Queue", mode: "authored", repository: null })
+				return yield* cache.readQueue("smoke", { _tag: "Queue", mode: "authored", repository: null, stateFilter: "open" })
 			}).pipe(Effect.provide(CacheService.layerSqliteFile(join(dir, "cache.sqlite")))),
 		)
 		assert(cached === null, "New cache database should start empty")

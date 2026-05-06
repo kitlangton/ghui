@@ -138,6 +138,18 @@ const numberFromIndex = (flatIndex: number) => {
 }
 
 describe("PR list scrolling", () => {
+	test("state filter modal opens and closes from list view", async () => {
+		const { mockInput, renderOnce, captureCharFrame, renderer } = await setupApp(100, 20)
+
+		await press(mockInput, renderOnce, { kind: "key", name: "f" }, 2)
+		expect(captureCharFrame()).toContain("Pull Request State")
+		expect(captureCharFrame()).toContain("Filter the current tab by pull request state.")
+
+		await press(mockInput, renderOnce, { kind: "key", name: "q" }, 2)
+		expect(captureCharFrame()).not.toContain("Filter the current tab by pull request state.")
+		renderer.destroy()
+	})
+
 	test("initial selection points at first PR", async () => {
 		const { captureCharFrame, renderer } = await setupApp(100, 20)
 		expect(detailPaneNumber(captureCharFrame())).toBe(numberFromIndex(0))

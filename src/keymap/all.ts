@@ -13,6 +13,7 @@ import { labelModalKeymap, type LabelModalCtx } from "./labelModal.ts"
 import { listNavKeymap, type ListNavCtx } from "./listNav.ts"
 import { mergeModalKeymap, type MergeModalCtx } from "./mergeModal.ts"
 import { openRepositoryModalKeymap, type OpenRepositoryModalCtx } from "./openRepositoryModal.ts"
+import { pullRequestFilterModalKeymap, type PullRequestFilterModalCtx } from "./pullRequestFilterModal.ts"
 import { pullRequestStateModalKeymap, type PullRequestStateModalCtx } from "./pullRequestStateModal.ts"
 import { submitReviewModalKeymap, type SubmitReviewModalCtx } from "./submitReviewModal.ts"
 import { themeModalKeymap, type ThemeModalCtx } from "./themeModal.ts"
@@ -21,6 +22,7 @@ export interface AppCtx {
 	// Active flags
 	readonly closeModalActive: boolean
 	readonly pullRequestStateModalActive: boolean
+	readonly pullRequestFilterModalActive: boolean
 	readonly mergeModalActive: boolean
 	readonly commentThreadModalActive: boolean
 	readonly changedFilesModalActive: boolean
@@ -43,6 +45,7 @@ export interface AppCtx {
 	// Per-layer narrow contexts
 	readonly closeModal: CloseModalCtx
 	readonly pullRequestStateModal: PullRequestStateModalCtx
+	readonly pullRequestFilterModal: PullRequestFilterModalCtx
 	readonly mergeModal: MergeModalCtx
 	readonly commentThreadModal: CommentThreadModalCtx
 	readonly changedFilesModal: ChangedFilesModalCtx
@@ -69,6 +72,7 @@ const App = context<AppCtx>()
 const modalActive = (a: AppCtx): boolean =>
 	a.closeModalActive ||
 	a.pullRequestStateModalActive ||
+	a.pullRequestFilterModalActive ||
 	a.mergeModalActive ||
 	a.commentThreadModalActive ||
 	a.changedFilesModalActive ||
@@ -105,6 +109,7 @@ export const appKeymap = App(
 	// Modal layers
 	closeModalKeymap.scope((a) => a.closeModalActive && a.closeModal),
 	pullRequestStateModalKeymap.scope((a) => a.pullRequestStateModalActive && a.pullRequestStateModal),
+	pullRequestFilterModalKeymap.scope((a) => a.pullRequestFilterModalActive && a.pullRequestFilterModal),
 	mergeModalKeymap.scope((a) => a.mergeModalActive && a.mergeModal),
 	commentThreadModalKeymap.scope((a) => a.commentThreadModalActive && a.commentThreadModal),
 	changedFilesModalKeymap.scope((a) => a.changedFilesModalActive && a.changedFilesModal),

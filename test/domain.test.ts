@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test"
 import { pullRequestQueueSearchQualifier } from "../src/domain.js"
-import { viewCacheKey } from "../src/pullRequestViews.js"
+import { activePullRequestViews, viewCacheKey, viewLabel } from "../src/pullRequestViews.js"
 
 describe("pullRequestQueueSearchQualifier", () => {
 	test("repository mode with repository → repo: qualifier", () => {
@@ -30,11 +30,27 @@ describe("pullRequestQueueSearchQualifier", () => {
 
 describe("viewCacheKey", () => {
 	test("repository view key includes repo path", () => {
-		expect(viewCacheKey({ _tag: "Repository", repository: "owner/name" })).toBe("repository:owner/name")
+		expect(viewCacheKey({ _tag: "Repository", repository: "owner/name", stateFilter: "open" })).toBe("repository:owner/name:open")
 	})
 
 	test("queue view key is the mode literal", () => {
-		expect(viewCacheKey({ _tag: "Queue", mode: "authored", repository: null })).toBe("authored")
-		expect(viewCacheKey({ _tag: "Queue", mode: "review", repository: "owner/name" })).toBe("review")
+		expect(viewCacheKey({ _tag: "Queue", mode: "authored", repository: null, stateFilter: "open" })).toBe("authored:open")
+		expect(viewCacheKey({ _tag: "Queue", mode: "review", repository: "owner/name", stateFilter: "merged" })).toBe("review:merged")
+	})
+})
+
+describe("activePullRequestViews", () => {
+	test("queue tabs stay unscoped when coming from a repository view", () => {
+		const views = activePullRequestViews({ _tag: "Repository", repository: "owner/name", stateFilter: "closed" })
+
+		expect(views[0]).toEqual({ _tag: "Repository", repository: "owner/name", stateFilter: "open" })
+		expect(views.slice(1).every((view) => view._tag === "Queue" && view.repository === null && view.stateFilter === "open")).toBe(true)
+	})
+})
+
+describe("viewLabel", () => {
+	test("adds state suffix for non-open filters", () => {
+		expect(viewLabel({ _tag: "Queue", mode: "authored", repository: null, stateFilter: "open" })).toBe("authored")
+		expect(viewLabel({ _tag: "Queue", mode: "authored", repository: null, stateFilter: "merged" })).toBe("authored (merged)")
 	})
 })

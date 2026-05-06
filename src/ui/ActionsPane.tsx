@@ -1,11 +1,12 @@
 import { TextAttributes } from "@opentui/core"
 import type { WorkflowJob, WorkflowJobDependency, WorkflowRun, WorkflowStep } from "../domain.js"
 import { colors } from "./colors.js"
-import { Divider, fitCell, Filler, PaddedRow, TextLine } from "./primitives.js"
+import { Divider, fitCell, Filler, ModalFrame, PaddedRow, PlainLine, TextLine } from "./primitives.js"
 import { shortRepoName } from "./pullRequests.js"
 import { renderWorkflowGraph } from "./workflowGraph.js"
 
 type ActionsLevel = "runs" | "jobs" | "logs"
+type ActionsBarSegment = { readonly text: string; readonly fg: string; readonly bold?: boolean }
 
 const PASSING = new Set(["success", "neutral", "skipped"])
 const ESC = String.fromCharCode(27)
@@ -66,6 +67,20 @@ export interface ParsedLogStep {
 	readonly lines: readonly string[]
 }
 
+export type ActionsLogRow =
+	| {
+			readonly kind: "step"
+			readonly stepIndex: number
+			readonly expanded: boolean
+	  }
+	| {
+			readonly kind: "line"
+			readonly stepIndex: number
+			readonly lineIndex: number
+			readonly chunkIndex: number
+			readonly line: string
+	  }
+
 export const parseActionsLogSteps = (rawLog: string, steps: readonly WorkflowStep[]): readonly ParsedLogStep[] => {
 	const normalizedLines = rawLog.split("\n").map(sanitizeLogLine)
 	const groups: Array<{ name: string; lines: string[] }> = []
@@ -119,30 +134,62 @@ export const parseActionsLogSteps = (rawLog: string, steps: readonly WorkflowSte
 		} satisfies ParsedLogStep
 	})
 }
-
-const renderStepsBar = ({
+export const buildActionsLogRows = ({
 	steps,
-	selectedStepIndex,
+	expandedStepIndex,
+	wrapMode,
 	contentWidth,
 }: {
 	readonly steps: readonly ParsedLogStep[]
-	readonly selectedStepIndex: number
+	readonly expandedStepIndex: number | null
+	readonly wrapMode: boolean
 	readonly contentWidth: number
-}) => {
-	if (steps.length === 0) {
-		return fitCell("No steps", contentWidth)
+}): readonly ActionsLogRow[] => {
+	const rows: ActionsLogRow[] = []
+	const wrapWidth = Math.max(1, contentWidth - 2)
+	for (let index = 0; index < steps.length; index++) {
+		const expanded = expandedStepIndex === index
+		rows.push({ kind: "step", stepIndex: index, expanded })
+		if (!expanded) continue
+		const lines = steps[index]?.lines ?? []
+		for (let lineIndex = 0; lineIndex < lines.length; lineIndex++) {
+			const line = lines[lineIndex] ?? ""
+			if (!wrapMode) {
+				rows.push({ kind: "line", stepIndex: index, lineIndex, chunkIndex: 0, line })
+				continue
+			}
+			if (line.length === 0) {
+				rows.push({ kind: "line", stepIndex: index, lineIndex, chunkIndex: 0, line: "" })
+				continue
+			}
+			let chunkIndex = 0
+			for (let start = 0; start < line.length; start += wrapWidth) {
+				rows.push({
+					kind: "line",
+					stepIndex: index,
+					lineIndex,
+					chunkIndex,
+					line: line.slice(start, start + wrapWidth),
+				})
+				chunkIndex += 1
+			}
+		}
 	}
+	return rows
+}
 
-	const clamped = Math.max(0, Math.min(steps.length - 1, selectedStepIndex))
-	const leftArrow = clamped > 0 ? "◂" : " "
-	const rightArrow = clamped < steps.length - 1 ? "▸" : " "
-	const summary = steps.map((step, index) => `${index === clamped ? "●" : "·"}${stateIcon(step.status, step.conclusion)} ${step.name}`).join("  ")
-	const detailed = `${leftArrow} ${summary} ${rightArrow}`
-	if (detailed.length <= contentWidth) return fitCell(detailed, contentWidth)
-
-	const current = steps[clamped]!
-	const focused = `${leftArrow} ${stateIcon(current.status, current.conclusion)} ${current.name} (${clamped + 1}/${steps.length}) ${rightArrow}`
-	return fitCell(focused, contentWidth)
+const renderHighlightedLine = (line: string, contentWidth: number, query: string): readonly ActionsBarSegment[] => {
+	const fitted = fitCell(line, contentWidth)
+	const needle = query.trim().toLowerCase()
+	if (needle.length === 0) return [{ text: fitted, fg: colors.text }]
+	const index = fitted.toLowerCase().indexOf(needle)
+	if (index < 0) return [{ text: fitted, fg: colors.text }]
+	const end = Math.min(fitted.length, index + needle.length)
+	const segments: ActionsBarSegment[] = []
+	if (index > 0) segments.push({ text: fitted.slice(0, index), fg: colors.text })
+	segments.push({ text: fitted.slice(index, end), fg: colors.accent, bold: true })
+	if (end < fitted.length) segments.push({ text: fitted.slice(end), fg: colors.text })
+	return segments
 }
 
 export const ActionsPane = ({
@@ -156,8 +203,16 @@ export const ActionsPane = ({
 	selectedRunDependencies,
 	selectedJobLog,
 	selectedStepIndex,
+	expandedStepIndex,
 	graphScrollOffset,
 	logScrollOffset,
+	logWrapMode,
+	logHorizontalScroll,
+	logFilterQuery,
+	logFilterDraft,
+	logFilterActive,
+	graphModalActive,
+	graphModalVerticalScroll,
 	contentWidth,
 	paneWidth,
 	height,
@@ -175,8 +230,16 @@ export const ActionsPane = ({
 	selectedRunDependencies: readonly WorkflowJobDependency[]
 	selectedJobLog: string
 	selectedStepIndex: number
+	expandedStepIndex: number | null
 	graphScrollOffset: number
 	logScrollOffset: number
+	logWrapMode: boolean
+	logHorizontalScroll: number
+	logFilterQuery: string
+	logFilterDraft: string
+	logFilterActive: boolean
+	graphModalActive: boolean
+	graphModalVerticalScroll: number
 	contentWidth: number
 	paneWidth: number
 	height: number
@@ -193,15 +256,35 @@ export const ActionsPane = ({
 
 	if (level === "logs") {
 		const steps = parseActionsLogSteps(selectedJobLog, selectedJob?.steps ?? [])
-		const clampedStepIndex = Math.max(0, Math.min(steps.length - 1, selectedStepIndex))
-		const selectedStep = steps[clampedStepIndex] ?? null
-		const lines = selectedStep?.lines ?? []
+		const rows = buildActionsLogRows({
+			steps,
+			expandedStepIndex,
+			wrapMode: logWrapMode,
+			contentWidth,
+		})
+		const clampedRowIndex = rows.length === 0 ? 0 : Math.max(0, Math.min(rows.length - 1, selectedStepIndex))
+		const expandedStep = expandedStepIndex === null ? null : (steps[expandedStepIndex] ?? null)
+		const lines = expandedStep?.lines ?? []
+		const activeFilterText = logFilterActive ? logFilterDraft : logFilterQuery
+		const normalizedFilter = activeFilterText.trim().toLowerCase()
+		const matchCount = normalizedFilter.length === 0 ? 0 : lines.reduce((count, line) => (line.toLowerCase().includes(normalizedFilter) ? count + 1 : count), 0)
+		const showFilterBar = logFilterActive || logFilterQuery.length > 0
 		const jobHeaderRows = selectedJob ? 1 : 0
-		const stepBarRows = 1
-		const logHeight = Math.max(1, bodyHeight - jobHeaderRows - stepBarRows)
-		const top = Math.max(0, Math.min(logScrollOffset, Math.max(0, lines.length - logHeight)))
-		const visible = lines.slice(top, top + logHeight)
-		const stepBarText = renderStepsBar({ steps, selectedStepIndex: clampedStepIndex, contentWidth })
+		const filterBarRows = showFilterBar ? 1 : 0
+		const logHeight = Math.max(1, bodyHeight - jobHeaderRows - filterBarRows)
+		const top = Math.max(0, Math.min(logScrollOffset, Math.max(0, rows.length - logHeight)))
+		const visible = rows.slice(top, top + logHeight)
+		const filterPrefix = logFilterActive ? "filter> " : "/ "
+		const filterValue = activeFilterText.length > 0 ? activeFilterText : "type to highlight..."
+		const matchLabel = normalizedFilter.length === 0 ? "" : matchCount === 1 ? "1 match" : `${matchCount} matches`
+		const modeLabel = logWrapMode ? "wrap" : `x:${logHorizontalScroll}`
+		const statusLabel = matchLabel.length > 0 ? `${modeLabel}  ${matchLabel}` : modeLabel
+		const leftFilterText = `${filterPrefix}${filterValue}`
+		const leftWidth = Math.max(1, contentWidth - (statusLabel.length > 0 ? statusLabel.length + 1 : 0))
+		const leftFilterCell = fitCell(leftFilterText, leftWidth)
+		const prefixCell = fitCell(filterPrefix, Math.min(filterPrefix.length, leftFilterCell.length))
+		const valueCell = leftFilterCell.slice(prefixCell.length)
+		const rightFilterCell = fitCell(statusLabel, contentWidth - leftWidth, "right")
 		return (
 			<box flexDirection="column" width={paneWidth} height={height}>
 				<PaddedRow>
@@ -223,19 +306,49 @@ export const ActionsPane = ({
 							</TextLine>
 						</PaddedRow>
 					) : null}
-					<PaddedRow>
-						<TextLine>
-							<span fg={colors.muted}>{stepBarText}</span>
-						</TextLine>
-					</PaddedRow>
+					{showFilterBar ? (
+						<PaddedRow backgroundColor={colors.selectedBg}>
+							<TextLine>
+								<span fg={colors.count}>{prefixCell}</span>
+								<span fg={logFilterActive ? colors.text : colors.accent}>{valueCell}</span>
+								{rightFilterCell.length > 0 ? <span fg={matchCount > 0 ? colors.status.passing : colors.status.failing}>{rightFilterCell}</span> : null}
+							</TextLine>
+						</PaddedRow>
+					) : null}
 					{visible.length > 0
-						? visible.map((line, index) => (
-								<PaddedRow key={`log-${top + index}`}>
-									<TextLine>
-										<span fg={colors.text}>{fitCell(line, contentWidth)}</span>
-									</TextLine>
-								</PaddedRow>
-							))
+						? visible.map((row, index) => {
+								const absoluteIndex = top + index
+								const selected = absoluteIndex === clampedRowIndex
+								if (row.kind === "step") {
+									const step = steps[row.stepIndex]
+									if (!step) return null
+									const disclosure = row.expanded ? "▾" : "▸"
+									const status = stateIcon(step.status, step.conclusion)
+									return (
+										<PaddedRow key={`log-step-${row.stepIndex}`} {...(selected ? { backgroundColor: colors.selectedBg } : {})}>
+											<TextLine>
+												<span fg={selected ? colors.selectedText : colors.muted}>{`${disclosure} `}</span>
+												<span fg={stateColor(step.status, step.conclusion)}>{status}</span>
+												<span fg={selected ? colors.selectedText : colors.text}>{fitCell(` ${step.name}`, Math.max(1, contentWidth - 4))}</span>
+											</TextLine>
+										</PaddedRow>
+									)
+								}
+								const visibleLine = logWrapMode ? row.line : row.line.slice(logHorizontalScroll)
+								const indented = `  ${visibleLine}`
+								const segments = renderHighlightedLine(indented, contentWidth, activeFilterText)
+								return (
+									<PaddedRow key={`log-line-${row.stepIndex}-${row.lineIndex}-${row.chunkIndex}`} {...(selected ? { backgroundColor: colors.selectedBg } : {})}>
+										<TextLine>
+											{segments.map((segment, segmentIndex) => (
+												<span key={`log-${absoluteIndex}-${segmentIndex}`} fg={segment.fg} {...(segment.bold ? { attributes: TextAttributes.BOLD } : {})}>
+													{segment.text}
+												</span>
+											))}
+										</TextLine>
+									</PaddedRow>
+								)
+							})
 						: [<Filler key="actions-log-empty" rows={logHeight} prefix="actions-log-empty" />]}
 				</box>
 			</box>
@@ -243,17 +356,30 @@ export const ActionsPane = ({
 	}
 
 	if (level === "jobs") {
-		const graph = renderWorkflowGraph({
-			dependencies: selectedRunDependencies,
-			jobs: selectedRunJobs,
-			contentWidth,
-			scrollOffset: graphScrollOffset,
-		})
-		const graphMaxRows = Math.max(0, Math.min(8, bodyHeight - 2))
-		const graphRows = graph.slice(0, graphMaxRows)
-		const listHeight = Math.max(1, bodyHeight - graphRows.length - (graphRows.length > 0 ? 1 : 0))
+		const listHeight = Math.max(1, bodyHeight - (selectedRun ? 1 : 0))
 		const top = Math.max(0, Math.min(selectedJobIndex - Math.floor(listHeight / 2), Math.max(0, selectedRunJobs.length - listHeight)))
 		const visible = selectedRunJobs.slice(top, top + listHeight)
+
+		const modalWidth = Math.max(30, paneWidth - 4)
+		const modalContentWidth = Math.max(1, modalWidth - 2)
+		const modalGraph = renderWorkflowGraph({
+			dependencies: selectedRunDependencies,
+			jobs: selectedRunJobs,
+			contentWidth: modalContentWidth,
+			scrollOffset: graphScrollOffset,
+		})
+		const modalGraphRows = modalGraph.length
+		const modalHeight = Math.min(Math.max(5, modalGraphRows + 4), height - 4)
+		const modalLeft = Math.floor((paneWidth - modalWidth) / 2)
+		const modalTop = Math.floor((height - modalHeight) / 2)
+		const modalInnerHeight = Math.max(1, modalHeight - 2)
+		const modalTitleRows = selectedRun ? 1 : 0
+		const modalDividerRows = selectedRun ? 1 : 0
+		const modalGraphHeight = Math.max(1, modalInnerHeight - modalTitleRows - modalDividerRows)
+		const modalTopRow = Math.max(0, Math.min(graphModalVerticalScroll, Math.max(0, modalGraph.length - modalGraphHeight)))
+		const modalVisibleGraph = modalGraph.slice(modalTopRow, modalTopRow + modalGraphHeight)
+		const modalJunctionRows = selectedRun ? [modalTitleRows] : []
+
 		return (
 			<box flexDirection="column" width={paneWidth} height={height}>
 				<PaddedRow>
@@ -276,18 +402,6 @@ export const ActionsPane = ({
 							</TextLine>
 						</PaddedRow>
 					) : null}
-					{graphRows.map((line, index) => (
-						<PaddedRow key={`graph-${index}`}>
-							<TextLine>
-								{line.segments.map((segment, segmentIndex) => (
-									<span key={`graph-${index}-segment-${segmentIndex}`} fg={segment.fg}>
-										{segment.text}
-									</span>
-								))}
-							</TextLine>
-						</PaddedRow>
-					))}
-					{graphRows.length > 0 ? <Divider width={paneWidth} /> : null}
 					{visible.length > 0
 						? visible.map((job, index) => {
 								const absoluteIndex = top + index
@@ -303,6 +417,26 @@ export const ActionsPane = ({
 							})
 						: [<Filler key="actions-jobs-empty" rows={listHeight} prefix="actions-jobs-empty" />]}
 				</box>
+				{graphModalActive ? (
+					<ModalFrame left={modalLeft} top={modalTop} width={modalWidth} height={modalHeight} junctionRows={modalJunctionRows}>
+						{selectedRun ? <PlainLine text={fitCell(`Dependency graph  ${selectedRun.name}`, modalContentWidth)} fg={colors.accent} bold /> : null}
+						{selectedRun ? <PlainLine text={"─".repeat(modalContentWidth)} fg={colors.separator} /> : null}
+						{modalVisibleGraph.map((line, index) => (
+							<box key={`modal-graph-${index}`} paddingLeft={0}>
+								<TextLine>
+									{line.segments.map((segment, segmentIndex) => (
+										<span key={`mg-${index}-${segmentIndex}`} fg={segment.fg}>
+											{segment.text}
+										</span>
+									))}
+								</TextLine>
+							</box>
+						))}
+						{modalVisibleGraph.length < modalGraphHeight
+							? Array.from({ length: modalGraphHeight - modalVisibleGraph.length }, (_, index) => <PlainLine key={`modal-graph-pad-${index}`} text=" " fg={colors.muted} />)
+							: null}
+					</ModalFrame>
+				) : null}
 			</box>
 		)
 	}

@@ -19,6 +19,8 @@ interface HintsContext {
 	readonly commentsViewActive: boolean
 	readonly actionsViewActive: boolean
 	readonly actionsLevel: "runs" | "jobs" | "logs"
+	readonly actionsLogFilterActive: boolean
+	readonly actionsLogHasQuery: boolean
 	readonly commentsViewOnRealComment: boolean
 	readonly commentsViewCanEditSelected: boolean
 	readonly commentsViewCount: number
@@ -67,9 +69,15 @@ const commentsViewHints = (ctx: HintsContext): readonly HintItem[] => [
 ]
 
 const actionsViewHints = (ctx: HintsContext): readonly HintItem[] => [
-	{ key: "↑↓", label: ctx.actionsLevel === "logs" ? "scroll" : "move" },
+	{ key: "↑↓", label: "move" },
 	{ key: "←→", label: "graph", when: ctx.actionsLevel === "jobs" },
-	{ key: "←→", label: "step", when: ctx.actionsLevel === "logs" },
+	{ key: "←→", label: "collapse/expand", when: ctx.actionsLevel === "logs" },
+	{ key: "w", label: "wrap", when: ctx.actionsLevel === "logs" },
+	{ key: "zh/zl", label: "h-scroll", when: ctx.actionsLevel === "logs" },
+	{ key: "/", label: "filter", when: ctx.actionsLevel === "logs" && !ctx.actionsLogFilterActive },
+	{ key: "esc", label: "clear", when: ctx.actionsLevel === "logs" && ctx.actionsLogFilterActive },
+	{ key: "n/N", label: "match", when: ctx.actionsLevel === "logs" && ctx.actionsLogHasQuery && !ctx.actionsLogFilterActive },
+	{ key: "s", label: "graph", when: ctx.actionsLevel === "jobs" },
 	{ key: "enter", label: "open", when: ctx.actionsLevel !== "logs" },
 	{ key: "o", label: "browser" },
 	{ key: "r", label: "refresh" },

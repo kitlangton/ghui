@@ -207,7 +207,10 @@ interface DetailPlaceholderInput {
 	readonly loadingIndicator: string
 	readonly visibleCount: number
 	readonly filterText: string
+	readonly stateFilter: PullRequestStateFilter
 }
+
+const pullRequestStatePhrase = (stateFilter: PullRequestStateFilter) => `${stateFilter} pull requests`
 
 type DiffLineColorConfig = {
 	readonly gutter: string
@@ -665,11 +668,12 @@ const setDiffCommentLineColor = (diff: DiffRenderable, entry: AppliedDiffLineCol
 	}
 }
 
-const getDetailPlaceholderContent = ({ status, retryProgress, loadingIndicator, visibleCount, filterText }: DetailPlaceholderInput): DetailPlaceholderContent => {
+const getDetailPlaceholderContent = ({ status, retryProgress, loadingIndicator, visibleCount, filterText, stateFilter }: DetailPlaceholderInput): DetailPlaceholderContent => {
+	const statePhrase = pullRequestStatePhrase(stateFilter)
 	if (status === "loading") {
 		return {
 			title: `${loadingIndicator} Loading pull requests`,
-			hint: retryProgress._tag === "Retrying" ? `Retry ${retryProgress.attempt}/${retryProgress.max}` : "Fetching latest open PRs",
+			hint: retryProgress._tag === "Retrying" ? `Retry ${retryProgress.attempt}/${retryProgress.max}` : `Fetching latest ${statePhrase}`,
 		}
 	}
 
@@ -689,7 +693,7 @@ const getDetailPlaceholderContent = ({ status, retryProgress, loadingIndicator, 
 
 	if (visibleCount === 0) {
 		return {
-			title: "No open pull requests",
+			title: `No ${statePhrase}`,
 			hint: "Press r to refresh",
 		}
 	}
@@ -964,11 +968,23 @@ export const App = ({ systemThemeGeneration = 0 }: AppProps) => {
 				error: pullRequestError,
 				filterText: visibleFilterText,
 				showFilterBar: filterMode || filterQuery.length > 0,
+				stateFilter: activeView.stateFilter,
 				loadedCount: loadedPullRequestCount,
 				hasMore: hasMorePullRequests,
 				isLoadingMore: isLoadingMorePullRequests,
 			}),
-		[visibleGroups, pullRequestStatus, pullRequestError, visibleFilterText, filterMode, filterQuery, loadedPullRequestCount, hasMorePullRequests, isLoadingMorePullRequests],
+		[
+			visibleGroups,
+			pullRequestStatus,
+			pullRequestError,
+			visibleFilterText,
+			filterMode,
+			filterQuery,
+			activeView.stateFilter,
+			loadedPullRequestCount,
+			hasMorePullRequests,
+			isLoadingMorePullRequests,
+		],
 	)
 	const selectedPullRequestRowIndex = pullRequestListRowIndex(pullRequestListRows, selectedPullRequest?.url ?? null)
 	const selectedDiffKey = useAtomValue(selectedDiffKeyAtom)
@@ -1545,6 +1561,7 @@ export const App = ({ systemThemeGeneration = 0 }: AppProps) => {
 		loadingIndicator,
 		visibleCount: visiblePullRequests.length,
 		filterText: visibleFilterText,
+		stateFilter: activeView.stateFilter,
 	})
 	const isSelectedPullRequestDetailLoading = selectedPullRequest !== null && !selectedPullRequest.detailLoaded
 	const halfPage = Math.max(1, Math.floor(wideBodyHeight / 2))
@@ -3428,6 +3445,7 @@ export const App = ({ systemThemeGeneration = 0 }: AppProps) => {
 		filterText: visibleFilterText,
 		showFilterBar: filterMode || filterQuery.length > 0,
 		isFilterEditing: filterMode,
+		stateFilter: activeView.stateFilter,
 		loadedCount: loadedPullRequestCount,
 		hasMore: hasMorePullRequests,
 		isLoadingMore: isLoadingMorePullRequests,

@@ -35,6 +35,7 @@ describe("buildPullRequestListRows", () => {
 			error: null,
 			filterText: "",
 			showFilterBar: false,
+			stateFilter: "open",
 			loadedCount: 50,
 			hasMore: true,
 			isLoadingMore: false,
@@ -50,6 +51,7 @@ describe("buildPullRequestListRows", () => {
 			error: null,
 			filterText: "",
 			showFilterBar: false,
+			stateFilter: "open",
 			loadedCount: 50,
 			hasMore: true,
 			isLoadingMore: true,
@@ -57,5 +59,22 @@ describe("buildPullRequestListRows", () => {
 		})
 
 		expect(rows.at(-1)).toEqual({ _tag: "load-more", text: "⠋ Loading more pull requests... (50 loaded)" })
+	})
+
+	test("shows state-aware empty text when no pull requests are visible", () => {
+		const rows = buildPullRequestListRows({
+			groups: [],
+			status: "ready",
+			error: null,
+			filterText: "",
+			showFilterBar: false,
+			stateFilter: "merged",
+			loadedCount: 0,
+			hasMore: false,
+			isLoadingMore: false,
+		})
+
+		const messageRow = rows.find((row) => row._tag === "message")
+		expect(messageRow).toMatchObject({ _tag: "message", text: "- No merged pull requests." })
 	})
 })

@@ -95,6 +95,7 @@ When launched inside a Git repository, ghui automatically detects GitHub remotes
 - `gg` / `G`: jump to first or last pull request
 - `ctrl-u` / `ctrl-d`: page up or down
 - `tab` / `shift-tab`: switch PR queue
+- `h`: go to home view (your authored pull requests)
 - `ctrl-p` / `cmd-k`: open the command palette
 - `/`: filter
 - `enter`: expand details; normal PR actions still work while details are expanded

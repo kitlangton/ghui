@@ -172,6 +172,7 @@ export const buildAppCommands = ({
 			title: "Open repository...",
 			scope: "View",
 			subtitle: selectedRepository ? `Current repository: ${selectedRepository}` : "Enter owner/name or a GitHub URL",
+			shortcut: "shift-o",
 			keywords: ["repo", "repository", "owner", "github"],
 			run: actions.openRepositoryPicker,
 		}),

@@ -3243,6 +3243,7 @@ export const App = ({ systemThemeGeneration = 0 }: AppProps) => {
 			refresh: () => runCommandById("pull.refresh"),
 			openInBrowser: () => runCommandById("pull.open-browser"),
 			copyMetadata: () => runCommandById("pull.copy-metadata"),
+			openRepositoryPicker: () => runCommandById("repository.open"),
 		},
 		commentsView: {
 			halfPage,

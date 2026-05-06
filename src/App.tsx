@@ -848,6 +848,11 @@ export const App = ({ systemThemeGeneration = 0 }: AppProps) => {
 	const terminalWasBlurredRef = useRef(false)
 	const pullRequestStatusRef = useRef<LoadStatus>("loading")
 	const detectedRemotesRef = useRef<readonly string[]>([])
+	const registryRef = useRef(registry)
+	registryRef.current = registry
+	const refreshPullRequestsAtomRef = useRef(refreshPullRequestsAtom)
+	refreshPullRequestsAtomRef.current = refreshPullRequestsAtom
+	const lastAutoRefreshedKeyRef = useRef<string | null>(null)
 	const refreshPullRequestsRef = useRef<(message?: string, options?: { readonly resetTransientState?: boolean }) => void>(() => {})
 	const maybeRefreshPullRequestsRef = useRef<(minimumAgeMs: number) => void>(() => {})
 	const detailScrollRef = useRef<ScrollBoxRenderable | null>(null)
@@ -1250,9 +1255,11 @@ export const App = ({ systemThemeGeneration = 0 }: AppProps) => {
 			didMountQueueModeRef.current = true
 			return
 		}
-		if (registry.get(queueLoadCacheAtom)[currentQueueCacheKey]) return
-		refreshPullRequestsAtom()
-	}, [currentQueueCacheKey, refreshPullRequestsAtom, registry])
+		if (lastAutoRefreshedKeyRef.current === currentQueueCacheKey) return
+		if (registryRef.current.get(queueLoadCacheAtom)[currentQueueCacheKey]) return
+		lastAutoRefreshedKeyRef.current = currentQueueCacheKey
+		refreshPullRequestsAtomRef.current()
+	}, [currentQueueCacheKey])
 
 	useEffect(() => {
 		if (!refreshCompletionMessage || refreshStartedAt === null) return

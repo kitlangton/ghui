@@ -62,6 +62,7 @@ const buildPullRequest = (index: number, options: Required<MockOptions>): PullRe
 		repository,
 		author: options.username,
 		headRefOid: `deadbeef${index.toString(16).padStart(8, "0")}`,
+		headRefName: `mock-branch-${index}`,
 		number,
 		title: `Mock PR ${number}: example change ${index}`,
 		body: `This is mock pull request #${number}.\n\nLine A.\nLine B.`,

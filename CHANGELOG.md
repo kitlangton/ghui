@@ -1,5 +1,13 @@
 # @kitlangton/ghui
 
+## 0.7.0
+
+### Minor Changes
+
+- d62dd66: Add `?` as a shortcut for opening the command palette, where available commands and key bindings are shown.
+- d45e6cb: Show the source branch name in pull request details and copied metadata.
+- 011717e: Add a follow-system theme mode with separate dark and light theme selections while preserving fixed theme selection.
+
 ## 0.6.0
 
 ### Minor Changes

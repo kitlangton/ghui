@@ -8,8 +8,8 @@ import { commentCountText, CommentSegmentsLine, type CommentSegment } from "./co
 import { diffStatText } from "./diff.js"
 import { DiffStats } from "./diffStats.js"
 import { collectUrlPositions, findUrlAt, inlineSegments, type InlinePalette } from "./inlineSegments.js"
-import { centerCell, Divider, Filler, fitCell, PaddedRow, PlainLine, TextLine } from "./primitives.js"
-import { labelColor, labelTextColor, reviewLabel, shortRepoName, statusColor } from "./pullRequests.js"
+import { centerCell, Divider, Filler, fitCell, PaddedRow, PlainLine, TextLine, trimCell } from "./primitives.js"
+import { labelColor, labelTextColor, reviewLabel, statusColor } from "./pullRequests.js"
 
 const inlinePalette = (): InlinePalette => ({ text: colors.text, inlineCode: colors.inlineCode, link: colors.link, count: colors.count })
 
@@ -548,14 +548,14 @@ export const DetailHeader = ({
 	const showStats = contentWidth - labelsWidth - statsText.length >= (hasLabelContent ? 2 : 0)
 	const statsGap = Math.max(hasLabelContent ? 2 : 0, contentWidth - labelsWidth - statsText.length)
 	const opened = formatRelativeDate(pullRequest.createdAt)
-	const repo = shortRepoName(pullRequest.repository)
 	const author = viewerUsername && pullRequest.author !== viewerUsername ? ` by ${pullRequest.author}` : ""
 	const number = String(pullRequest.number)
 	const review = reviewLabel(pullRequest)
-	const checks = pullRequest.checkSummary?.replace(/^checks\s+/, "")
-	const statusParts = [review, checks].filter((part): part is string => Boolean(part))
+	const statusParts = [review].filter((part): part is string => Boolean(part))
 	const rightSide = statusParts.length > 0 ? `${statusParts.join(" ")} ${opened}` : opened
-	const leftWidth = 1 + number.length + 1 + repo.length + author.length
+	const branchBudget = Math.max(0, contentWidth - (1 + number.length + author.length) - rightSide.length - 3)
+	const branch = pullRequest.headRefName && branchBudget >= 4 ? trimCell(pullRequest.headRefName, branchBudget) : ""
+	const leftWidth = 1 + number.length + (branch.length > 0 ? 1 + branch.length : 0) + author.length
 	const gap = Math.max(2, contentWidth - leftWidth - rightSide.length)
 
 	return (
@@ -563,12 +563,10 @@ export const DetailHeader = ({
 			<PaddedRow>
 				<TextLine>
 					<span fg={colors.count}>#{number}</span>
-					<span fg={colors.muted}> {repo}</span>
+					{branch ? <span fg={colors.muted}> {branch}</span> : null}
 					{author ? <span fg={colors.muted}>{author}</span> : null}
 					<span fg={colors.muted}>{" ".repeat(gap)}</span>
 					{review ? <span fg={statusColor(pullRequest.reviewStatus)}>{review}</span> : null}
-					{review && checks ? <span fg={colors.muted}> </span> : null}
-					{checks ? <span fg={statusColor(pullRequest.checkStatus)}>{checks}</span> : null}
 					{statusParts.length > 0 ? <span fg={colors.muted}> </span> : null}
 					<span fg={colors.muted}>{opened}</span>
 				</TextLine>
@@ -619,6 +617,7 @@ export const DetailBody = ({
 	bodyLineLimit = bodyLines,
 	loadingIndicator,
 	themeId,
+	themeGeneration,
 	onLinkOpen,
 }: {
 	pullRequest: PullRequestItem
@@ -627,12 +626,13 @@ export const DetailBody = ({
 	bodyLineLimit?: number
 	loadingIndicator: string
 	themeId: ThemeId
+	themeGeneration: number
 	onLinkOpen?: (url: string) => void
 }) => {
 	const renderer = useRenderer()
 	const [hoveredUrl, setHoveredUrl] = useState<string | null>(null)
 
-	const previewLines = useMemo(() => bodyPreview(pullRequest.body, contentWidth, bodyLineLimit), [pullRequest, contentWidth, bodyLineLimit, themeId])
+	const previewLines = useMemo(() => bodyPreview(pullRequest.body, contentWidth, bodyLineLimit), [pullRequest, contentWidth, bodyLineLimit, themeId, themeGeneration])
 
 	const urlPositions = useMemo(() => collectUrlPositions(previewLines), [previewLines])
 
@@ -749,6 +749,7 @@ export const DetailsPane = ({
 	placeholderContent,
 	loadingIndicator,
 	themeId,
+	themeGeneration,
 	onLinkOpen,
 }: {
 	pullRequest: PullRequestItem | null
@@ -763,6 +764,7 @@ export const DetailsPane = ({
 	placeholderContent: DetailPlaceholderContent
 	loadingIndicator: string
 	themeId: ThemeId
+	themeGeneration: number
 	onLinkOpen?: (url: string) => void
 }) => {
 	const contentHeight = getDetailsPaneHeight({ pullRequest, contentWidth, bodyLines: bodyLineLimit, paneWidth, showChecks, comments, commentsStatus })
@@ -787,6 +789,7 @@ export const DetailsPane = ({
 						bodyLineLimit={bodyLineLimit}
 						loadingIndicator={loadingIndicator}
 						themeId={themeId}
+						themeGeneration={themeGeneration}
 						{...(onLinkOpen ? { onLinkOpen } : {})}
 					/>
 				</>

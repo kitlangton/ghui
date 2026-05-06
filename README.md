@@ -69,6 +69,23 @@ GHUI_PR_FETCH_LIMIT=100 ghui
 
 You can also copy `.env.example` to `.env` and edit the values locally.
 
+ghui stores UI preferences in `config.json` under `GHUI_CONFIG_DIR` when set,
+otherwise under the platform config directory. On Linux this is normally
+`~/.config/ghui/config.json`.
+
+Example:
+
+```json
+{
+	"theme": "system",
+	"systemThemeAutoReload": true
+}
+```
+
+`systemThemeAutoReload` defaults to `false`. Set it to `true` to let external
+theme reload signals update the active system theme palette while ghui is
+running.
+
 ## Keybindings
 
 - `up` / `down`: move selection
@@ -93,7 +110,7 @@ You can also copy `.env.example` to `.env` and edit the values locally.
 - `s`: toggle draft or ready-for-review state
 - `m`: merge
 - `x`: close with confirmation
-- `t`: choose theme, including `System` to match your terminal colors
+- `t`: choose a fixed theme, including `System` to match your terminal colors; press `m` in the theme picker to follow the OS light/dark appearance with separate theme choices
 - `l`: manage labels
 - `o`: open PR in browser
 - `y`: copy PR metadata

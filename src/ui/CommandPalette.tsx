@@ -131,16 +131,11 @@ export const CommandPalette = ({
 
 					const { command, commandIndex } = row
 					const isSelected = commandIndex === clampedIndex
-					const shortcut = command.shortcut ? trimCell(command.shortcut, 16) : ""
-					const shortcutWidth = shortcut.length === 0 ? 0 : Math.min(18, Math.max(6, shortcut.length + 1))
-					const trailingPadding = shortcut.length === 0 ? 0 : 1
-					// Layout: "▸ " (2) + title + "  " (2) + subtitle + filler + shortcut + " " (1)
+					const shortcut = command.shortcut ? trimCell(command.shortcut, 14) : ""
 					const SELECTOR_WIDTH = 2
-					const titleAvailable = Math.max(8, rowWidth - SELECTOR_WIDTH - shortcutWidth - trailingPadding)
-					const titleText = trimCell(command.title, Math.min(titleAvailable, 36))
-					const subtitleSpace = Math.max(0, titleAvailable - titleText.length - 2)
-					const subtitleText = command.subtitle && subtitleSpace > 4 ? trimCell(command.subtitle, subtitleSpace) : ""
-					const fillerWidth = Math.max(0, titleAvailable - titleText.length - (subtitleText ? 2 + subtitleText.length : 0))
+					const SHORTCUT_WIDTH = 16
+					const titleWidth = Math.max(8, rowWidth - SELECTOR_WIDTH - SHORTCUT_WIDTH)
+					const titleText = fitCell(command.title, titleWidth)
 
 					return (
 						<box
@@ -153,11 +148,8 @@ export const CommandPalette = ({
 							<TextLine width={rowWidth} bg={isSelected ? colors.selectedBg : undefined} fg={isSelected ? colors.selectedText : colors.text}>
 								<span fg={isSelected ? colors.accent : colors.muted}>{isSelected ? "▸" : " "}</span>
 								<span> </span>
+								<span fg={isSelected ? colors.count : colors.muted}>{fitCell(shortcut, SHORTCUT_WIDTH)}</span>
 								{isSelected ? <span attributes={TextAttributes.BOLD}>{titleText}</span> : <span>{titleText}</span>}
-								{subtitleText ? <span fg={colors.muted}>{`  ${subtitleText}`}</span> : null}
-								{fillerWidth > 0 ? <span>{" ".repeat(fillerWidth)}</span> : null}
-								{shortcutWidth > 0 ? <span fg={colors.muted}>{fitCell(shortcut, shortcutWidth, "right")}</span> : null}
-								{trailingPadding > 0 ? <span> </span> : null}
 							</TextLine>
 						</box>
 					)

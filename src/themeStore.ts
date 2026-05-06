@@ -3,11 +3,16 @@ import { homedir } from "node:os"
 import { dirname, join } from "node:path"
 import { Effect, Schema } from "effect"
 import { isThemeId, type ThemeId } from "./ui/colors.js"
+import { normalizeThemeConfig, type ThemeConfig } from "./themeConfig.js"
 import { DiffWhitespaceMode } from "./ui/diff.js"
 
 interface StoredConfig {
 	readonly theme?: unknown
+	readonly themeMode?: unknown
+	readonly darkTheme?: unknown
+	readonly lightTheme?: unknown
 	readonly diffWhitespaceMode?: unknown
+	readonly systemThemeAutoReload?: unknown
 }
 
 const configDirectory = () => {
@@ -43,6 +48,11 @@ export const loadStoredThemeId: Effect.Effect<ThemeId> = Effect.catchCause(
 	() => Effect.succeed("ghui" satisfies ThemeId),
 )
 
+export const loadStoredThemeConfig: Effect.Effect<ThemeConfig> = Effect.catchCause(
+	Effect.tryPromise(async () => normalizeThemeConfig(await readStoredConfig())),
+	() => Effect.succeed(normalizeThemeConfig({})),
+)
+
 export const loadStoredDiffWhitespaceMode: Effect.Effect<DiffWhitespaceMode> = Effect.catchCause(
 	Effect.tryPromise(async () => {
 		const config = await readStoredConfig()
@@ -51,12 +61,36 @@ export const loadStoredDiffWhitespaceMode: Effect.Effect<DiffWhitespaceMode> = E
 	() => Effect.succeed("ignore" satisfies DiffWhitespaceMode),
 )
 
+export const loadStoredSystemThemeAutoReload: Effect.Effect<boolean> = Effect.catchCause(
+	Effect.tryPromise(async () => {
+		const config = await readStoredConfig()
+		return typeof config.systemThemeAutoReload === "boolean" ? config.systemThemeAutoReload : false
+	}),
+	() => Effect.succeed(false),
+)
+
 export const saveStoredThemeId = (theme: ThemeId): Effect.Effect<void> =>
 	Effect.tryPromise(async () => {
 		const config = await readStoredConfig()
-		if (config.theme === theme) return
+		if (config.themeMode !== "system" && config.theme === theme) return
 
-		await writeStoredConfig({ ...config, theme })
+		await writeStoredConfig({ ...config, themeMode: "fixed", theme })
+	})
+
+export const saveStoredThemeConfig = (themeConfig: ThemeConfig): Effect.Effect<void> =>
+	Effect.tryPromise(async () => {
+		const config = await readStoredConfig()
+		const nextConfig =
+			themeConfig.mode === "fixed"
+				? { ...config, themeMode: "fixed", theme: themeConfig.theme }
+				: {
+						...config,
+						themeMode: "system",
+						darkTheme: themeConfig.darkTheme,
+						lightTheme: themeConfig.lightTheme,
+					}
+
+		await writeStoredConfig(nextConfig)
 	})
 
 export const saveStoredDiffWhitespaceMode = (diffWhitespaceMode: DiffWhitespaceMode): Effect.Effect<void> =>

@@ -82,7 +82,7 @@ const setupApp = async (cols = 100, rows = 20) => {
 const detailPaneNumber = (frame: string) => {
 	for (const line of frame.split("\n")) {
 		const trimmed = line.trim()
-		const match = trimmed.match(/#(\d{4,})\s+repo-/)
+		const match = trimmed.match(/#(\d{4,})\s+mock-branch-/)
 		if (match) return Number.parseInt(match[1]!, 10)
 	}
 	return null

@@ -13,6 +13,7 @@ import { allowedMergeMethodList } from "../domain.js"
 import { getMergeKindDefinition, mergeKindRowTitle, visibleMergeKinds } from "../mergeActions.js"
 import { clampCursor, commentEditorLines, cursorLineIndexForLines } from "./commentEditor.js"
 import { colors, filterThemeDefinitions, oppositeThemeTone, themeDefinitions, type ThemeId, type ThemeTone } from "./colors.js"
+import type { ThemeConfig, ThemeMode } from "../themeConfig.js"
 import { commentDisplayRows, CommentSegmentsLine, type CommentDisplayLine } from "./comments.js"
 import { diffFileStats, diffFileStatsText, type DiffFilePatch } from "./diff.js"
 import {
@@ -121,8 +122,12 @@ export interface SubmitReviewModalState {
 export interface ThemeModalState {
 	readonly query: string
 	readonly filterMode: boolean
+	readonly mode: ThemeMode
 	readonly tone: ThemeTone
-	readonly initialThemeId: ThemeId
+	readonly fixedTheme: ThemeId
+	readonly darkTheme: ThemeId
+	readonly lightTheme: ThemeId
+	readonly initialThemeConfig: ThemeConfig
 }
 
 export interface CommandPaletteState {
@@ -401,8 +406,12 @@ export const initialSubmitReviewModalState: SubmitReviewModalState = {
 export const initialThemeModalState: ThemeModalState = {
 	query: "",
 	filterMode: false,
+	mode: "fixed",
 	tone: "dark",
-	initialThemeId: "ghui",
+	fixedTheme: "ghui",
+	darkTheme: "ghui",
+	lightTheme: "catppuccin-latte",
+	initialThemeConfig: { mode: "fixed", theme: "ghui" },
 }
 
 export const initialCommandPaletteState: CommandPaletteState = {
@@ -1271,14 +1280,12 @@ export const CommentThreadModal = ({
 
 export const ThemeModal = ({
 	state,
-	activeThemeId,
 	modalWidth,
 	modalHeight,
 	offsetLeft,
 	offsetTop,
 }: {
 	state: ThemeModalState
-	activeThemeId: ThemeId
 	modalWidth: number
 	modalHeight: number
 	offsetLeft: number
@@ -1286,9 +1293,10 @@ export const ThemeModal = ({
 }) => {
 	const { contentWidth, bodyHeight: maxVisible, rowWidth } = standardModalDims(modalWidth, modalHeight)
 	const filteredThemes = filterThemeDefinitions(state.query, state.tone)
-	const activeIndex = filteredThemes.findIndex((theme) => theme.id === activeThemeId)
+	const selectedThemeId = state.mode === "fixed" ? state.fixedTheme : state.tone === "dark" ? state.darkTheme : state.lightTheme
+	const activeIndex = filteredThemes.findIndex((theme) => theme.id === selectedThemeId)
 	const selectedIndex = Math.max(0, activeIndex)
-	const selectedTheme = filteredThemes[selectedIndex] ?? themeDefinitions.find((theme) => theme.id === activeThemeId) ?? themeDefinitions[0]!
+	const selectedTheme = filteredThemes[selectedIndex] ?? themeDefinitions.find((theme) => theme.id === selectedThemeId) ?? themeDefinitions[0]!
 	const scrollStart = Math.min(Math.max(0, filteredThemes.length - maxVisible), Math.max(0, selectedIndex - maxVisible + 1))
 	const visibleThemes = filteredThemes.slice(scrollStart, scrollStart + maxVisible)
 	const countText = `${filteredThemes.length === 0 ? 0 : selectedIndex + 1}/${filteredThemes.length}`
@@ -1299,6 +1307,13 @@ export const ThemeModal = ({
 	const messageBottomRows = Math.max(0, maxVisible - messageTopRows - 1)
 	const toneLabel = state.tone === "dark" ? "Dark" : "Light"
 	const nextToneLabel = oppositeThemeTone(state.tone)
+	const selectedDarkTheme = themeDefinitions.find((theme) => theme.id === state.darkTheme)
+	const selectedLightTheme = themeDefinitions.find((theme) => theme.id === state.lightTheme)
+	const fixedTheme = themeDefinitions.find((theme) => theme.id === state.fixedTheme)
+	const modeSummary =
+		state.mode === "fixed"
+			? `Fixed: ${fixedTheme?.name ?? state.fixedTheme}`
+			: `Follow System: Dark ${selectedDarkTheme?.name ?? state.darkTheme}, Light ${selectedLightTheme?.name ?? state.lightTheme}`
 
 	return (
 		<StandardModal
@@ -1306,7 +1321,7 @@ export const ThemeModal = ({
 			top={offsetTop}
 			width={modalWidth}
 			height={modalHeight}
-			title={`${toneLabel} Themes`}
+			title={state.mode === "fixed" ? `${toneLabel} Themes` : `${toneLabel} System Theme`}
 			headerRight={{ text: countText }}
 			subtitle={
 				state.filterMode ? (
@@ -1315,14 +1330,15 @@ export const ThemeModal = ({
 						<span fg={state.query.length > 0 ? colors.text : colors.muted}>{fitCell(subtitleText, subtitleWidth)}</span>
 					</TextLine>
 				) : (
-					<PlainLine text={fitCell(subtitleText, subtitleWidth)} fg={colors.muted} />
+					<PlainLine text={fitCell(state.mode === "fixed" ? `${modeSummary} - ${subtitleText}` : modeSummary, subtitleWidth)} fg={colors.muted} />
 				)
 			}
 			footer={
 				<HintRow
 					items={[
+						{ key: "m", label: state.mode === "fixed" ? "follow system" : "fixed" },
 						{ key: "tab", label: `${nextToneLabel} mode` },
-						{ key: "enter", label: "select" },
+						{ key: "enter", label: "save" },
 						{ key: "esc", label: "cancel" },
 					]}
 				/>
@@ -1338,7 +1354,7 @@ export const ThemeModal = ({
 				visibleThemes.map((theme, index) => {
 					const actualIndex = scrollStart + index
 					const isSelected = actualIndex === selectedIndex
-					const isActive = theme.id === activeThemeId
+					const isActive = theme.id === selectedThemeId
 					const marker = isActive ? "✓" : " "
 					const swatchWidth = 6
 					const nameWidth = Math.max(1, rowWidth - swatchWidth - 3)

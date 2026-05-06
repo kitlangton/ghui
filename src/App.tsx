@@ -54,7 +54,9 @@ import { CacheService, type PullRequestCacheKey } from "./services/CacheService.
 import { Clipboard } from "./services/Clipboard.js"
 import { CommandRunner } from "./services/CommandRunner.js"
 import { GitHubService } from "./services/GitHubService.js"
-import { loadStoredDiffWhitespaceMode, loadStoredThemeId, saveStoredDiffWhitespaceMode, saveStoredThemeId } from "./themeStore.js"
+import { detectSystemAppearance } from "./systemAppearance.js"
+import { fixedThemeConfig, resolveThemeId, systemThemeConfigForTheme, themeConfigWithSelection, type ThemeConfig, type ThemeMode } from "./themeConfig.js"
+import { loadStoredDiffWhitespaceMode, loadStoredThemeConfig, saveStoredDiffWhitespaceMode, saveStoredThemeConfig } from "./themeStore.js"
 import { colors, filterThemeDefinitions, mixHex, pairedThemeId, setActiveTheme, themeDefinitions, themeToneForThemeId, type ThemeId, type ThemeTone } from "./ui/colors.js"
 import {
 	backspace as editorBackspace,
@@ -178,9 +180,9 @@ const pullRequestPageSize = Math.min(100, parseOptionalPositiveInt(process.env.G
 const githubServiceLayer =
 	mockPrCount !== null
 		? (await import("./services/MockGitHubService.js")).MockGitHubService.layer({
-				prCount: mockPrCount,
-				repoCount: parseOptionalPositiveInt(process.env.GHUI_MOCK_REPO_COUNT, 4) ?? 4,
-			})
+			prCount: mockPrCount,
+			repoCount: parseOptionalPositiveInt(process.env.GHUI_MOCK_REPO_COUNT, 4) ?? 4,
+		})
 		: GitHubService.layerNoDeps
 const cacheServiceLayer = mockPrCount !== null ? CacheService.disabledLayer : CacheService.layerFromPath(config.cachePath)
 
@@ -190,7 +192,12 @@ const githubRuntime = Atom.runtime(
 		Layer.provideMerge(Observability.layer),
 	),
 )
-const [initialThemeId, initialDiffWhitespaceMode] = await Promise.all([Effect.runPromise(loadStoredThemeId), Effect.runPromise(loadStoredDiffWhitespaceMode)])
+const [initialThemeConfig, initialDiffWhitespaceMode, initialSystemAppearance] = await Promise.all([
+	Effect.runPromise(loadStoredThemeConfig),
+	Effect.runPromise(loadStoredDiffWhitespaceMode),
+	detectSystemAppearance(),
+])
+const initialThemeId = resolveThemeId(initialThemeConfig, initialSystemAppearance)
 setActiveTheme(initialThemeId)
 
 interface DetailPlaceholderInput {
@@ -233,6 +240,10 @@ interface DiffCommentRangeSelection {
 interface DetailHydration {
 	readonly token: symbol
 	notifyError: boolean
+}
+
+interface AppProps {
+	readonly systemThemeGeneration?: number
 }
 
 const PR_FETCH_RETRIES = 6
@@ -367,6 +378,8 @@ const pullRequestCommentsLoadedAtom = Atom.make<Record<string, "loading" | "read
 const pullRequestDiffCacheAtom = Atom.make<Record<string, PullRequestDiffState>>({}).pipe(Atom.keepAlive)
 
 const activeModalAtom = Atom.make<Modal>(initialModal)
+const themeConfigAtom = Atom.make<ThemeConfig>(initialThemeConfig).pipe(Atom.keepAlive)
+const systemAppearanceAtom = Atom.make<ThemeTone>(initialSystemAppearance).pipe(Atom.keepAlive)
 const themeIdAtom = Atom.make<ThemeId>(initialThemeId).pipe(Atom.keepAlive)
 const labelCacheAtom = Atom.make<Record<string, readonly PullRequestLabel[]>>({}).pipe(Atom.keepAlive)
 const repoMergeMethodsCacheAtom = Atom.make<Record<string, RepositoryMergeMethods>>({}).pipe(Atom.keepAlive)
@@ -554,7 +567,7 @@ const pasteText = (event: PasteEvent) => new TextDecoder().decode(event.bytes)
 const pullRequestFilterScore = (pullRequest: PullRequestItem, query: string) => {
 	const normalized = query.trim().toLowerCase()
 	if (normalized.length === 0) return 0
-	const fields = [pullRequest.title.toLowerCase(), pullRequest.repository.toLowerCase(), String(pullRequest.number)]
+	const fields = [pullRequest.title.toLowerCase(), pullRequest.repository.toLowerCase(), pullRequest.headRefName.toLowerCase(), String(pullRequest.number)]
 	const scores = fields.flatMap((field, index) => {
 		const matchIndex = field.indexOf(normalized)
 		return matchIndex >= 0 ? [index * 1000 + matchIndex] : []
@@ -711,7 +724,7 @@ const getDetailPlaceholderContent = ({ status, retryProgress, loadingIndicator, 
 	}
 }
 
-export const App = () => {
+export const App = ({ systemThemeGeneration = 0 }: AppProps) => {
 	const renderer = useRenderer()
 	const { width, height } = useTerminalDimensions()
 	const registry = useContext(RegistryContext)
@@ -759,6 +772,8 @@ export const App = () => {
 	const setPullRequestCommentsLoaded = useAtomSet(pullRequestCommentsLoadedAtom)
 	const setPullRequestDiffCache = useAtomSet(pullRequestDiffCacheAtom)
 	const [activeModal, setActiveModal] = useAtom(activeModalAtom)
+	const [themeConfig, setThemeConfig] = useAtom(themeConfigAtom)
+	const [systemAppearance, setSystemAppearance] = useAtom(systemAppearanceAtom)
 	const [themeId, setThemeId] = useAtom(themeIdAtom)
 	const closeActiveModal = () => setActiveModal(initialModal)
 	const labelModalActive = Modal.$is("Label")(activeModal)
@@ -787,16 +802,16 @@ export const App = () => {
 	const openRepositoryModal: OpenRepositoryModalState = openRepositoryModalActive ? activeModal : initialOpenRepositoryModalState
 	const makeModalSetter =
 		<Tag extends Exclude<ModalTag, "None">>(tag: Tag) =>
-		(next: ModalState<Tag> | ((prev: ModalState<Tag>) => ModalState<Tag>)) =>
-			setActiveModal((current) => {
-				const ctor = Modal[tag] as unknown as (args: ModalState<Tag>) => Modal
-				if (typeof next === "function") {
-					const updater = next as (prev: ModalState<Tag>) => ModalState<Tag>
-					if (current._tag !== tag) return current
-					return ctor(updater(current as unknown as ModalState<Tag>))
-				}
-				return ctor(next)
-			})
+			(next: ModalState<Tag> | ((prev: ModalState<Tag>) => ModalState<Tag>)) =>
+				setActiveModal((current) => {
+					const ctor = Modal[tag] as unknown as (args: ModalState<Tag>) => Modal
+					if (typeof next === "function") {
+						const updater = next as (prev: ModalState<Tag>) => ModalState<Tag>
+						if (current._tag !== tag) return current
+						return ctor(updater(current as unknown as ModalState<Tag>))
+					}
+					return ctor(next)
+				})
 	const setLabelModal = makeModalSetter("Label")
 	const setCloseModal = makeModalSetter("Close")
 	const setPullRequestStateModal = makeModalSetter("PullRequestState")
@@ -810,8 +825,12 @@ export const App = () => {
 	const setCommandPalette = makeModalSetter("CommandPalette")
 	const setOpenRepositoryModal = makeModalSetter("OpenRepository")
 	const themeIdRef = useRef(themeId)
+	const themeConfigRef = useRef(themeConfig)
+	const systemAppearanceRef = useRef(systemAppearance)
 	const themeModalRef = useRef(themeModal)
 	themeIdRef.current = themeId
+	themeConfigRef.current = themeConfig
+	systemAppearanceRef.current = systemAppearance
 	themeModalRef.current = themeModal
 	const setLabelCache = useAtomSet(labelCacheAtom)
 	const setRepoMergeMethodsCache = useAtomSet(repoMergeMethodsCacheAtom)
@@ -888,8 +907,8 @@ export const App = () => {
 	const terminalWasBlurredRef = useRef(false)
 	const pullRequestStatusRef = useRef<LoadStatus>("loading")
 	const actionsRefreshGenerationRef = useRef(0)
-	const refreshPullRequestsRef = useRef<(message?: string, options?: { readonly resetTransientState?: boolean }) => void>(() => {})
-	const maybeRefreshPullRequestsRef = useRef<(minimumAgeMs: number) => void>(() => {})
+	const refreshPullRequestsRef = useRef<(message?: string, options?: { readonly resetTransientState?: boolean }) => void>(() => { })
+	const maybeRefreshPullRequestsRef = useRef<(minimumAgeMs: number) => void>(() => { })
 	const detailScrollRef = useRef<ScrollBoxRenderable | null>(null)
 	const detailPreviewScrollRef = useRef<ScrollBoxRenderable | null>(null)
 	const cachedDetailKeysRef = useRef(new Set<string>())
@@ -910,9 +929,40 @@ export const App = () => {
 		}, 2500)
 	}
 
+	const previewActiveTheme = (id: ThemeId) => {
+		setActiveTheme(id)
+		themeIdRef.current = id
+		setThemeId(id)
+	}
+
+	const applyThemeConfig = (config: ThemeConfig, appearance: ThemeTone = systemAppearanceRef.current) => {
+		themeConfigRef.current = config
+		setThemeConfig(config)
+		previewActiveTheme(resolveThemeId(config, appearance))
+	}
+
 	useEffect(() => {
 		renderer.setBackgroundColor(colors.background)
-	}, [renderer, themeId])
+	}, [renderer, themeId, systemThemeGeneration])
+
+	useEffect(() => {
+		if (themeConfig.mode !== "system") return
+		let cancelled = false
+		const refreshAppearance = () => {
+			void detectSystemAppearance().then((appearance) => {
+				if (cancelled || appearance === systemAppearanceRef.current) return
+				systemAppearanceRef.current = appearance
+				setSystemAppearance(appearance)
+				previewActiveTheme(resolveThemeId(themeConfigRef.current, appearance))
+			})
+		}
+		const interval = globalThis.setInterval(refreshAppearance, 1000)
+		refreshAppearance()
+		return () => {
+			cancelled = true
+			globalThis.clearInterval(interval)
+		}
+	}, [themeConfig.mode])
 
 	useEffect(
 		() => () => {
@@ -1165,7 +1215,7 @@ export const App = () => {
 					}
 				})
 				const viewer = cacheViewerFor(activeView, username)
-				if (viewer) void writeQueueCache({ viewer, load: persistedLoad }).catch(() => {})
+				if (viewer) void writeQueueCache({ viewer, load: persistedLoad }).catch(() => { })
 			})
 			.catch((error) => {
 				flashNotice(errorMessage(error))
@@ -1213,7 +1263,7 @@ export const App = () => {
 					cachedDetailKeysRef.current.add(detailKey)
 					applyPullRequestDetail(cached)
 				})
-				.catch(() => {})
+				.catch(() => { })
 		}
 		const atom = pullRequestDetailsAtom(pullRequestDetailAtomKey(pullRequest))
 		if (forceRefresh) registry.refresh(atom)
@@ -1222,7 +1272,7 @@ export const App = () => {
 				if (generation === refreshGenerationRef.current && detailHydrationRef.current.get(detailKey) === entry) {
 					cachedDetailKeysRef.current.delete(detailKey)
 					applyPullRequestDetail(detail)
-					void writeCachedPullRequest(detail).catch(() => {})
+					void writeCachedPullRequest(detail).catch(() => { })
 				}
 			})
 			.catch((error) => {
@@ -1298,7 +1348,7 @@ export const App = () => {
 	// but a session that only browses cached state (or stays offline) never prunes.
 	// Firing once at mount keeps the cache bounded for those sessions.
 	useEffect(() => {
-		void pruneCache().catch(() => {})
+		void pruneCache().catch(() => { })
 	}, [pruneCache])
 
 	useEffect(() => {
@@ -2829,32 +2879,47 @@ export const App = () => {
 	}
 
 	const openThemeModal = () => {
+		const systemConfig = themeConfig.mode === "system" ? themeConfig : systemThemeConfigForTheme(themeConfig.theme)
 		setThemeModal({
 			query: "",
 			filterMode: false,
-			tone: themeToneForThemeId(themeId),
-			initialThemeId: themeId,
+			mode: themeConfig.mode,
+			tone: themeConfig.mode === "system" ? systemAppearance : themeToneForThemeId(themeId),
+			fixedTheme: themeConfig.mode === "fixed" ? themeConfig.theme : themeId,
+			darkTheme: systemConfig.darkTheme,
+			lightTheme: systemConfig.lightTheme,
+			initialThemeConfig: themeConfig,
 		})
 	}
 
+	const themeConfigFromModal = (state: ThemeModalState): ThemeConfig =>
+		state.mode === "fixed" ? fixedThemeConfig(state.fixedTheme) : { mode: "system", darkTheme: state.darkTheme, lightTheme: state.lightTheme }
+
 	const closeThemeModal = (confirm: boolean) => {
-		const selectedTheme = themeDefinitions.find((theme) => theme.id === themeIdRef.current)
 		if (!confirm) {
-			setActiveTheme(themeModal.initialThemeId)
-			themeIdRef.current = themeModal.initialThemeId
-			setThemeId(themeModal.initialThemeId)
-		} else if (selectedTheme) {
-			void Effect.runPromise(saveStoredThemeId(selectedTheme.id)).catch((error) => flashNotice(errorMessage(error)))
-			flashNotice(`Theme: ${selectedTheme.name}`)
+			applyThemeConfig(themeModal.initialThemeConfig)
+		} else {
+			const nextConfig = themeConfigFromModal(themeModal)
+			applyThemeConfig(nextConfig)
+			void Effect.runPromise(saveStoredThemeConfig(nextConfig)).catch((error) => flashNotice(errorMessage(error)))
+			const selectedTheme = themeDefinitions.find((theme) => theme.id === resolveThemeId(nextConfig, systemAppearanceRef.current))
+			flashNotice(nextConfig.mode === "system" ? "Theme: Follow System" : `Theme: ${selectedTheme?.name ?? themeIdRef.current}`)
 		}
 		closeActiveModal()
 	}
 
 	const previewTheme = (id: ThemeId) => {
-		if (id === themeIdRef.current) return
-		setActiveTheme(id)
-		themeIdRef.current = id
-		setThemeId(id)
+		const current = themeModalRef.current
+		const nextConfig = themeConfigWithSelection(themeConfigFromModal(current), id, current.tone)
+		const next = {
+			...current,
+			fixedTheme: nextConfig.mode === "fixed" ? nextConfig.theme : current.fixedTheme,
+			darkTheme: nextConfig.mode === "system" ? nextConfig.darkTheme : current.darkTheme,
+			lightTheme: nextConfig.mode === "system" ? nextConfig.lightTheme : current.lightTheme,
+		}
+		themeModalRef.current = next
+		setThemeModal(next)
+		previewActiveTheme(id)
 	}
 
 	const toggleDiffWhitespaceMode = () => {
@@ -2864,11 +2929,13 @@ export const App = () => {
 	}
 
 	const moveThemeSelection = (delta: number) => {
-		const filteredThemes = filterThemeDefinitions(themeModalRef.current.query, themeModalRef.current.tone)
+		const current = themeModalRef.current
+		const filteredThemes = filterThemeDefinitions(current.query, current.tone)
 		if (filteredThemes.length === 0) return
+		const selectedThemeId = current.mode === "fixed" ? current.fixedTheme : current.tone === "dark" ? current.darkTheme : current.lightTheme
 		const currentIndex = Math.max(
 			0,
-			filteredThemes.findIndex((theme) => theme.id === themeIdRef.current),
+			filteredThemes.findIndex((theme) => theme.id === selectedThemeId),
 		)
 		const selectedIndex = wrapIndex(currentIndex + delta, filteredThemes.length)
 		if (selectedIndex === currentIndex) return
@@ -2901,8 +2968,19 @@ export const App = () => {
 		themeModalRef.current = next
 		setThemeModal(next)
 
-		const nextThemeId = pairedThemeId(themeIdRef.current, tone) ?? filterThemeDefinitions("", tone)[0]?.id
+		const selectedThemeId =
+			current.mode === "system" ? (tone === "dark" ? current.darkTheme : current.lightTheme) : (pairedThemeId(current.fixedTheme, tone) ?? filterThemeDefinitions("", tone)[0]?.id)
+		const nextThemeId = selectedThemeId ?? filterThemeDefinitions("", tone)[0]?.id
 		if (nextThemeId) previewTheme(nextThemeId)
+	}
+
+	const toggleThemeMode = () => {
+		const current = themeModalRef.current
+		const mode: ThemeMode = current.mode === "fixed" ? "system" : "fixed"
+		const next = { ...current, query: "", filterMode: false, mode }
+		themeModalRef.current = next
+		setThemeModal(next)
+		previewActiveTheme(resolveThemeId(themeConfigFromModal(next), systemAppearanceRef.current))
 	}
 
 	const editThemeQuery = (transform: (query: string) => string) => {
@@ -3325,9 +3403,9 @@ export const App = () => {
 	// user's typed input so they shouldn't be filtered by fuzzy score against themselves.
 	const staticPaletteCommands = commandPaletteActive
 		? filterCommands(
-				appCommands.filter((command) => command.id !== "command.open" && commandEnabled(command)),
-				commandPalette.query,
-			)
+			appCommands.filter((command) => command.id !== "command.open" && commandEnabled(command)),
+			commandPalette.query,
+		)
 		: []
 	const activePaletteScope: CommandScope | null = actionsViewActive ? "Actions" : commentsViewActive ? "Comments" : diffFullView ? "Diff" : detailFullView ? "Pull request" : null
 	const commandPaletteCommands = commandPaletteActive
@@ -3539,6 +3617,7 @@ export const App = () => {
 			closeWithoutSaving: () => closeThemeModal(false),
 			clearFilter: () => updateThemeQuery("", { filterMode: false }),
 			enterFilterMode: () => updateThemeQuery("", { filterMode: true }),
+			toggleMode: toggleThemeMode,
 			toggleTone: toggleThemeTone,
 			confirmSelection: () => closeThemeModal(true),
 			moveSelection: moveThemeSelection,
@@ -3618,6 +3697,7 @@ export const App = () => {
 			openTheme: () => runCommandById("theme.open"),
 			openDiff: () => runCommandById("diff.open"),
 			openActions: () => runCommandById("actions.open"),
+			openComments: () => runCommandById("comments.open"),
 			closePullRequest: () => runCommandById("pull.close"),
 			openLabels: () => runCommandById("pull.labels"),
 			openMerge: () => runCommandById("pull.merge"),
@@ -3870,12 +3950,12 @@ export const App = () => {
 	const detailJunctions = isSelectedPullRequestDetailLoading
 		? []
 		: getDetailJunctionRows({
-				pullRequest: selectedPullRequest,
-				paneWidth: rightPaneWidth,
-				showChecks: true,
-				comments: selectedComments,
-				commentsStatus: selectedCommentsStatus,
-			})
+			pullRequest: selectedPullRequest,
+			paneWidth: rightPaneWidth,
+			showChecks: true,
+			comments: selectedComments,
+			commentsStatus: selectedCommentsStatus,
+		})
 
 	const prListProps = {
 		groups: visibleGroups,
@@ -4026,6 +4106,7 @@ export const App = () => {
 					paneWidth={contentWidth}
 					height={wideBodyHeight}
 					loadingIndicator={loadingIndicator}
+					themeGeneration={systemThemeGeneration}
 				/>
 			) : diffFullView ? (
 				<PullRequestDiffPane
@@ -4046,6 +4127,7 @@ export const App = () => {
 					selectedCommentThread={selectedDiffCommentThread}
 					onSelectCommentLine={selectDiffCommentLine}
 					themeId={themeId}
+					themeGeneration={systemThemeGeneration}
 				/>
 			) : detailFullView && isSelectedPullRequestDetailLoading && selectedPullRequest ? (
 				<box flexGrow={1} flexDirection="column">
@@ -4081,6 +4163,7 @@ export const App = () => {
 									bodyLineLimit={DETAIL_BODY_SCROLL_LIMIT}
 									loadingIndicator={loadingIndicator}
 									themeId={themeId}
+									themeGeneration={systemThemeGeneration}
 									onLinkOpen={openLinkInBrowser}
 								/>
 							</scrollbox>
@@ -4094,6 +4177,7 @@ export const App = () => {
 							placeholderContent={detailPlaceholderContent}
 							loadingIndicator={loadingIndicator}
 							themeId={themeId}
+							themeGeneration={systemThemeGeneration}
 							onLinkOpen={openLinkInBrowser}
 						/>
 					)}
@@ -4145,6 +4229,7 @@ export const App = () => {
 										bodyLineLimit={DETAIL_BODY_SCROLL_LIMIT}
 										loadingIndicator={loadingIndicator}
 										themeId={themeId}
+										themeGeneration={systemThemeGeneration}
 										onLinkOpen={openLinkInBrowser}
 									/>
 								</scrollbox>
@@ -4174,6 +4259,7 @@ export const App = () => {
 									bodyLineLimit={DETAIL_BODY_SCROLL_LIMIT}
 									loadingIndicator={loadingIndicator}
 									themeId={themeId}
+									themeGeneration={systemThemeGeneration}
 									onLinkOpen={openLinkInBrowser}
 								/>
 							</scrollbox>
@@ -4187,6 +4273,7 @@ export const App = () => {
 							placeholderContent={detailPlaceholderContent}
 							loadingIndicator={loadingIndicator}
 							themeId={themeId}
+							themeGeneration={systemThemeGeneration}
 							onLinkOpen={openLinkInBrowser}
 						/>
 					)}
@@ -4203,6 +4290,7 @@ export const App = () => {
 						placeholderContent={detailPlaceholderContent}
 						loadingIndicator={loadingIndicator}
 						themeId={themeId}
+						themeGeneration={systemThemeGeneration}
 						onLinkOpen={openLinkInBrowser}
 					/>
 					<Divider width={contentWidth} />
@@ -4353,7 +4441,7 @@ export const App = () => {
 				/>
 			) : null}
 			{themeModalActive ? (
-				<ThemeModal state={themeModal} activeThemeId={themeId} modalWidth={themeModalWidth} modalHeight={themeModalHeight} offsetLeft={themeModalLeft} offsetTop={themeModalTop} />
+				<ThemeModal state={themeModal} modalWidth={themeModalWidth} modalHeight={themeModalHeight} offsetLeft={themeModalLeft} offsetTop={themeModalTop} />
 			) : null}
 			{openRepositoryModalActive ? (
 				<OpenRepositoryModal

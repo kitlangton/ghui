@@ -23,6 +23,7 @@ export const failingCheckNames = (pullRequest: PullRequestItem) =>
 
 export const pullRequestMetadataText = (pullRequest: PullRequestItem) => {
 	const lines = [pullRequest.title, `${pullRequest.repository} #${pullRequest.number}`, pullRequest.url]
+	if (pullRequest.headRefName) lines.push(`branch: ${pullRequest.headRefName}`)
 	const review = reviewLabel(pullRequest)
 	if (review) lines.push(`review: ${review}`)
 	if (pullRequest.checkSummary) lines.push(pullRequest.checkSummary)

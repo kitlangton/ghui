@@ -99,6 +99,7 @@ export const PullRequestDiffPane = ({
 	selectedCommentThread,
 	onSelectCommentLine,
 	themeId,
+	themeGeneration,
 }: {
 	pullRequest: PullRequestItem | null
 	diffState: PullRequestDiffState | undefined
@@ -117,9 +118,10 @@ export const PullRequestDiffPane = ({
 	selectedCommentThread: readonly PullRequestReviewComment[]
 	onSelectCommentLine: (renderLine: number, side: DiffCommentSide | null) => void
 	themeId: ThemeId
+	themeGeneration: number
 }) => {
 	const readyFiles = diffState?._tag === "Ready" ? diffState.files : []
-	const syntaxStyle = useMemo(() => createDiffSyntaxStyle(), [themeId])
+	const syntaxStyle = useMemo(() => createDiffSyntaxStyle(), [themeId, themeGeneration])
 
 	if (!pullRequest) {
 		return <LoadingPane content={{ title: "No pull request selected", hint: "Press esc to go back" }} width={paneWidth} height={height} />

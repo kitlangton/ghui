@@ -25,6 +25,7 @@ export type ThemeId =
 	| "github-dark-dimmed"
 	| "palenight"
 	| "opencode"
+	| "cursor"
 
 export type ThemeTone = "dark" | "light"
 
@@ -1249,6 +1250,47 @@ const palenightColors: ColorPalette = {
 	},
 }
 
+// Cursor theme - Deep charcoal base with Anysphere's signature bright blue accents
+const cursorColors: ColorPalette = {
+	background: "#181818",
+	modalBackground: "#232323",
+	text: "#cccccc",
+	muted: "#858585",
+	separator: "#3c3c3c",
+	accent: "#228df2",
+	link: "#4fc1ff",
+	inlineCode: "#4ec9b0",
+	error: "#f14c4c",
+	selectedBg: "#26354c",
+	selectedText: "#e8e8e8",
+	count: "#4fc1ff",
+	status: {
+		draft: "#cca700",
+		approved: "#4ec9b0",
+		changes: "#f14c4c",
+		review: "#228df2",
+		none: "#858585",
+		passing: "#4ec9b0",
+		pending: "#cca700",
+		failing: "#f14c4c",
+	},
+	repos: {
+		opencode: "#228df2",
+		"effect-smol": "#4ec9b0",
+		"opencode-console": "#c586c0",
+		opencontrol: "#ce9178",
+		default: "#4fc1ff",
+	},
+	diff: {
+		addedBg: "#1b3a2b",
+		removedBg: "#3a1e22",
+		contextBg: "transparent",
+		lineNumberBg: "#1a1a1a",
+		addedLineNumberBg: "#193627",
+		removedLineNumberBg: "#351c20",
+	},
+}
+
 export const themeDefinitions: readonly ThemeDefinition[] = [
 	{ id: "system", name: "System", description: "Use the terminal foreground, background, and ANSI palette", tone: "dark", colors: systemColors },
 	{ id: "ghui", name: "GHUI", description: "Warm parchment accents on a deep slate background", tone: "dark", colors: ghuiColors },
@@ -1276,6 +1318,7 @@ export const themeDefinitions: readonly ThemeDefinition[] = [
 	{ id: "github-dark-dimmed", name: "GitHub Dark Dimmed", description: "GitHub-inspired muted dark blue-gray with soft accents", tone: "dark", colors: githubDarkDimmedColors },
 	{ id: "palenight", name: "Palenight", description: "Material-inspired purple-blue with soft lavender tones", tone: "dark", colors: palenightColors },
 	{ id: "opencode", name: "OpenCode", description: "Charcoal panels with peach, violet, and blue highlights", tone: "dark", colors: opencodeColors },
+	{ id: "cursor", name: "Cursor", description: "Deep charcoal base with Anysphere's signature bright blue accents", tone: "dark", colors: cursorColors },
 ] as const
 
 const pairedThemeIds: Partial<Record<ThemeId, ThemeId>> = {

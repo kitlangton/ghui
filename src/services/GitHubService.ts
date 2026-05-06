@@ -84,6 +84,7 @@ const RawPullRequestSummaryFields = {
 	url: Schema.String,
 	author: RawAuthorSchema,
 	headRefOid: Schema.String,
+	headRefName: Schema.String,
 	repository: RawRepositorySchema,
 } as const
 
@@ -313,6 +314,7 @@ const SUMMARY_FIELDS_FRAGMENT = `
         url
         author { login }
         headRefOid
+        headRefName
         repository { nameWithOwner }${STATUS_CHECK_FRAGMENT}`
 
 const DETAIL_FIELDS_FRAGMENT = `
@@ -332,6 +334,7 @@ const DETAIL_FIELDS_FRAGMENT = `
         url
         author { login }
         headRefOid
+        headRefName
         repository { nameWithOwner }
         labels(first: 20) { nodes { name color } }${STATUS_CHECK_FRAGMENT}`
 
@@ -502,6 +505,7 @@ const parsePullRequestSummary = (item: RawPullRequestSummaryNode): PullRequestIt
 		repository: item.repository.nameWithOwner,
 		author: item.author.login,
 		headRefOid: item.headRefOid,
+		headRefName: item.headRefName,
 		number: item.number,
 		title: item.title,
 		body: "",

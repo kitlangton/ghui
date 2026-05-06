@@ -175,6 +175,7 @@ export interface PullRequestItem {
 	readonly repository: string
 	readonly author: string
 	readonly headRefOid: string
+	readonly headRefName: string
 	readonly number: number
 	readonly title: string
 	readonly body: string

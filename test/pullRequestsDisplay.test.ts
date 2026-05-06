@@ -7,6 +7,7 @@ const open: PullRequestItem = {
 	repository: "owner/repo",
 	author: "kit",
 	headRefOid: "deadbeef",
+	headRefName: "feature/thing",
 	number: 42,
 	title: "feat: thing",
 	body: "",
@@ -117,6 +118,7 @@ describe("pullRequestMetadataText", () => {
 		})
 
 		expect(metadata).toContain("checks 2/4")
+		expect(metadata).toContain("branch: feature/thing")
 		expect(metadata).toContain("failing checks: test, build")
 	})
 

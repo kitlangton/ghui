@@ -2,7 +2,9 @@
 
 import { addDefaultParsers, createCliRenderer } from "@opentui/core"
 import { createRoot, useRenderer, useTerminalDimensions } from "@opentui/react"
+import { Effect } from "effect"
 import { useEffect, useState } from "react"
+import { loadStoredSystemThemeAutoReload } from "./themeStore.js"
 import { colors, setSystemThemeColors } from "./ui/colors.js"
 import { LoadingLogoPane } from "./ui/LoadingLogo.js"
 import { SPINNER_INTERVAL_MS } from "./ui/spinner.js"
@@ -28,6 +30,8 @@ type AppBundle = {
 	readonly RegistryProvider: (typeof import("@effect/atom-react"))["RegistryProvider"]
 	readonly App: (typeof import("./App.js"))["App"]
 }
+
+let notifySystemThemeReload = () => {}
 
 const StartupLogo = () => {
 	const startupRenderer = useRenderer()
@@ -60,22 +64,36 @@ const renderer = await createCliRenderer({
 	},
 })
 
+const reloadSystemThemeColors = async () => {
+	renderer.clearPaletteCache()
+	const terminalColors = await renderer.getPalette({ timeout: 150, size: 16 })
+	setSystemThemeColors(terminalColors)
+	renderer.setBackgroundColor(colors.background)
+	notifySystemThemeReload()
+}
+
+const reloadSystemThemeColorsFromSignal = async () => {
+	const systemThemeAutoReload = await Effect.runPromise(loadStoredSystemThemeAutoReload)
+	if (!systemThemeAutoReload) return
+	await reloadSystemThemeColors()
+}
+
+process.on("SIGUSR2", () => {
+	void reloadSystemThemeColorsFromSignal().catch(() => {})
+})
+
 const Bootstrap = () => {
 	const [appBundle, setAppBundle] = useState<AppBundle | null>(null)
+	const [systemThemeGeneration, setSystemThemeGeneration] = useState(0)
 
 	useEffect(() => {
 		let cancelled = false
+		notifySystemThemeReload = () => setSystemThemeGeneration((current) => current + 1)
 		const timer = globalThis.setTimeout(() => {
 			addGhUiParsers()
 
 			const appBundlePromise = Promise.all([import("@effect/atom-react"), import("./App.js")])
-			const palettePromise = renderer
-				.getPalette({ timeout: 150, size: 16 })
-				.then((terminalColors) => {
-					if (cancelled) return
-					setSystemThemeColors(terminalColors)
-				})
-				.catch(() => {})
+			const palettePromise = reloadSystemThemeColors().catch(() => {})
 
 			void Promise.all([appBundlePromise, palettePromise]).then(([[{ RegistryProvider }, { App }]]) => {
 				if (cancelled) return
@@ -85,6 +103,7 @@ const Bootstrap = () => {
 
 		return () => {
 			cancelled = true
+			notifySystemThemeReload = () => {}
 			globalThis.clearTimeout(timer)
 		}
 	}, [])
@@ -93,7 +112,7 @@ const Bootstrap = () => {
 		const { RegistryProvider, App } = appBundle
 		return (
 			<RegistryProvider>
-				<App />
+				<App systemThemeGeneration={systemThemeGeneration} />
 			</RegistryProvider>
 		)
 	}

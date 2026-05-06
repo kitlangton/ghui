@@ -133,8 +133,8 @@ export const buildAppCommands = ({
 			title: "Open command palette",
 			scope: "Global",
 			subtitle: "Search every available route through ghui",
-			shortcut: "ctrl-p/cmd-k",
-			keywords: ["palette", "commands", "deck"],
+			shortcut: "ctrl-p/cmd-k/?",
+			keywords: ["palette", "commands", "deck", "help", "keys", "keyboard", "shortcuts"],
 			run: actions.openCommandPalette,
 		}),
 		defineCommand({

@@ -6,6 +6,7 @@ const pullRequest = (overrides: Partial<PullRequestItem> = {}): PullRequestItem 
 	repository: "owner/repo",
 	author: "author",
 	headRefOid: "abc123",
+	headRefName: "feature/checks",
 	number: 1,
 	title: "Update checks",
 	body: "",

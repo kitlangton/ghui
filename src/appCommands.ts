@@ -19,6 +19,10 @@ interface AppCommandActions {
 	readonly closeDiffView: () => void
 	readonly openCommentsView: () => void
 	readonly closeCommentsView: () => void
+	readonly openActionsView: () => void
+	readonly closeActionsView: () => void
+	readonly refreshActionsView: () => void
+	readonly openSelectedActionInBrowser: () => void
 	readonly openNewIssueCommentModal: () => void
 	readonly openReplyToSelectedComment: () => void
 	readonly openEditSelectedComment: () => void
@@ -57,6 +61,7 @@ interface BuildAppCommandsInput {
 	readonly detailFullView: boolean
 	readonly diffFullView: boolean
 	readonly commentsViewActive: boolean
+	readonly actionsViewActive: boolean
 	readonly hasSelectedComment: boolean
 	readonly canEditSelectedComment: boolean
 	readonly diffReady: boolean
@@ -86,6 +91,7 @@ export const buildAppCommands = ({
 	detailFullView,
 	diffFullView,
 	commentsViewActive,
+	actionsViewActive,
 	hasSelectedComment,
 	canEditSelectedComment,
 	diffReady,
@@ -226,6 +232,41 @@ export const buildAppCommands = ({
 			shortcut: "c",
 			keywords: ["conversation", "discussion", "review"],
 			run: actions.openCommentsView,
+		}),
+		forSelected({
+			id: "actions.open",
+			title: "Open actions",
+			scope: "Actions",
+			shortcut: "a",
+			keywords: ["checks", "workflows", "jobs", "logs"],
+			run: actions.openActionsView,
+		}),
+		defineCommand({
+			id: "actions.close",
+			title: "Close actions view",
+			scope: "Actions",
+			subtitle: "Return to pull request detail",
+			shortcut: "esc",
+			disabledReason: actionsViewActive ? null : "Actions view is not open.",
+			run: actions.closeActionsView,
+		}),
+		defineCommand({
+			id: "actions.refresh",
+			title: "Refresh actions",
+			scope: "Actions",
+			subtitle: selectedPullRequestLabel,
+			shortcut: "r",
+			disabledReason: actionsViewActive && selectedPullRequest ? null : "Open actions first.",
+			run: actions.refreshActionsView,
+		}),
+		defineCommand({
+			id: "actions.open-browser",
+			title: "Open selected action in browser",
+			scope: "Actions",
+			subtitle: selectedPullRequestLabel,
+			shortcut: "o",
+			disabledReason: actionsViewActive && selectedPullRequest ? null : "Open actions first.",
+			run: actions.openSelectedActionInBrowser,
 		}),
 		forSelected({
 			id: "comments.new",

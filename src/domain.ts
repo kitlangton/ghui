@@ -79,6 +79,46 @@ export interface CheckItem {
 	readonly name: string
 	readonly status: CheckRunStatus
 	readonly conclusion: CheckConclusion | null
+	readonly databaseId?: number
+	readonly detailsUrl?: string | null
+	readonly workflowRunId?: number
+	readonly workflowName?: string | null
+}
+
+export interface WorkflowStep {
+	readonly number: number
+	readonly name: string
+	readonly status: CheckRunStatus
+	readonly conclusion: CheckConclusion | null
+}
+
+export interface WorkflowJob {
+	readonly id: number
+	readonly name: string
+	readonly status: CheckRunStatus
+	readonly conclusion: CheckConclusion | null
+	readonly startedAt: Date | null
+	readonly completedAt: Date | null
+	readonly steps: readonly WorkflowStep[]
+}
+
+export interface WorkflowRun {
+	readonly id: number
+	readonly name: string
+	readonly status: CheckRunStatus
+	readonly conclusion: CheckConclusion | null
+	readonly url: string
+	readonly event: string
+	readonly branch: string
+	readonly createdAt: Date | null
+	readonly updatedAt: Date | null
+	readonly jobs: readonly WorkflowJob[]
+}
+
+export interface WorkflowJobDependency {
+	readonly id: string
+	readonly name: string
+	readonly needs: readonly string[]
 }
 
 export interface PullRequestLabel {

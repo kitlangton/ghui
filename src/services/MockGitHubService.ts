@@ -11,6 +11,9 @@ import type {
 	PullRequestQueueMode,
 	PullRequestReviewComment,
 	ReviewStatus,
+	WorkflowJob,
+	WorkflowJobDependency,
+	WorkflowRun,
 } from "../domain.js"
 import { mergeInfoFromPullRequest } from "../mergeActions.js"
 import { GitHubService } from "./GitHubService.js"
@@ -187,6 +190,50 @@ export const MockGitHubService = {
 						]
 					: [],
 			)
+		const workflowRunsFor = (_repository: string, _headSha: string): readonly WorkflowRun[] => [
+			{
+				id: 101,
+				name: "CI",
+				status: "in_progress",
+				conclusion: null,
+				url: "https://github.com/mock-org/repo/actions/runs/101",
+				event: "pull_request",
+				branch: "mock-branch",
+				createdAt: new Date(Date.now() - 120_000),
+				updatedAt: new Date(),
+				jobs: [],
+			},
+		]
+		const workflowJobsFor = (_repository: string, _runId: number): readonly WorkflowJob[] => [
+			{
+				id: 201,
+				name: "lint",
+				status: "completed",
+				conclusion: "success",
+				startedAt: new Date(Date.now() - 110_000),
+				completedAt: new Date(Date.now() - 90_000),
+				steps: [
+					{ number: 1, name: "setup", status: "completed", conclusion: "success" },
+					{ number: 2, name: "lint", status: "completed", conclusion: "success" },
+				],
+			},
+			{
+				id: 202,
+				name: "test",
+				status: "in_progress",
+				conclusion: null,
+				startedAt: new Date(Date.now() - 80_000),
+				completedAt: null,
+				steps: [
+					{ number: 1, name: "setup", status: "completed", conclusion: "success" },
+					{ number: 2, name: "test", status: "in_progress", conclusion: null },
+				],
+			},
+		]
+		const workflowDependenciesFor = (): readonly WorkflowJobDependency[] => [
+			{ id: "lint", name: "lint", needs: [] },
+			{ id: "test", name: "test", needs: ["lint"] },
+		]
 
 		return Layer.succeed(
 			GitHubService,
@@ -277,6 +324,21 @@ export const MockGitHubService = {
 				listRepoLabels: () => Effect.succeed([]),
 				addPullRequestLabel: () => Effect.void,
 				removePullRequestLabel: () => Effect.void,
+				listWorkflowRunsForPullRequest: (repository, headSha) => Effect.succeed(workflowRunsFor(repository, headSha)),
+				getWorkflowRunJobs: (repository, runId) => Effect.succeed(workflowJobsFor(repository, runId)),
+				getWorkflowJobLog: (_repository, jobId) =>
+					Effect.succeed(
+						[
+							`2026-01-01T00:00:00.0000000Z ##[group]setup`,
+							`2026-01-01T00:00:00.1000000Z Preparing runner for job ${jobId}`,
+							`2026-01-01T00:00:00.2000000Z ##[endgroup]`,
+							`2026-01-01T00:00:01.0000000Z ##[group]lint`,
+							`2026-01-01T00:00:01.1000000Z bun run lint`,
+							`2026-01-01T00:00:01.2000000Z All checks passed`,
+							`2026-01-01T00:00:01.3000000Z ##[endgroup]`,
+						].join("\n"),
+					),
+				getWorkflowRunDependencies: () => Effect.succeed(workflowDependenciesFor()),
 			}),
 		)
 	},

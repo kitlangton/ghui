@@ -1,5 +1,6 @@
 import { context } from "@ghui/keymap"
 import { changedFilesModalKeymap, type ChangedFilesModalCtx } from "./changedFilesModal.ts"
+import { actionsViewKeymap, type ActionsViewCtx } from "./actionsView.ts"
 import { closeModalKeymap, type CloseModalCtx } from "./closeModal.ts"
 import { commandPaletteKeymap, type CommandPaletteCtx } from "./commandPalette.ts"
 import { commentModalKeymap, type CommentModalCtx } from "./commentModal.ts"
@@ -35,6 +36,7 @@ export interface AppCtx {
 	readonly diffFullView: boolean
 	readonly detailFullView: boolean
 	readonly commentsViewActive: boolean
+	readonly actionsViewActive: boolean
 
 	// True whenever a modal/mode swallows raw text input (so q-quit, etc. are
 	// disabled inside text-editing contexts).
@@ -57,6 +59,7 @@ export interface AppCtx {
 	readonly diff: DiffViewCtx
 	readonly detail: DetailViewCtx
 	readonly commentsView: CommentsViewCtx
+	readonly actionsView: ActionsViewCtx
 	readonly listNav: ListNavCtx
 
 	// Always-on / app-level
@@ -80,7 +83,7 @@ const modalActive = (a: AppCtx): boolean =>
 	a.deleteCommentModalActive ||
 	a.commandPaletteActive
 
-const inListMode = (a: AppCtx): boolean => !modalActive(a) && !a.filterMode && !a.diffFullView && !a.detailFullView && !a.commentsViewActive
+const inListMode = (a: AppCtx): boolean => !modalActive(a) && !a.filterMode && !a.diffFullView && !a.detailFullView && !a.commentsViewActive && !a.actionsViewActive
 
 export const appKeymap = App(
 	// Always-on: command palette opener
@@ -121,6 +124,7 @@ export const appKeymap = App(
 	diffViewKeymap.scope((a) => a.diffFullView && !modalActive(a) && a.diff),
 	detailViewKeymap.scope((a) => a.detailFullView && !modalActive(a) && a.detail),
 	commentsViewKeymap.scope((a) => a.commentsViewActive && !modalActive(a) && a.commentsView),
+	actionsViewKeymap.scope((a) => a.actionsViewActive && !modalActive(a) && a.actionsView),
 
 	// PR list nav
 	listNavKeymap.scope((a) => inListMode(a) && a.listNav),

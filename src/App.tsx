@@ -26,6 +26,9 @@ import {
 	type PullRequestReviewComment,
 	type RepositoryMergeMethods,
 	type SubmitPullRequestReviewInput,
+	type WorkflowJob,
+	type WorkflowJobDependency,
+	type WorkflowRun,
 } from "./domain.js"
 import { allowedMergeMethodList, pullRequestMergeMethods } from "./domain.js"
 import { formatShortDate, formatTimestamp } from "./date.js"
@@ -112,6 +115,8 @@ import {
 import { FooterHints, initialRetryProgress, RetryProgress } from "./ui/FooterHints.js"
 import { LoadingLogoPane } from "./ui/LoadingLogo.js"
 import { Divider, Filler, fitCell, PlainLine, SeparatorColumn } from "./ui/primitives.js"
+import { ActionsPane, buildActionsLogRows, parseActionsLogSteps } from "./ui/ActionsPane.js"
+import { renderWorkflowGraph, workflowGraphMaxScrollOffset } from "./ui/workflowGraph.js"
 import { CommandPalette } from "./ui/CommandPalette.js"
 import {
 	ChangedFilesModal,
@@ -176,9 +181,9 @@ const pullRequestPageSize = Math.min(100, parseOptionalPositiveInt(process.env.G
 const githubServiceLayer =
 	mockPrCount !== null
 		? (await import("./services/MockGitHubService.js")).MockGitHubService.layer({
-				prCount: mockPrCount,
-				repoCount: parseOptionalPositiveInt(process.env.GHUI_MOCK_REPO_COUNT, 4) ?? 4,
-			})
+			prCount: mockPrCount,
+			repoCount: parseOptionalPositiveInt(process.env.GHUI_MOCK_REPO_COUNT, 4) ?? 4,
+		})
 		: GitHubService.layerNoDeps
 const cacheServiceLayer = mockPrCount !== null ? CacheService.disabledLayer : CacheService.layerFromPath(config.cachePath)
 
@@ -263,6 +268,7 @@ const DETAIL_PREFETCH_BEHIND = 1
 const DETAIL_PREFETCH_AHEAD = 3
 const DETAIL_PREFETCH_CONCURRENCY = 3
 const DETAIL_PREFETCH_DELAY_MS = 120
+const ACTIONS_LIVE_REFRESH_MS = 5_000
 const appendPullRequestPage = (existing: readonly PullRequestItem[], incoming: readonly PullRequestItem[]) => {
 	const seen = new Set(existing.map((pullRequest) => pullRequest.url))
 	const mergedIncoming = mergeCachedDetails(incoming, existing)
@@ -351,7 +357,22 @@ const detailFullViewAtom = Atom.make(false)
 const detailScrollOffsetAtom = Atom.make(0)
 const diffFullViewAtom = Atom.make(false)
 const commentsViewActiveAtom = Atom.make(false)
+const actionsViewActiveAtom = Atom.make(false)
 const commentsViewSelectionAtom = Atom.make(0)
+const actionsRunSelectionAtom = Atom.make(0)
+const actionsJobSelectionAtom = Atom.make(0)
+const actionsStepSelectionAtom = Atom.make(0)
+const actionsExpandedStepAtom = Atom.make<number | null>(null)
+const actionsGraphScrollOffsetAtom = Atom.make(0)
+const actionsGraphModalVerticalScrollAtom = Atom.make(0)
+const actionsLogScrollOffsetAtom = Atom.make(0)
+const actionsLogWrapModeAtom = Atom.make(false)
+const actionsLogHorizontalScrollAtom = Atom.make(0)
+const actionsLogFilterQueryAtom = Atom.make("")
+const actionsLogFilterDraftAtom = Atom.make("")
+const actionsLogFilterModeAtom = Atom.make(false)
+const actionsLogMatchIndexAtom = Atom.make(-1)
+const actionsGraphModalActiveAtom = Atom.make(false)
 const diffFileIndexAtom = Atom.make(0)
 const diffScrollTopAtom = Atom.make(0)
 const diffRenderViewAtom = Atom.make<DiffView>("split")
@@ -496,6 +517,18 @@ const listPullRequestReviewCommentsAtom = githubRuntime.fn<{ readonly repository
 )
 const listPullRequestCommentsAtom = githubRuntime.fn<{ readonly repository: string; readonly number: number }>()((input) =>
 	GitHubService.use((github) => github.listPullRequestComments(input.repository, input.number)),
+)
+const listWorkflowRunsForPullRequestAtom = githubRuntime.fn<{ readonly repository: string; readonly headSha: string }>()((input) =>
+	GitHubService.use((github) => github.listWorkflowRunsForPullRequest(input.repository, input.headSha)),
+)
+const getWorkflowRunJobsAtom = githubRuntime.fn<{ readonly repository: string; readonly runId: number }>()((input) =>
+	GitHubService.use((github) => github.getWorkflowRunJobs(input.repository, input.runId)),
+)
+const getWorkflowJobLogAtom = githubRuntime.fn<{ readonly repository: string; readonly jobId: number }>()((input) =>
+	GitHubService.use((github) => github.getWorkflowJobLog(input.repository, input.jobId)),
+)
+const getWorkflowRunDependenciesAtom = githubRuntime.fn<{ readonly repository: string; readonly runId: number; readonly headSha: string }>()((input) =>
+	GitHubService.use((github) => github.getWorkflowRunDependencies(input.repository, input.runId, input.headSha)),
 )
 const getPullRequestMergeInfoAtom = githubRuntime.fn<{ readonly repository: string; readonly number: number }>()((input) =>
 	GitHubService.use((github) => github.getPullRequestMergeInfo(input.repository, input.number)),
@@ -719,7 +752,22 @@ export const App = ({ systemThemeGeneration = 0 }: AppProps) => {
 	const setDetailScrollOffset = useAtomSet(detailScrollOffsetAtom)
 	const [diffFullView, setDiffFullView] = useAtom(diffFullViewAtom)
 	const [commentsViewActive, setCommentsViewActive] = useAtom(commentsViewActiveAtom)
+	const [actionsViewActive, setActionsViewActive] = useAtom(actionsViewActiveAtom)
 	const [commentsViewSelection, setCommentsViewSelection] = useAtom(commentsViewSelectionAtom)
+	const [actionsRunSelection, setActionsRunSelection] = useAtom(actionsRunSelectionAtom)
+	const [actionsJobSelection, setActionsJobSelection] = useAtom(actionsJobSelectionAtom)
+	const [actionsStepSelection, setActionsStepSelection] = useAtom(actionsStepSelectionAtom)
+	const [actionsExpandedStep, setActionsExpandedStep] = useAtom(actionsExpandedStepAtom)
+	const [actionsGraphScrollOffset, setActionsGraphScrollOffset] = useAtom(actionsGraphScrollOffsetAtom)
+	const [actionsGraphModalVerticalScroll, setActionsGraphModalVerticalScroll] = useAtom(actionsGraphModalVerticalScrollAtom)
+	const [actionsLogScrollOffset, setActionsLogScrollOffset] = useAtom(actionsLogScrollOffsetAtom)
+	const [actionsLogWrapMode, setActionsLogWrapMode] = useAtom(actionsLogWrapModeAtom)
+	const [actionsLogHorizontalScroll, setActionsLogHorizontalScroll] = useAtom(actionsLogHorizontalScrollAtom)
+	const [actionsLogFilterQuery, setActionsLogFilterQuery] = useAtom(actionsLogFilterQueryAtom)
+	const [actionsLogFilterDraft, setActionsLogFilterDraft] = useAtom(actionsLogFilterDraftAtom)
+	const [actionsLogFilterMode, setActionsLogFilterMode] = useAtom(actionsLogFilterModeAtom)
+	const [actionsLogMatchIndex, setActionsLogMatchIndex] = useAtom(actionsLogMatchIndexAtom)
+	const [actionsGraphModalActive, setActionsGraphModalActive] = useAtom(actionsGraphModalActiveAtom)
 	const [diffFileIndex, setDiffFileIndex] = useAtom(diffFileIndexAtom)
 	const [diffScrollTop, setDiffScrollTop] = useAtom(diffScrollTopAtom)
 	const [diffRenderView, setDiffRenderView] = useAtom(diffRenderViewAtom)
@@ -764,16 +812,16 @@ export const App = ({ systemThemeGeneration = 0 }: AppProps) => {
 	const openRepositoryModal: OpenRepositoryModalState = openRepositoryModalActive ? activeModal : initialOpenRepositoryModalState
 	const makeModalSetter =
 		<Tag extends Exclude<ModalTag, "None">>(tag: Tag) =>
-		(next: ModalState<Tag> | ((prev: ModalState<Tag>) => ModalState<Tag>)) =>
-			setActiveModal((current) => {
-				const ctor = Modal[tag] as unknown as (args: ModalState<Tag>) => Modal
-				if (typeof next === "function") {
-					const updater = next as (prev: ModalState<Tag>) => ModalState<Tag>
-					if (current._tag !== tag) return current
-					return ctor(updater(current as unknown as ModalState<Tag>))
-				}
-				return ctor(next)
-			})
+			(next: ModalState<Tag> | ((prev: ModalState<Tag>) => ModalState<Tag>)) =>
+				setActiveModal((current) => {
+					const ctor = Modal[tag] as unknown as (args: ModalState<Tag>) => Modal
+					if (typeof next === "function") {
+						const updater = next as (prev: ModalState<Tag>) => ModalState<Tag>
+						if (current._tag !== tag) return current
+						return ctor(updater(current as unknown as ModalState<Tag>))
+					}
+					return ctor(next)
+				})
 	const setLabelModal = makeModalSetter("Label")
 	const setCloseModal = makeModalSetter("Close")
 	const setPullRequestStateModal = makeModalSetter("PullRequestState")
@@ -801,6 +849,13 @@ export const App = ({ systemThemeGeneration = 0 }: AppProps) => {
 	const setRecentlyCompletedPullRequests = useAtomSet(recentlyCompletedPullRequestsAtom)
 	const retryProgress = useAtomValue(retryProgressAtom)
 	const [loadingFrame, setLoadingFrame] = useState(0)
+	const [actionsLevel, setActionsLevel] = useState<"runs" | "jobs" | "logs">("runs")
+	const [actionsRuns, setActionsRuns] = useState<readonly WorkflowRun[]>([])
+	const [actionsJobsByRun, setActionsJobsByRun] = useState<Record<number, readonly WorkflowJob[]>>({})
+	const [actionsDependenciesByRun, setActionsDependenciesByRun] = useState<Record<number, readonly WorkflowJobDependency[]>>({})
+	const [actionsLogsByJob, setActionsLogsByJob] = useState<Record<number, string>>({})
+	const [actionsLoading, setActionsLoading] = useState(false)
+	const [actionsError, setActionsError] = useState<string | null>(null)
 	const [refreshCompletionMessage, setRefreshCompletionMessage] = useState<string | null>(null)
 	const [refreshStartedAt, setRefreshStartedAt] = useState<number | null>(null)
 	const [terminalFocused, setTerminalFocused] = useState(true)
@@ -814,6 +869,10 @@ export const App = ({ systemThemeGeneration = 0 }: AppProps) => {
 	const toggleDraftStatus = useAtomSet(toggleDraftAtom, { mode: "promise" })
 	const listPullRequestReviewComments = useAtomSet(listPullRequestReviewCommentsAtom, { mode: "promise" })
 	const listPullRequestComments = useAtomSet(listPullRequestCommentsAtom, { mode: "promise" })
+	const listWorkflowRunsForPullRequest = useAtomSet(listWorkflowRunsForPullRequestAtom, { mode: "promise" })
+	const getWorkflowRunJobs = useAtomSet(getWorkflowRunJobsAtom, { mode: "promise" })
+	const getWorkflowJobLog = useAtomSet(getWorkflowJobLogAtom, { mode: "promise" })
+	const getWorkflowRunDependencies = useAtomSet(getWorkflowRunDependenciesAtom, { mode: "promise" })
 	const readCachedPullRequest = useAtomSet(readCachedPullRequestAtom, { mode: "promise" })
 	const writeCachedPullRequest = useAtomSet(writeCachedPullRequestAtom, { mode: "promise" })
 	const writeQueueCache = useAtomSet(writeQueueCacheAtom, { mode: "promise" })
@@ -844,6 +903,7 @@ export const App = ({ systemThemeGeneration = 0 }: AppProps) => {
 	const dividerJunctionAt = Math.max(1, leftPaneWidth)
 	const leftContentWidth = isWideLayout ? Math.max(24, leftPaneWidth - 2) : Math.max(24, contentWidth - sectionPadding * 2)
 	const rightContentWidth = isWideLayout ? Math.max(24, rightPaneWidth - sectionPadding * 2) : Math.max(24, contentWidth - sectionPadding * 2)
+	const fullscreenContentWidth = Math.max(24, contentWidth - 2)
 	const wideDetailLines = Math.max(8, terminalHeight - 8)
 	const wideBodyHeight = Math.max(8, terminalHeight - 4)
 	const noticeTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
@@ -856,8 +916,9 @@ export const App = ({ systemThemeGeneration = 0 }: AppProps) => {
 	const terminalFocusedRef = useRef(true)
 	const terminalWasBlurredRef = useRef(false)
 	const pullRequestStatusRef = useRef<LoadStatus>("loading")
-	const refreshPullRequestsRef = useRef<(message?: string, options?: { readonly resetTransientState?: boolean }) => void>(() => {})
-	const maybeRefreshPullRequestsRef = useRef<(minimumAgeMs: number) => void>(() => {})
+	const actionsRefreshGenerationRef = useRef(0)
+	const refreshPullRequestsRef = useRef<(message?: string, options?: { readonly resetTransientState?: boolean }) => void>(() => { })
+	const maybeRefreshPullRequestsRef = useRef<(minimumAgeMs: number) => void>(() => { })
 	const detailScrollRef = useRef<ScrollBoxRenderable | null>(null)
 	const detailPreviewScrollRef = useRef<ScrollBoxRenderable | null>(null)
 	const cachedDetailKeysRef = useRef(new Set<string>())
@@ -951,6 +1012,22 @@ export const App = ({ systemThemeGeneration = 0 }: AppProps) => {
 	const visibleGroups = useAtomValue(visibleGroupsAtom)
 	const visiblePullRequests = useAtomValue(visiblePullRequestsAtom)
 	const selectedPullRequest = useAtomValue(selectedPullRequestAtom)
+	const selectedActionsRun = actionsRuns[actionsRunSelection] ?? null
+	const selectedActionsJobs = selectedActionsRun ? (actionsJobsByRun[selectedActionsRun.id] ?? []) : []
+	const selectedActionsDependencies = selectedActionsRun ? (actionsDependenciesByRun[selectedActionsRun.id] ?? []) : []
+	const selectedActionsJob = selectedActionsJobs[actionsJobSelection] ?? null
+	const selectedActionsJobLog = selectedActionsJob ? (actionsLogsByJob[selectedActionsJob.id] ?? "") : ""
+	const selectedActionLogSteps = useMemo(() => parseActionsLogSteps(selectedActionsJobLog, selectedActionsJob?.steps ?? []), [selectedActionsJobLog, selectedActionsJob?.id])
+	const selectedActionLogRows = useMemo(
+		() =>
+			buildActionsLogRows({
+				steps: selectedActionLogSteps,
+				expandedStepIndex: actionsExpandedStep,
+				wrapMode: actionsLogWrapMode,
+				contentWidth: fullscreenContentWidth,
+			}),
+		[selectedActionLogSteps, actionsExpandedStep, actionsLogWrapMode, fullscreenContentWidth],
+	)
 	const pullRequestComments = useAtomValue(pullRequestCommentsAtom)
 	const pullRequestCommentsLoaded = useAtomValue(pullRequestCommentsLoadedAtom)
 	const selectedRepository = viewRepository(activeView)
@@ -1157,7 +1234,7 @@ export const App = ({ systemThemeGeneration = 0 }: AppProps) => {
 					}
 				})
 				const viewer = cacheViewerFor(activeView, username)
-				if (viewer) void writeQueueCache({ viewer, load: persistedLoad }).catch(() => {})
+				if (viewer) void writeQueueCache({ viewer, load: persistedLoad }).catch(() => { })
 			})
 			.catch((error) => {
 				flashNotice(errorMessage(error))
@@ -1205,7 +1282,7 @@ export const App = ({ systemThemeGeneration = 0 }: AppProps) => {
 					cachedDetailKeysRef.current.add(detailKey)
 					applyPullRequestDetail(cached)
 				})
-				.catch(() => {})
+				.catch(() => { })
 		}
 		const atom = pullRequestDetailsAtom(pullRequestDetailAtomKey(pullRequest))
 		if (forceRefresh) registry.refresh(atom)
@@ -1214,7 +1291,7 @@ export const App = ({ systemThemeGeneration = 0 }: AppProps) => {
 				if (generation === refreshGenerationRef.current && detailHydrationRef.current.get(detailKey) === entry) {
 					cachedDetailKeysRef.current.delete(detailKey)
 					applyPullRequestDetail(detail)
-					void writeCachedPullRequest(detail).catch(() => {})
+					void writeCachedPullRequest(detail).catch(() => { })
 				}
 			})
 			.catch((error) => {
@@ -1290,7 +1367,7 @@ export const App = ({ systemThemeGeneration = 0 }: AppProps) => {
 	// but a session that only browses cached state (or stays offline) never prunes.
 	// Firing once at mount keeps the cache bounded for those sessions.
 	useEffect(() => {
-		void pruneCache().catch(() => {})
+		void pruneCache().catch(() => { })
 	}, [pruneCache])
 
 	useEffect(() => {
@@ -1327,6 +1404,16 @@ export const App = ({ systemThemeGeneration = 0 }: AppProps) => {
 	}, [terminalFocused, pullRequestLoad?.fetchedAt])
 
 	useEffect(() => {
+		if (!actionsViewActive || !selectedPullRequest) return
+		const hasInFlight = actionsRuns.some((run) => run.status === "in_progress" || run.status === "queued" || run.status === "pending")
+		if (!hasInFlight) return
+		const interval = globalThis.setInterval(() => {
+			loadActionsRuns(selectedPullRequest)
+		}, ACTIONS_LIVE_REFRESH_MS)
+		return () => globalThis.clearInterval(interval)
+	}, [actionsViewActive, selectedPullRequest?.url, selectedPullRequest?.headRefOid, actionsRuns, actionsRunSelection])
+
+	useEffect(() => {
 		setSelectedIndex((current) => {
 			if (visiblePullRequests.length === 0) return 0
 			return Math.max(0, Math.min(current, visiblePullRequests.length - 1))
@@ -1344,7 +1431,7 @@ export const App = ({ systemThemeGeneration = 0 }: AppProps) => {
 	}, [selectedIndex, visiblePullRequests.length, filterMode, filterQuery, hasMorePullRequests, isLoadingMorePullRequests, currentQueueCacheKey])
 
 	useEffect(() => {
-		if (filterMode || filterQuery.length > 0 || visiblePullRequests.length === 0 || detailFullView || diffFullView) return
+		if (filterMode || filterQuery.length > 0 || visiblePullRequests.length === 0 || detailFullView || diffFullView || commentsViewActive || actionsViewActive) return
 		if (!hasMorePullRequests || isLoadingMorePullRequests) return
 		const checkScroll = () => {
 			const scroll = prListScrollRef.current
@@ -1355,7 +1442,18 @@ export const App = ({ systemThemeGeneration = 0 }: AppProps) => {
 		checkScroll()
 		const interval = globalThis.setInterval(checkScroll, 120)
 		return () => globalThis.clearInterval(interval)
-	}, [visiblePullRequests.length, filterMode, filterQuery, detailFullView, diffFullView, hasMorePullRequests, isLoadingMorePullRequests, currentQueueCacheKey])
+	}, [
+		visiblePullRequests.length,
+		filterMode,
+		filterQuery,
+		detailFullView,
+		diffFullView,
+		commentsViewActive,
+		actionsViewActive,
+		hasMorePullRequests,
+		isLoadingMorePullRequests,
+		currentQueueCacheKey,
+	])
 
 	useEffect(() => {
 		const scroll = prListScrollRef.current
@@ -1372,8 +1470,50 @@ export const App = ({ systemThemeGeneration = 0 }: AppProps) => {
 		setDiffCommentAnchorIndex(0)
 		setDiffPreferredSide(null)
 		setDiffCommentRangeStartIndex(null)
+		setActionsRuns([])
+		setActionsJobsByRun({})
+		setActionsDependenciesByRun({})
+		setActionsLogsByJob({})
+		setActionsRunSelection(0)
+		setActionsJobSelection(0)
+		setActionsStepSelection(0)
+		setActionsExpandedStep(null)
+		setActionsGraphScrollOffset(0)
+		setActionsGraphModalVerticalScroll(0)
+		setActionsLogScrollOffset(0)
+		setActionsLogWrapMode(false)
+		setActionsLogHorizontalScroll(0)
+		setActionsLogFilterQuery("")
+		setActionsLogFilterDraft("")
+		setActionsLogFilterMode(false)
+		setActionsLogMatchIndex(-1)
+		setActionsGraphModalActive(false)
+		setActionsLevel("runs")
 		detailPreviewScrollRef.current?.scrollTo({ x: 0, y: 0 })
 	}, [selectedIndex])
+
+	useEffect(() => {
+		setActionsStepSelection(0)
+		setActionsExpandedStep(null)
+		setActionsGraphScrollOffset(0)
+		setActionsGraphModalVerticalScroll(0)
+		setActionsLogScrollOffset(0)
+		setActionsLogWrapMode(false)
+		setActionsLogHorizontalScroll(0)
+		setActionsLogFilterQuery("")
+		setActionsLogFilterDraft("")
+		setActionsLogFilterMode(false)
+		setActionsLogMatchIndex(-1)
+	}, [selectedActionsJob?.id])
+
+	useEffect(() => {
+		setActionsLogMatchIndex(-1)
+	}, [actionsLogFilterQuery])
+
+	useEffect(() => {
+		setActionsGraphScrollOffset(0)
+		setActionsGraphModalVerticalScroll(0)
+	}, [selectedActionsRun?.id])
 
 	useEffect(() => {
 		setDiffFileIndex((current) => safeDiffFileIndex(readyDiffFiles, current))
@@ -1531,6 +1671,7 @@ export const App = ({ systemThemeGeneration = 0 }: AppProps) => {
 		pullRequestResult.waiting ||
 		isHydratingPullRequestDetails ||
 		isLoadingMorePullRequests ||
+		actionsLoading ||
 		selectedCommentsStatus === "loading" ||
 		labelModal.loading ||
 		closeModal.running ||
@@ -1696,6 +1837,7 @@ export const App = ({ systemThemeGeneration = 0 }: AppProps) => {
 		setDiffFullView(true)
 		setDetailFullView(false)
 		setCommentsViewActive(false)
+		setActionsViewActive(false)
 		setDiffFileIndex(0)
 		setDiffScrollTop(0)
 		setDiffCommentAnchorIndex(0)
@@ -1712,6 +1854,7 @@ export const App = ({ systemThemeGeneration = 0 }: AppProps) => {
 		setCommentsViewActive(true)
 		setDetailFullView(false)
 		setDiffFullView(false)
+		setActionsViewActive(false)
 		setCommentsViewSelection(0)
 	}
 
@@ -1756,6 +1899,342 @@ export const App = ({ systemThemeGeneration = 0 }: AppProps) => {
 	const refreshSelectedComments = () => {
 		if (!selectedPullRequest) return
 		loadPullRequestComments(selectedPullRequest, true)
+	}
+
+	const loadActionsRuns = (pullRequest: PullRequestItem, options: { readonly force?: boolean } = {}) => {
+		const force = options.force ?? false
+		const generation = ++actionsRefreshGenerationRef.current
+		if (force) {
+			setActionsLogsByJob({})
+		}
+		setActionsLoading(true)
+		setActionsError(null)
+		void listWorkflowRunsForPullRequest({ repository: pullRequest.repository, headSha: pullRequest.headRefOid })
+			.then((runs) => {
+				if (generation !== actionsRefreshGenerationRef.current) return
+				setActionsRuns(runs)
+				setActionsRunSelection((current) => (runs.length === 0 ? 0 : Math.max(0, Math.min(current, runs.length - 1))))
+				const selectedRun = runs[Math.max(0, Math.min(actionsRunSelection, runs.length - 1))]
+				if (!selectedRun) {
+					setActionsJobsByRun({})
+					setActionsDependenciesByRun({})
+					setActionsLoading(false)
+					return
+				}
+				return Promise.all([
+					getWorkflowRunJobs({ repository: pullRequest.repository, runId: selectedRun.id }),
+					getWorkflowRunDependencies({ repository: pullRequest.repository, runId: selectedRun.id, headSha: pullRequest.headRefOid }).catch(() => []),
+				]).then(([jobs, deps]) => {
+					if (generation !== actionsRefreshGenerationRef.current) return
+					setActionsJobsByRun((current) => ({ ...current, [selectedRun.id]: jobs }))
+					setActionsDependenciesByRun((current) => ({ ...current, [selectedRun.id]: deps }))
+					setActionsJobSelection((current) => (jobs.length === 0 ? 0 : Math.max(0, Math.min(current, jobs.length - 1))))
+					setActionsLoading(false)
+				})
+			})
+			.catch((error) => {
+				if (generation !== actionsRefreshGenerationRef.current) return
+				setActionsLoading(false)
+				setActionsError(errorMessage(error))
+			})
+	}
+
+	const openActionsView = () => {
+		if (!selectedPullRequest) return
+		setActionsViewActive(true)
+		setCommentsViewActive(false)
+		setDetailFullView(false)
+		setDiffFullView(false)
+		setActionsLevel("runs")
+		setActionsRunSelection(0)
+		setActionsJobSelection(0)
+		setActionsStepSelection(0)
+		setActionsExpandedStep(null)
+		setActionsGraphScrollOffset(0)
+		setActionsGraphModalVerticalScroll(0)
+		setActionsLogScrollOffset(0)
+		setActionsLogWrapMode(false)
+		setActionsLogHorizontalScroll(0)
+		setActionsLogFilterQuery("")
+		setActionsLogFilterDraft("")
+		setActionsLogFilterMode(false)
+		setActionsLogMatchIndex(-1)
+		setActionsGraphModalActive(false)
+		loadActionsRuns(selectedPullRequest, { force: true })
+	}
+
+	const closeActionsView = () => {
+		setActionsViewActive(false)
+		setActionsLevel("runs")
+		setActionsLogFilterQuery("")
+		setActionsLogFilterDraft("")
+		setActionsLogFilterMode(false)
+		setActionsLogWrapMode(false)
+		setActionsLogHorizontalScroll(0)
+		setActionsExpandedStep(null)
+		setActionsLogMatchIndex(-1)
+		setActionsGraphModalActive(false)
+		setActionsGraphModalVerticalScroll(0)
+	}
+
+	const openSelectedActionInBrowser = () => {
+		const url = actionsLevel === "runs" ? selectedActionsRun?.url : selectedPullRequest?.url
+		if (!url) return
+		void openUrl(url)
+			.then(() => flashNotice(`Opened ${url}`))
+			.catch((error) => flashNotice(errorMessage(error)))
+	}
+
+	const refreshActionsView = () => {
+		if (!selectedPullRequest) return
+		loadActionsRuns(selectedPullRequest, { force: true })
+	}
+
+	const confirmActionsSelection = () => {
+		if (!selectedPullRequest) return
+		if (actionsLevel === "runs") {
+			const run = selectedActionsRun
+			if (!run) return
+			setActionsLoading(true)
+			setActionsError(null)
+			void Promise.all([
+				getWorkflowRunJobs({ repository: selectedPullRequest.repository, runId: run.id }),
+				getWorkflowRunDependencies({ repository: selectedPullRequest.repository, runId: run.id, headSha: selectedPullRequest.headRefOid }).catch(() => []),
+			])
+				.then(([jobs, deps]) => {
+					setActionsJobsByRun((current) => ({ ...current, [run.id]: jobs }))
+					setActionsDependenciesByRun((current) => ({ ...current, [run.id]: deps }))
+					setActionsJobSelection(0)
+					setActionsGraphScrollOffset(0)
+					setActionsLevel("jobs")
+					setActionsLoading(false)
+				})
+				.catch((error) => {
+					setActionsLoading(false)
+					setActionsError(errorMessage(error))
+				})
+			return
+		}
+		if (actionsLevel === "jobs") {
+			const job = selectedActionsJob
+			if (!job) return
+			setActionsLoading(true)
+			setActionsError(null)
+			void getWorkflowJobLog({ repository: selectedPullRequest.repository, jobId: job.id })
+				.then((log) => {
+					setActionsLogsByJob((current) => ({ ...current, [job.id]: log }))
+					const parsed = parseActionsLogSteps(log, job.steps)
+					const failedStepIndex = parsed.findIndex((step) => step.conclusion === "failure")
+					const initialStepIndex = failedStepIndex >= 0 ? failedStepIndex : 0
+					setActionsExpandedStep(null)
+					setActionsStepSelection(initialStepIndex)
+					setActionsLogScrollOffset(0)
+					setActionsLogWrapMode(false)
+					setActionsLogHorizontalScroll(0)
+					setActionsLogFilterQuery("")
+					setActionsLogFilterDraft("")
+					setActionsLogFilterMode(false)
+					setActionsLogMatchIndex(-1)
+					setActionsLevel("logs")
+					setActionsLoading(false)
+				})
+				.catch((error) => {
+					setActionsLoading(false)
+					setActionsError(errorMessage(error))
+				})
+		}
+	}
+
+	const closeOrBackActionsView = () => {
+		if (actionsGraphModalActive) {
+			setActionsGraphModalActive(false)
+			setActionsGraphModalVerticalScroll(0)
+			return
+		}
+		if (actionsLogFilterMode) {
+			setActionsLogFilterQuery("")
+			setActionsLogFilterDraft("")
+			setActionsLogFilterMode(false)
+			setActionsLogWrapMode(false)
+			setActionsLogHorizontalScroll(0)
+			setActionsExpandedStep(null)
+			setActionsLogMatchIndex(-1)
+			return
+		}
+		if (actionsLevel === "logs") {
+			setActionsLogFilterQuery("")
+			setActionsLogFilterDraft("")
+			setActionsLogFilterMode(false)
+			setActionsLogWrapMode(false)
+			setActionsLogHorizontalScroll(0)
+			setActionsExpandedStep(null)
+			setActionsLogMatchIndex(-1)
+			setActionsLevel("jobs")
+			return
+		}
+		if (actionsLevel === "jobs") {
+			setActionsLevel("runs")
+			return
+		}
+		closeActionsView()
+	}
+
+	const moveActionsRunSelection = (delta: number) => {
+		setActionsRunSelection((current) => {
+			if (actionsRuns.length === 0) return 0
+			return Math.max(0, Math.min(actionsRuns.length - 1, current + delta))
+		})
+	}
+
+	const setActionsRunSelectionIndex = (index: number) => {
+		setActionsRunSelection(actionsRuns.length === 0 ? 0 : Math.max(0, Math.min(actionsRuns.length - 1, index)))
+	}
+
+	const moveActionsJobSelection = (delta: number) => {
+		setActionsJobSelection((current) => {
+			if (selectedActionsJobs.length === 0) return 0
+			return Math.max(0, Math.min(selectedActionsJobs.length - 1, current + delta))
+		})
+	}
+
+	const setActionsJobSelectionIndex = (index: number) => {
+		setActionsJobSelection(selectedActionsJobs.length === 0 ? 0 : Math.max(0, Math.min(selectedActionsJobs.length - 1, index)))
+	}
+
+	const actionsGraphModalViewportMetrics = () => {
+		const modalWidth = Math.max(30, contentWidth - 4)
+		const modalContentWidth = Math.max(1, modalWidth - 2)
+		const modalGraph = renderWorkflowGraph({
+			dependencies: selectedActionsDependencies,
+			jobs: selectedActionsJobs,
+			contentWidth: modalContentWidth,
+			scrollOffset: actionsGraphScrollOffset,
+		})
+		const modalHeight = Math.min(Math.max(5, modalGraph.length + 4), wideBodyHeight - 4)
+		const modalInnerHeight = Math.max(1, modalHeight - 2)
+		const modalTitleRows = selectedActionsRun ? 1 : 0
+		const modalDividerRows = selectedActionsRun ? 1 : 0
+		const visible = Math.max(1, modalInnerHeight - modalTitleRows - modalDividerRows)
+		const max = Math.max(0, modalGraph.length - visible)
+		return { visible, max }
+	}
+
+	const actionsLogViewportMetrics = () => {
+		const rows = selectedActionLogRows
+		const selectedJobRows = selectedActionsJob ? 1 : 0
+		const showFilterBar = actionsLogFilterMode || actionsLogFilterQuery.length > 0
+		const filterBarRows = showFilterBar ? 1 : 0
+		const visible = Math.max(1, wideBodyHeight - 2 - selectedJobRows - filterBarRows)
+		const max = Math.max(0, rows.length - visible)
+		return { rows, visible, max }
+	}
+
+	const jumpActionsLogMatch = (direction: 1 | -1) => {
+		if (actionsLevel !== "logs") return
+		if (actionsLogFilterMode) return
+		if (actionsExpandedStep === null) return
+		const query = actionsLogFilterQuery.trim().toLowerCase()
+		if (query.length === 0) return
+		const { rows, visible, max } = actionsLogViewportMetrics()
+		if (rows.length === 0) return
+		const matches = rows
+			.map((row, index) => (row.kind === "line" && row.stepIndex === actionsExpandedStep && row.line.toLowerCase().includes(query) ? index : -1))
+			.filter((index) => index >= 0)
+		if (matches.length === 0) return
+		const center = Math.max(0, Math.min(max, actionsLogScrollOffset)) + Math.floor(visible / 2)
+		let anchorIndex = actionsLogMatchIndex
+		if (anchorIndex < 0 || anchorIndex >= matches.length) {
+			anchorIndex = 0
+			let closestDistance = Math.abs(matches[0]! - center)
+			for (let index = 1; index < matches.length; index++) {
+				const distance = Math.abs(matches[index]! - center)
+				if (distance < closestDistance) {
+					closestDistance = distance
+					anchorIndex = index
+				}
+			}
+		}
+		const nextIndex = (((anchorIndex + direction) % matches.length) + matches.length) % matches.length
+		const nextMatch = matches[nextIndex]!
+		const centeredTop = Math.max(0, Math.min(max, nextMatch - Math.floor(visible / 2)))
+		setActionsLogMatchIndex(nextIndex)
+		setActionsStepSelection(nextMatch)
+		setActionsLogScrollOffset(centeredTop)
+	}
+
+	const moveActionsStepSelection = (delta: number) => {
+		if (actionsLevel === "jobs") {
+			const max = workflowGraphMaxScrollOffset({ dependencies: selectedActionsDependencies, jobs: selectedActionsJobs, contentWidth: fullscreenContentWidth })
+			setActionsGraphScrollOffset((current) => Math.max(0, Math.min(max, current + delta * 6)))
+			return
+		}
+		if (actionsLevel !== "logs") return
+		const { rows, visible, max } = actionsLogViewportMetrics()
+		setActionsStepSelection((current) => {
+			if (rows.length === 0) return 0
+			const next = Math.max(0, Math.min(rows.length - 1, current + delta))
+			if (next !== current) {
+				setActionsLogMatchIndex(-1)
+				setActionsLogScrollOffset((scroll) => {
+					if (next < scroll) return next
+					if (next >= scroll + visible) return Math.max(0, Math.min(max, next - visible + 1))
+					return Math.max(0, Math.min(max, scroll))
+				})
+			}
+			return next
+		})
+	}
+
+	const stepHeaderRowIndex = (stepIndex: number, expandedStepIndex: number | null) => {
+		let row = 0
+		for (let index = 0; index < selectedActionLogSteps.length; index++) {
+			if (index === stepIndex) return row
+			row += 1
+			if (expandedStepIndex === index) row += selectedActionLogSteps[index]?.lines.length ?? 0
+		}
+		return 0
+	}
+
+	const collapseActionsStep = () => {
+		if (actionsLevel === "jobs") {
+			const max = workflowGraphMaxScrollOffset({ dependencies: selectedActionsDependencies, jobs: selectedActionsJobs, contentWidth: fullscreenContentWidth })
+			setActionsGraphScrollOffset((current) => Math.max(0, Math.min(max, current - 6)))
+			return
+		}
+		if (actionsLevel !== "logs") return
+		const row = selectedActionLogRows[Math.max(0, Math.min(selectedActionLogRows.length - 1, actionsStepSelection))]
+		if (!row) {
+			setActionsLevel("jobs")
+			return
+		}
+		if (row.kind === "line") {
+			const headerIndex = stepHeaderRowIndex(row.stepIndex, actionsExpandedStep)
+			setActionsStepSelection(headerIndex)
+			setActionsExpandedStep(null)
+			setActionsLogMatchIndex(-1)
+			setActionsLogScrollOffset((current) => Math.min(current, headerIndex))
+			return
+		}
+		if (row.expanded) {
+			setActionsExpandedStep(null)
+			setActionsLogMatchIndex(-1)
+			return
+		}
+		closeOrBackActionsView()
+	}
+
+	const expandActionsStep = () => {
+		if (actionsLevel === "jobs") {
+			const max = workflowGraphMaxScrollOffset({ dependencies: selectedActionsDependencies, jobs: selectedActionsJobs, contentWidth: fullscreenContentWidth })
+			setActionsGraphScrollOffset((current) => Math.max(0, Math.min(max, current + 6)))
+			return
+		}
+		if (actionsLevel !== "logs") return
+		const row = selectedActionLogRows[Math.max(0, Math.min(selectedActionLogRows.length - 1, actionsStepSelection))]
+		if (!row || row.kind !== "step") return
+		setActionsExpandedStep(row.stepIndex)
+		setActionsStepSelection(stepHeaderRowIndex(row.stepIndex, row.stepIndex))
+		setActionsLogMatchIndex(-1)
 	}
 
 	const setDiffRenderableRef = (index: number, diff: DiffRenderable | null) => {
@@ -2933,6 +3412,7 @@ export const App = ({ systemThemeGeneration = 0 }: AppProps) => {
 		detailFullView,
 		diffFullView,
 		commentsViewActive,
+		actionsViewActive,
 		hasSelectedComment: selectedCommentsStatus === "ready" && selectedOrderedComment !== null,
 		canEditSelectedComment: canEditComment(selectedOrderedComment),
 		diffReady: selectedDiffState?._tag === "Ready",
@@ -2963,6 +3443,7 @@ export const App = ({ systemThemeGeneration = 0 }: AppProps) => {
 			switchViewTo,
 			openDetails: () => {
 				setDetailFullView(true)
+				setActionsViewActive(false)
 				setDetailScrollOffset(0)
 			},
 			closeDetails: () => {
@@ -2976,6 +3457,10 @@ export const App = ({ systemThemeGeneration = 0 }: AppProps) => {
 			},
 			openCommentsView,
 			closeCommentsView,
+			openActionsView,
+			closeActionsView,
+			refreshActionsView,
+			openSelectedActionInBrowser,
 			openNewIssueCommentModal,
 			openReplyToSelectedComment,
 			openEditSelectedComment,
@@ -3039,11 +3524,11 @@ export const App = ({ systemThemeGeneration = 0 }: AppProps) => {
 	// user's typed input so they shouldn't be filtered by fuzzy score against themselves.
 	const staticPaletteCommands = commandPaletteActive
 		? filterCommands(
-				appCommands.filter((command) => command.id !== "command.open" && commandEnabled(command)),
-				commandPalette.query,
-			)
+			appCommands.filter((command) => command.id !== "command.open" && commandEnabled(command)),
+			commandPalette.query,
+		)
 		: []
-	const activePaletteScope: CommandScope | null = commentsViewActive ? "Comments" : diffFullView ? "Diff" : detailFullView ? "Pull request" : null
+	const activePaletteScope: CommandScope | null = actionsViewActive ? "Actions" : commentsViewActive ? "Comments" : diffFullView ? "Diff" : detailFullView ? "Pull request" : null
 	const commandPaletteCommands = commandPaletteActive
 		? [...dynamicPaletteCommands, ...(commandPalette.query.trim().length > 0 ? staticPaletteCommands : sortCommandsByActiveScope(staticPaletteCommands, activePaletteScope))]
 		: []
@@ -3151,6 +3636,10 @@ export const App = ({ systemThemeGeneration = 0 }: AppProps) => {
 			closeActiveModal()
 			return
 		}
+		if (actionsViewActive) {
+			closeOrBackActionsView()
+			return
+		}
 		runCommandById("app.quit")
 	}
 
@@ -3172,6 +3661,7 @@ export const App = ({ systemThemeGeneration = 0 }: AppProps) => {
 		diffFullView,
 		detailFullView,
 		commentsViewActive,
+		actionsViewActive,
 		textInputActive:
 			commentModalActive ||
 			commandPaletteActive ||
@@ -3179,6 +3669,7 @@ export const App = ({ systemThemeGeneration = 0 }: AppProps) => {
 			changedFilesModalActive ||
 			submitReviewModalActive ||
 			labelModalActive ||
+			actionsLogFilterMode ||
 			filterMode ||
 			(themeModalActive && themeModal.filterMode),
 		closeModal: {
@@ -3326,6 +3817,7 @@ export const App = ({ systemThemeGeneration = 0 }: AppProps) => {
 			closeDetail: () => runCommandById("detail.close"),
 			openTheme: () => runCommandById("theme.open"),
 			openDiff: () => runCommandById("diff.open"),
+			openActions: () => runCommandById("actions.open"),
 			openComments: () => runCommandById("comments.open"),
 			closePullRequest: () => runCommandById("pull.close"),
 			openLabels: () => runCommandById("pull.labels"),
@@ -3349,6 +3841,94 @@ export const App = ({ systemThemeGeneration = 0 }: AppProps) => {
 			confirmSelection: confirmCommentSelection,
 			editSelected: () => runCommandById("comments.edit"),
 			deleteSelected: () => runCommandById("comments.delete"),
+		},
+		actionsView: {
+			halfPage,
+			scrollBy: (delta) => {
+				if (actionsGraphModalActive) {
+					const { max } = actionsGraphModalViewportMetrics()
+					setActionsGraphModalVerticalScroll((current) => Math.max(0, Math.min(max, current + delta)))
+					return
+				}
+				if (actionsLevel === "runs") moveActionsRunSelection(delta)
+				else if (actionsLevel === "jobs") moveActionsJobSelection(delta)
+				else moveActionsStepSelection(delta)
+			},
+			scrollTo: (line) => {
+				if (actionsGraphModalActive) {
+					const { max } = actionsGraphModalViewportMetrics()
+					setActionsGraphModalVerticalScroll(Math.max(0, Math.min(max, line)))
+					return
+				}
+				if (actionsLevel === "runs") setActionsRunSelectionIndex(line)
+				else if (actionsLevel === "jobs") setActionsJobSelectionIndex(line)
+				else {
+					const { rows, max } = actionsLogViewportMetrics()
+					const clamped = rows.length === 0 ? 0 : Math.max(0, Math.min(rows.length - 1, line))
+					setActionsStepSelection(clamped)
+					setActionsLogScrollOffset(Math.max(0, Math.min(max, clamped)))
+					setActionsLogMatchIndex(-1)
+				}
+			},
+			closeOrBack: closeOrBackActionsView,
+			confirmSelection: () => {
+				if (actionsGraphModalActive) return
+				confirmActionsSelection()
+			},
+			refresh: refreshActionsView,
+			openInBrowser: openSelectedActionInBrowser,
+			stepBy: (delta) => {
+				if (delta < 0) collapseActionsStep()
+				else expandActionsStep()
+			},
+			toggleWrap: () => {
+				if (actionsLevel !== "logs") return
+				setActionsLogWrapMode((current) => !current)
+				setActionsLogHorizontalScroll(0)
+				setActionsLogMatchIndex(-1)
+				setActionsLogScrollOffset(0)
+			},
+			scrollHorizontal: (delta, halfPage = false) => {
+				if (actionsLevel !== "logs") return
+				if (actionsLogWrapMode) return
+				const amount = halfPage ? Math.max(1, Math.floor(fullscreenContentWidth / 2)) : Math.abs(delta)
+				const signed = delta < 0 ? -amount : amount
+				setActionsLogHorizontalScroll((current) => Math.max(0, current + signed))
+			},
+			enterFilter: () => {
+				if (actionsLevel !== "logs") return
+				setActionsLogFilterDraft(actionsLogFilterQuery)
+				setActionsLogFilterMode(true)
+			},
+			applyFilter: () => {
+				setActionsLogFilterQuery(actionsLogFilterDraft)
+				setActionsLogFilterMode(false)
+				setActionsLogMatchIndex(-1)
+			},
+			cancelFilter: () => {
+				setActionsLogFilterQuery("")
+				setActionsLogFilterDraft("")
+				setActionsLogFilterMode(false)
+				setActionsLogMatchIndex(-1)
+			},
+			filterActive: actionsLogFilterMode,
+			canFilterLogs: actionsLevel === "logs",
+			toggleGraphModal: () => {
+				setActionsGraphModalActive((current) => {
+					if (current) setActionsGraphModalVerticalScroll(0)
+					return !current
+				})
+			},
+			canShowGraph: actionsLevel === "jobs",
+			jumpToNextMatch: () => {
+				if (actionsGraphModalActive) return
+				jumpActionsLogMatch(1)
+			},
+			jumpToPreviousMatch: () => {
+				if (actionsGraphModalActive) return
+				jumpActionsLogMatch(-1)
+			},
+			hasFilterQuery: actionsLevel === "logs" && actionsLogFilterQuery.trim().length > 0,
 		},
 		listNav: {
 			halfPage,
@@ -3447,6 +4027,13 @@ export const App = ({ systemThemeGeneration = 0 }: AppProps) => {
 			return
 		}
 
+		if (actionsLogFilterMode) {
+			if (isSingleLineInputKey(key)) {
+				setActionsLogFilterDraft((current) => editSingleLineInput(current, key) ?? current)
+			}
+			return
+		}
+
 		if (filterMode) {
 			if (isSingleLineInputKey(key)) {
 				setFilterDraft((current) => editSingleLineInput(current, key) ?? current)
@@ -3462,7 +4049,6 @@ export const App = ({ systemThemeGeneration = 0 }: AppProps) => {
 		)
 	}
 
-	const fullscreenContentWidth = Math.max(24, contentWidth - 2)
 	const fullscreenBodyLines = Math.max(8, terminalHeight - 8)
 	const fullscreenDetailHeaderHeight = getDetailHeaderHeight(selectedPullRequest, contentWidth, isWideLayout, selectedComments, selectedCommentsStatus)
 	const fullscreenDetailBodyViewportHeight = Math.max(1, wideBodyHeight - fullscreenDetailHeaderHeight)
@@ -3485,12 +4071,12 @@ export const App = ({ systemThemeGeneration = 0 }: AppProps) => {
 	const detailJunctions = isSelectedPullRequestDetailLoading
 		? []
 		: getDetailJunctionRows({
-				pullRequest: selectedPullRequest,
-				paneWidth: rightPaneWidth,
-				showChecks: true,
-				comments: selectedComments,
-				commentsStatus: selectedCommentsStatus,
-			})
+			pullRequest: selectedPullRequest,
+			paneWidth: rightPaneWidth,
+			showChecks: true,
+			comments: selectedComments,
+			commentsStatus: selectedCommentsStatus,
+		})
 
 	const prListProps = {
 		groups: visibleGroups,
@@ -3596,12 +4182,41 @@ export const App = ({ systemThemeGeneration = 0 }: AppProps) => {
 			<box paddingLeft={1} paddingRight={1} flexDirection="column" backgroundColor={colors.background}>
 				<PlainLine text={headerLine} fg={colors.muted} bold />
 			</box>
-			{isWideLayout && !detailFullView && !diffFullView && !commentsViewActive ? (
+			{isWideLayout && !detailFullView && !diffFullView && !commentsViewActive && !actionsViewActive ? (
 				<Divider width={contentWidth} junctionAt={dividerJunctionAt} junctionChar="┬" />
 			) : (
 				<Divider width={contentWidth} />
 			)}
-			{commentsViewActive && selectedPullRequest ? (
+			{actionsViewActive && selectedPullRequest ? (
+				<ActionsPane
+					repository={selectedPullRequest.repository}
+					number={selectedPullRequest.number}
+					level={actionsLevel}
+					workflowRuns={actionsRuns}
+					selectedRunIndex={actionsRunSelection}
+					selectedJobIndex={actionsJobSelection}
+					selectedRunJobs={selectedActionsJobs}
+					selectedRunDependencies={selectedActionsDependencies}
+					selectedJobLog={selectedActionsJobLog}
+					selectedStepIndex={actionsStepSelection}
+					expandedStepIndex={actionsExpandedStep}
+					graphScrollOffset={actionsGraphScrollOffset}
+					logScrollOffset={actionsLogScrollOffset}
+					logWrapMode={actionsLogWrapMode}
+					logHorizontalScroll={actionsLogHorizontalScroll}
+					logFilterQuery={actionsLogFilterQuery}
+					logFilterDraft={actionsLogFilterDraft}
+					logFilterActive={actionsLogFilterMode}
+					graphModalActive={actionsGraphModalActive}
+					graphModalVerticalScroll={actionsGraphModalVerticalScroll}
+					contentWidth={fullscreenContentWidth}
+					paneWidth={contentWidth}
+					height={wideBodyHeight}
+					loading={actionsLoading}
+					loadingIndicator={loadingIndicator}
+					error={actionsError}
+				/>
+			) : commentsViewActive && selectedPullRequest ? (
 				<CommentsPane
 					pullRequest={selectedPullRequest}
 					comments={selectedComments}
@@ -3814,7 +4429,7 @@ export const App = ({ systemThemeGeneration = 0 }: AppProps) => {
 				</box>
 			)}
 
-			{isWideLayout && !detailFullView && !diffFullView && !commentsViewActive ? (
+			{isWideLayout && !detailFullView && !diffFullView && !commentsViewActive && !actionsViewActive ? (
 				<Divider width={contentWidth} junctionAt={dividerJunctionAt} junctionChar="┴" />
 			) : (
 				<Divider width={contentWidth} />
@@ -3824,12 +4439,16 @@ export const App = ({ systemThemeGeneration = 0 }: AppProps) => {
 					<PlainLine text={footerNotice} fg={colors.count} />
 				) : (
 					<FooterHints
-						filterEditing={filterMode}
-						showFilterClear={filterMode || filterQuery.length > 0}
+						filterEditing={filterMode || (actionsViewActive && actionsLevel === "logs" && actionsLogFilterMode)}
+						showFilterClear={filterMode || filterQuery.length > 0 || (actionsViewActive && actionsLevel === "logs" && (actionsLogFilterMode || actionsLogFilterQuery.length > 0))}
 						detailFullView={detailFullView}
 						diffFullView={diffFullView}
 						diffRangeActive={diffCommentRangeActive}
 						commentsViewActive={commentsViewActive}
+						actionsViewActive={actionsViewActive}
+						actionsLevel={actionsLevel}
+						actionsLogFilterActive={actionsViewActive && actionsLevel === "logs" && actionsLogFilterMode}
+						actionsLogHasQuery={actionsViewActive && actionsLevel === "logs" && actionsLogFilterQuery.trim().length > 0}
 						commentsViewOnRealComment={commentsViewActive && selectedCommentsStatus === "ready" && selectedOrderedComment !== null}
 						commentsViewCanEditSelected={canEditComment(selectedOrderedComment)}
 						commentsViewCount={selectedComments.length}
@@ -3839,6 +4458,7 @@ export const App = ({ systemThemeGeneration = 0 }: AppProps) => {
 							pullRequestStatus === "loading" ||
 							isRefreshingPullRequests ||
 							isHydratingPullRequestDetails ||
+							actionsLoading ||
 							closeModal.running ||
 							pullRequestStateModal.running ||
 							mergeModal.running ||

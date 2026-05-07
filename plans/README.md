@@ -22,3 +22,4 @@ When a plan ships, leave the file in place and update the **Status** line so we 
 - [`sqlite-cache.md`](./sqlite-cache.md) — persistent SQLite cache for queues, hydrated details, comments, and optional diffs.
 - [`cache-v2.md`](./cache-v2.md) — audit-driven follow-up: diff cache, per-repo metadata persistence, `--cache-info` / `--cache-clear`.
 - [`comments-pane-redesign.md`](./comments-pane-redesign.md) — living design doc exploring how the Comments pane should render. Multiple styles, fully specced, iterate freely.
+- [`actions-view.md`](./actions-view.md) — full-screen Actions view for workflow runs, job graph, logs, and live refresh.

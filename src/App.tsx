@@ -46,6 +46,7 @@ import {
 	viewMode,
 	viewRepository,
 } from "./pullRequestViews.js"
+import { detectGitHubRemotes } from "./gitRemotes.js"
 import { BrowserOpener } from "./services/BrowserOpener.js"
 import { CacheService, type PullRequestCacheKey } from "./services/CacheService.js"
 import { Clipboard } from "./services/Clipboard.js"
@@ -281,6 +282,14 @@ const trimQueueLoadCache = (cache: Partial<Record<string, PullRequestLoad>>) => 
 	const remove = new Set(repositoryKeys.slice(0, repositoryKeys.length - MAX_REPOSITORY_CACHE_ENTRIES))
 	return Object.fromEntries(Object.entries(cache).filter(([key]) => !remove.has(key))) as Partial<Record<string, PullRequestLoad>>
 }
+const isRateLimitError = (error: unknown): boolean => {
+	if (typeof error !== "object" || error === null) return false
+	if (!("_tag" in error) || (error as Record<string, unknown>)._tag !== "CommandError") return false
+	const detail = (error as Record<string, unknown>).detail
+	if (typeof detail !== "string") return false
+	const lower = detail.toLowerCase()
+	return lower.includes("rate limit")
+}
 const pullRequestsAtom = githubRuntime
 	.atom(
 		GitHubService.use((github) =>
@@ -316,7 +325,11 @@ const pullRequestsAtom = githubRuntime
 								}),
 							),
 						),
-						Effect.retry({ times: PR_FETCH_RETRIES, schedule: Schedule.exponential("300 millis", 2) }),
+						Effect.retry({
+							times: PR_FETCH_RETRIES,
+							schedule: Schedule.exponential("300 millis", 2),
+							while: (error) => !isRateLimitError(error),
+						}),
 						Effect.tapError(() => Atom.set(retryProgressAtom, initialRetryProgress)),
 					)
 
@@ -851,11 +864,12 @@ export const App = ({ systemThemeGeneration = 0 }: AppProps) => {
 	const detailPrefetchTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 	const detailHydrationRef = useRef(new Map<string, DetailHydration>())
 	const refreshGenerationRef = useRef(0)
-	const didMountQueueModeRef = useRef(false)
 	const lastPullRequestRefreshAtRef = useRef(0)
 	const terminalFocusedRef = useRef(true)
 	const terminalWasBlurredRef = useRef(false)
 	const pullRequestStatusRef = useRef<LoadStatus>("loading")
+	const detectedRemotesRef = useRef<readonly string[]>([])
+	const refreshInFlightRef = useRef(false)
 	const refreshPullRequestsRef = useRef<(message?: string, options?: { readonly resetTransientState?: boolean }) => void>(() => {})
 	const maybeRefreshPullRequestsRef = useRef<(minimumAgeMs: number) => void>(() => {})
 	const detailScrollRef = useRef<ScrollBoxRenderable | null>(null)
@@ -1086,6 +1100,8 @@ export const App = ({ systemThemeGeneration = 0 }: AppProps) => {
 		updatePullRequest(pullRequest.url, () => pullRequest)
 	}
 	const refreshPullRequests = (message?: string, options: { readonly resetTransientState?: boolean } = {}) => {
+		if (refreshInFlightRef.current) return
+		refreshInFlightRef.current = true
 		refreshGenerationRef.current += 1
 		detailHydrationRef.current.clear()
 		if (detailPrefetchTimeoutRef.current !== null) clearTimeout(detailPrefetchTimeoutRef.current)
@@ -1263,13 +1279,10 @@ export const App = ({ systemThemeGeneration = 0 }: AppProps) => {
 	}, [pullRequestLoad?.fetchedAt])
 
 	useEffect(() => {
-		if (!didMountQueueModeRef.current) {
-			didMountQueueModeRef.current = true
-			return
+		if (!pullRequestResult.waiting) {
+			refreshInFlightRef.current = false
 		}
-		if (registry.get(queueLoadCacheAtom)[currentQueueCacheKey]) return
-		refreshPullRequestsAtom()
-	}, [currentQueueCacheKey, refreshPullRequestsAtom, registry])
+	}, [pullRequestResult])
 
 	useEffect(() => {
 		if (!refreshCompletionMessage || refreshStartedAt === null) return
@@ -1292,6 +1305,16 @@ export const App = ({ systemThemeGeneration = 0 }: AppProps) => {
 	useEffect(() => {
 		void pruneCache().catch(() => {})
 	}, [pruneCache])
+
+	useEffect(() => {
+		if (mockPrCount !== null) return
+		detectGitHubRemotes().then((remotes) => {
+			detectedRemotesRef.current = remotes
+			if (remotes.length > 0 && viewEquals(registry.get(activeViewAtom), initialPullRequestView())) {
+				switchViewTo({ _tag: "Repository", repository: remotes[0]! })
+			}
+		})
+	}, [])
 
 	useEffect(() => {
 		const handleFocus = () => {
@@ -2841,11 +2864,27 @@ export const App = ({ systemThemeGeneration = 0 }: AppProps) => {
 	const openCommandPalette = () => {
 		setCommandPalette(initialCommandPaletteState)
 	}
+	const moveRepositorySelection = (delta: -1 | 1) => {
+		const normalized = openRepositoryModal.query.trim().toLowerCase()
+		const filtered = normalized.length === 0 ? detectedRemotesRef.current : detectedRemotesRef.current.filter((s) => s.toLowerCase().includes(normalized))
+		if (filtered.length === 0) return
+		setOpenRepositoryModal((current) => {
+			const selectedIndex = wrapIndex(current.selectedIndex + delta, filtered.length)
+			return selectedIndex === current.selectedIndex ? current : { ...current, selectedIndex }
+		})
+	}
 	const openRepositoryPicker = () => {
-		setOpenRepositoryModal({ query: selectedRepository ?? "", error: null })
+		setOpenRepositoryModal({ query: "", selectedIndex: 0, error: null })
 	}
 	const openRepositoryFromInput = () => {
-		const repository = parseRepositoryInput(openRepositoryModal.query)
+		const normalized = openRepositoryModal.query.trim().toLowerCase()
+		const filtered = normalized.length === 0 ? detectedRemotesRef.current : detectedRemotesRef.current.filter((s) => s.toLowerCase().includes(normalized))
+		let repository: string | null = null
+		if (filtered.length > 0 && openRepositoryModal.selectedIndex < filtered.length) {
+			repository = filtered[openRepositoryModal.selectedIndex]!
+		} else {
+			repository = parseRepositoryInput(openRepositoryModal.query)
+		}
 		if (!repository) {
 			setOpenRepositoryModal((current) => ({ ...current, error: "Enter a repository as owner/name or a GitHub URL." }))
 			return
@@ -2861,7 +2900,7 @@ export const App = ({ systemThemeGeneration = 0 }: AppProps) => {
 			return true
 		}
 		if (openRepositoryModalActive) {
-			setOpenRepositoryModal((current) => ({ ...current, query: current.query + singleLineText(text), error: null }))
+			setOpenRepositoryModal((current) => ({ ...current, query: current.query + singleLineText(text), selectedIndex: 0, error: null }))
 			return true
 		}
 		if (themeModalActive && themeModal.filterMode) {
@@ -3255,6 +3294,7 @@ export const App = ({ systemThemeGeneration = 0 }: AppProps) => {
 		openRepositoryModal: {
 			closeModal: closeActiveModal,
 			openFromInput: openRepositoryFromInput,
+			moveSelection: moveRepositorySelection,
 		},
 		commentModal: {
 			closeModal: closeActiveModal,
@@ -3335,6 +3375,7 @@ export const App = ({ systemThemeGeneration = 0 }: AppProps) => {
 			refresh: () => runCommandById("pull.refresh"),
 			openInBrowser: () => runCommandById("pull.open-browser"),
 			copyMetadata: () => runCommandById("pull.copy-metadata"),
+			openRepositoryPicker: () => runCommandById("repository.open"),
 		},
 		commentsView: {
 			halfPage,
@@ -3394,11 +3435,10 @@ export const App = ({ systemThemeGeneration = 0 }: AppProps) => {
 
 		if (openRepositoryModalActive) {
 			if (isSingleLineInputKey(key)) {
-				setOpenRepositoryModal((current) => ({
-					...current,
-					query: editSingleLineInput(current.query, key) ?? current.query,
-					error: null,
-				}))
+				setOpenRepositoryModal((current) => {
+					const query = editSingleLineInput(current.query, key) ?? current.query
+					return current.query === query && current.selectedIndex === 0 && current.error === null ? current : { ...current, query, selectedIndex: 0, error: null }
+				})
 			}
 			return
 		}
@@ -3580,7 +3620,7 @@ export const App = ({ systemThemeGeneration = 0 }: AppProps) => {
 	const themeModalHeight = themeLayout.height
 	const themeModalLeft = themeLayout.left
 	const themeModalTop = themeLayout.top
-	const openRepositoryLayout = sizedModal(46, 76, 8, 8)
+	const openRepositoryLayout = sizedModal(46, 76, 8, 14)
 	const openRepositoryModalWidth = openRepositoryLayout.width
 	const openRepositoryModalHeight = openRepositoryLayout.height
 	const openRepositoryModalLeft = openRepositoryLayout.left
@@ -3947,6 +3987,7 @@ export const App = ({ systemThemeGeneration = 0 }: AppProps) => {
 			{openRepositoryModalActive ? (
 				<OpenRepositoryModal
 					state={openRepositoryModal}
+					suggestions={detectedRemotesRef.current}
 					modalWidth={openRepositoryModalWidth}
 					modalHeight={openRepositoryModalHeight}
 					offsetLeft={openRepositoryModalLeft}

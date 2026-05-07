@@ -35,6 +35,7 @@ export const listNavKeymap = List(
 	{ id: "list.merge", title: "Merge", keys: ["m", "shift+m"], run: (s) => s.runCommandById("pull.merge") },
 	{ id: "list.close-pr", title: "Close PR", keys: ["x"], run: (s) => s.runCommandById("pull.close") },
 	{ id: "list.open-browser", title: "Open in browser", keys: ["o"], run: (s) => s.runCommandById("pull.open-browser") },
+	{ id: "list.open-repo", title: "Open repository", keys: ["shift+o"], run: (s) => s.runCommandById("repository.open") },
 	{ id: "list.toggle-draft", title: "Toggle draft", keys: ["s", "shift+s"], run: (s) => s.runCommandById("pull.toggle-draft") },
 	{ id: "list.copy", title: "Copy metadata", keys: ["y"], run: (s) => s.runCommandById("pull.copy-metadata") },
 	{ id: "list.detail.open", title: "Open details", keys: ["return"], run: (s) => s.runCommandById("detail.open") },
@@ -42,6 +43,7 @@ export const listNavKeymap = List(
 	// Queue mode tabs
 	{ id: "list.next-tab", title: "Next view", keys: ["tab"], run: (s) => s.switchQueueMode(1) },
 	{ id: "list.prev-tab", title: "Previous view", keys: ["shift+tab"], run: (s) => s.switchQueueMode(-1) },
+	{ id: "list.home-view", title: "Home view", keys: ["h"], run: (s) => s.runCommandById("view.authored") },
 
 	// Escape clears filter only when one is set
 	{

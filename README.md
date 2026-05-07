@@ -88,11 +88,14 @@ running.
 
 ## Keybindings
 
+When launched inside a Git repository, ghui automatically detects GitHub remotes from `.git/config` and opens the repository view for the default remote (`origin`, then `upstream`, then first available).
+
 - `up` / `down`: move selection
 - `k` / `j`: move selection
 - `gg` / `G`: jump to first or last pull request
 - `ctrl-u` / `ctrl-d`: page up or down
 - `tab` / `shift-tab`: switch PR queue
+- `h`: go to home view (your authored pull requests)
 - `ctrl-p` / `cmd-k`: open the command palette
 - `/`: filter
 - `enter`: expand details; normal PR actions still work while details are expanded
@@ -113,6 +116,7 @@ running.
 - `t`: choose a fixed theme, including `System` to match your terminal colors; press `m` in the theme picker to follow the OS light/dark appearance with separate theme choices
 - `l`: manage labels
 - `o`: open PR in browser
+- `shift-o`: open repository picker (auto-populated with remotes from `.git/config`)
 - `y`: copy PR metadata
 - `q`: quit
 

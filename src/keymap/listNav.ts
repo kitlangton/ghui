@@ -35,6 +35,7 @@ export const listNavKeymap = List(
 	{ id: "list.merge", title: "Merge", keys: ["m", "shift+m"], run: (s) => s.runCommandById("pull.merge") },
 	{ id: "list.close-pr", title: "Close PR", keys: ["x"], run: (s) => s.runCommandById("pull.close") },
 	{ id: "list.open-browser", title: "Open in browser", keys: ["o"], run: (s) => s.runCommandById("pull.open-browser") },
+	{ id: "list.state-filter", title: "Filter PR state", keys: ["f"], run: (s) => s.runCommandById("pull.filter-state") },
 	{ id: "list.toggle-draft", title: "Toggle draft", keys: ["s", "shift+s"], run: (s) => s.runCommandById("pull.toggle-draft") },
 	{ id: "list.copy", title: "Copy metadata", keys: ["y"], run: (s) => s.runCommandById("pull.copy-metadata") },
 	{ id: "list.detail.open", title: "Open details", keys: ["return"], run: (s) => s.runCommandById("detail.open") },

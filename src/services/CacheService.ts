@@ -62,8 +62,13 @@ const CachedPullRequestItemSchema = Schema.Struct({
 })
 
 const CachedPullRequestViewSchema = Schema.Union([
-	Schema.Struct({ _tag: Schema.tag("Queue"), mode: Schema.Literals(pullRequestQueueModes), repository: Schema.NullOr(Schema.String) }),
-	Schema.Struct({ _tag: Schema.tag("Repository"), repository: Schema.String }),
+	Schema.Struct({
+		_tag: Schema.tag("Queue"),
+		mode: Schema.Literals(pullRequestQueueModes),
+		repository: Schema.NullOr(Schema.String),
+		stateFilter: Schema.optionalKey(PullRequestStateSchema),
+	}),
+	Schema.Struct({ _tag: Schema.tag("Repository"), repository: Schema.String, stateFilter: Schema.optionalKey(PullRequestStateSchema) }),
 ])
 
 type CachedPullRequestItem = Schema.Schema.Type<typeof CachedPullRequestItemSchema>
@@ -166,7 +171,10 @@ const decodePullRequestViewJson = (json: string): Effect.Effect<PullRequestView,
 	Effect.gen(function* () {
 		const value = yield* parseJson("decodePullRequestView", json)
 		const view = yield* decodeCached("decodePullRequestView", CachedPullRequestViewSchema, value)
-		return view
+		return {
+			...view,
+			stateFilter: view.stateFilter ?? "open",
+		} satisfies PullRequestView
 	})
 
 const decodeStringArrayJson = (json: string): Effect.Effect<readonly string[], CacheError> =>

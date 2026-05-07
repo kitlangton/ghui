@@ -5,6 +5,9 @@ export type LoadStatus = "loading" | "ready" | "error"
 export const pullRequestStates = ["open", "closed", "merged"] as const
 export type PullRequestState = (typeof pullRequestStates)[number]
 
+export const pullRequestStateFilters = ["open", "closed", "merged"] as const
+export type PullRequestStateFilter = (typeof pullRequestStateFilters)[number]
+
 export const pullRequestQueueModes = ["authored", "review", "assigned", "mentioned"] as const
 export type PullRequestUserQueueMode = (typeof pullRequestQueueModes)[number]
 export type PullRequestQueueMode = "repository" | PullRequestUserQueueMode
@@ -164,6 +167,7 @@ export interface PullRequestPage {
 export interface ListPullRequestPageInput {
 	readonly mode: PullRequestQueueMode
 	readonly repository: string | null
+	readonly stateFilter: PullRequestStateFilter
 	readonly cursor: string | null
 	readonly pageSize: number
 }

@@ -21,7 +21,7 @@ const tempCachePath = async () => {
 	return join(dir, "cache.sqlite")
 }
 
-const view: PullRequestView = { _tag: "Queue", mode: "authored", repository: null }
+const view: PullRequestView = { _tag: "Queue", mode: "authored", repository: null, stateFilter: "open" }
 
 const pullRequest = (number: number, overrides: Partial<PullRequestItem> = {}): PullRequestItem => ({
 	repository: "owner/repo",

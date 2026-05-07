@@ -7,9 +7,10 @@ import type {
 	PullRequestMergeMethod,
 	PullRequestReviewComment,
 	PullRequestReviewEvent,
+	PullRequestStateFilter,
 	RepositoryMergeMethods,
 } from "../domain.js"
-import { allowedMergeMethodList } from "../domain.js"
+import { allowedMergeMethodList, pullRequestStateFilters } from "../domain.js"
 import { getMergeKindDefinition, mergeKindRowTitle, visibleMergeKinds } from "../mergeActions.js"
 import { clampCursor, commentEditorLines, cursorLineIndexForLines } from "./commentEditor.js"
 import { colors, filterThemeDefinitions, oppositeThemeTone, themeDefinitions, type ThemeId, type ThemeTone } from "./colors.js"
@@ -75,6 +76,10 @@ export interface PullRequestStateModalState {
 	readonly selectedIsDraft: boolean
 	readonly running: boolean
 	readonly error: string | null
+}
+
+export interface PullRequestFilterModalState {
+	readonly selectedIndex: number
 }
 
 export type CommentModalTarget =
@@ -367,6 +372,10 @@ export const initialPullRequestStateModalState: PullRequestStateModalState = {
 	error: null,
 }
 
+export const initialPullRequestFilterModalState: PullRequestFilterModalState = {
+	selectedIndex: 0,
+}
+
 export const initialCommentModalState: CommentModalState = {
 	body: "",
 	cursor: 0,
@@ -429,6 +438,7 @@ export type Modal = Data.TaggedEnum<{
 	Label: LabelModalState
 	Close: CloseModalState
 	PullRequestState: PullRequestStateModalState
+	PullRequestFilter: PullRequestFilterModalState
 	Merge: MergeModalState
 	Comment: CommentModalState
 	DeleteComment: DeleteCommentModalState
@@ -450,6 +460,7 @@ export const modalInitialStates = {
 	Label: initialLabelModalState,
 	Close: initialCloseModalState,
 	PullRequestState: initialPullRequestStateModalState,
+	PullRequestFilter: initialPullRequestFilterModalState,
 	Merge: initialMergeModalState,
 	Comment: initialCommentModalState,
 	DeleteComment: initialDeleteCommentModalState,
@@ -964,6 +975,65 @@ export const PullRequestStateModal = ({
 					<Filler rows={bottomRows} prefix="bottom" />
 				</>
 			)}
+		</StandardModal>
+	)
+}
+
+const pullRequestStateFilterLabel: Record<PullRequestStateFilter, string> = {
+	open: "Open",
+	closed: "Closed",
+	merged: "Merged",
+}
+
+export const PullRequestFilterModal = ({
+	state,
+	modalWidth,
+	modalHeight,
+	offsetLeft,
+	offsetTop,
+}: {
+	state: PullRequestFilterModalState
+	modalWidth: number
+	modalHeight: number
+	offsetLeft: number
+	offsetTop: number
+}) => {
+	const { contentWidth, bodyHeight } = standardModalDims(modalWidth, modalHeight)
+	const selectedIndex = Math.max(0, Math.min(state.selectedIndex, pullRequestStateFilters.length - 1))
+	const bottomRows = Math.max(0, bodyHeight - pullRequestStateFilters.length)
+
+	return (
+		<StandardModal
+			left={offsetLeft}
+			top={offsetTop}
+			width={modalWidth}
+			height={modalHeight}
+			title="Pull Request State"
+			headerRight={{ text: "filter" }}
+			subtitle={<PlainLine text={fitCell("Filter the current tab by pull request state.", contentWidth)} fg={colors.muted} />}
+			bodyPadding={1}
+			footer={
+				<HintRow
+					items={[
+						{ key: "↑↓", label: "choose" },
+						{ key: "enter", label: "apply" },
+						{ key: "esc", label: "cancel" },
+					]}
+				/>
+			}
+		>
+			{pullRequestStateFilters.map((filter, index) => {
+				const isSelected = index === selectedIndex
+				const marker = isSelected ? "›" : " "
+				const labelWidth = Math.max(1, contentWidth - marker.length - 1)
+				return (
+					<TextLine key={filter} bg={isSelected ? colors.selectedBg : undefined} fg={isSelected ? colors.selectedText : colors.text}>
+						<span fg={isSelected ? colors.count : colors.muted}>{marker}</span>
+						<span> {fitCell(pullRequestStateFilterLabel[filter], labelWidth)}</span>
+					</TextLine>
+				)
+			})}
+			<Filler rows={bottomRows} prefix="bottom" />
 		</StandardModal>
 	)
 }

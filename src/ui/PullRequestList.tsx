@@ -1,6 +1,6 @@
 import { TextAttributes } from "@opentui/core"
 import { useState } from "react"
-import type { LoadStatus, PullRequestItem } from "../domain.js"
+import type { LoadStatus, PullRequestItem, PullRequestStateFilter } from "../domain.js"
 import { daysOpen } from "../date.js"
 import { colors, rowHoverBackground } from "./colors.js"
 import { fitCell, MatchedCell, PlainLine, SectionTitle, TextLine } from "./primitives.js"
@@ -53,6 +53,7 @@ export const buildPullRequestListRows = ({
 	error,
 	filterText,
 	showFilterBar,
+	stateFilter,
 	loadedCount,
 	hasMore,
 	isLoadingMore,
@@ -63,6 +64,7 @@ export const buildPullRequestListRows = ({
 	readonly error: string | null
 	readonly filterText: string
 	readonly showFilterBar: boolean
+	readonly stateFilter: PullRequestStateFilter
 	readonly loadedCount: number
 	readonly hasMore: boolean
 	readonly isLoadingMore: boolean
@@ -74,7 +76,7 @@ export const buildPullRequestListRows = ({
 	if (status === "loading" && itemCount === 0) rows.push({ _tag: "message", text: "- Loading pull requests...", color: colors.muted })
 	if (status === "error") rows.push({ _tag: "message", text: `- ${error ?? "Could not load pull requests."}`, color: colors.error })
 	if (status === "ready" && itemCount === 0)
-		rows.push({ _tag: "message", text: filterText.length > 0 ? "- No matching pull requests." : "- No open pull requests.", color: colors.muted })
+		rows.push({ _tag: "message", text: filterText.length > 0 ? "- No matching pull requests." : `- No ${stateFilter} pull requests.`, color: colors.muted })
 	for (const [repository, pullRequests] of groups) {
 		rows.push({ _tag: "group", repository, pullRequests })
 		const numberWidth = groupNumberWidth(pullRequests)
@@ -148,6 +150,7 @@ export const PullRequestList = ({
 	filterText,
 	showFilterBar,
 	isFilterEditing,
+	stateFilter,
 	loadedCount,
 	hasMore,
 	isLoadingMore,
@@ -162,13 +165,14 @@ export const PullRequestList = ({
 	filterText: string
 	showFilterBar: boolean
 	isFilterEditing: boolean
+	stateFilter: PullRequestStateFilter
 	loadedCount: number
 	hasMore: boolean
 	isLoadingMore: boolean
 	loadingIndicator: string
 	onSelectPullRequest: (url: string) => void
 }) => {
-	const rows = buildPullRequestListRows({ groups, status, error, filterText, showFilterBar, loadedCount, hasMore, isLoadingMore, loadingIndicator })
+	const rows = buildPullRequestListRows({ groups, status, error, filterText, showFilterBar, stateFilter, loadedCount, hasMore, isLoadingMore, loadingIndicator })
 	const [hoveredUrl, setHoveredUrl] = useState<string | null>(null)
 
 	return (

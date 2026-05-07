@@ -2,7 +2,7 @@ import { describe, expect, test } from "bun:test"
 import { buildAppCommands } from "../src/appCommands.js"
 import type { PullRequestItem } from "../src/domain.js"
 
-const activeView = { _tag: "Queue", mode: "review", repository: null } as const
+const activeView = { _tag: "Queue", mode: "review", repository: null, stateFilter: "open" } as const
 const selectedPullRequest: PullRequestItem = {
 	repository: "owner/repo",
 	author: "kit",
@@ -61,6 +61,7 @@ const buildCommands = (overrides: Partial<Parameters<typeof buildAppCommands>[0]
 			openFilter: noop,
 			clearFilter: noop,
 			openThemeModal: noop,
+			openPullRequestFilterModal: noop,
 			openRepositoryPicker: noop,
 			loadMorePullRequests: noop,
 			switchViewTo: noop,
@@ -106,6 +107,12 @@ describe("review UX commands", () => {
 	test("changed-files navigator is available from a ready diff", () => {
 		const command = commandById("diff.changed-files")
 
+		expect(command.shortcut).toBe("f")
+		expect(command.disabledReason).toBeFalsy()
+	})
+
+	test("state filter command is available in the view scope", () => {
+		const command = commandById("pull.filter-state")
 		expect(command.shortcut).toBe("f")
 		expect(command.disabledReason).toBeFalsy()
 	})

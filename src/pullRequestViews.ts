@@ -1,22 +1,30 @@
-import { pullRequestQueueLabels, pullRequestQueueModes, type PullRequestQueueMode, type PullRequestUserQueueMode } from "./domain.js"
+import { pullRequestQueueLabels, pullRequestQueueModes, type PullRequestQueueMode, type PullRequestStateFilter, type PullRequestUserQueueMode } from "./domain.js"
 
 export type PullRequestView =
-	| { readonly _tag: "Repository"; readonly repository: string }
-	| { readonly _tag: "Queue"; readonly mode: PullRequestUserQueueMode; readonly repository: string | null }
+	| { readonly _tag: "Repository"; readonly repository: string; readonly stateFilter: PullRequestStateFilter }
+	| { readonly _tag: "Queue"; readonly mode: PullRequestUserQueueMode; readonly repository: string | null; readonly stateFilter: PullRequestStateFilter }
 
-export const initialPullRequestView = (): PullRequestView => ({ _tag: "Queue", mode: "authored", repository: null })
+export const initialPullRequestView = (): PullRequestView => ({ _tag: "Queue", mode: "authored", repository: null, stateFilter: "open" })
 
 export const viewMode = (view: PullRequestView): PullRequestQueueMode => (view._tag === "Repository" ? "repository" : view.mode)
 
 export const viewRepository = (view: PullRequestView) => view.repository
 
-export const viewCacheKey = (view: PullRequestView) => (view._tag === "Repository" ? `repository:${view.repository}` : view.mode)
+export const viewStateFilter = (view: PullRequestView) => view.stateFilter
 
-export const viewEquals = (left: PullRequestView, right: PullRequestView) => left._tag === right._tag && viewMode(left) === viewMode(right) && left.repository === right.repository
+export const viewStateKey = (view: PullRequestView) => (view._tag === "Repository" ? `repository:${view.repository}` : `queue:${view.mode}`)
+
+export const viewCacheKey = (view: PullRequestView) => (view._tag === "Repository" ? `repository:${view.repository}:${view.stateFilter}` : `${view.mode}:${view.stateFilter}`)
+
+export const viewEquals = (left: PullRequestView, right: PullRequestView) =>
+	left._tag === right._tag && viewMode(left) === viewMode(right) && left.repository === right.repository && left.stateFilter === right.stateFilter
 
 export const activePullRequestViews = (view: PullRequestView): readonly PullRequestView[] => {
 	const repository = viewRepository(view)
-	return [...(repository ? [{ _tag: "Repository" as const, repository }] : []), ...pullRequestQueueModes.map((mode) => ({ _tag: "Queue" as const, mode, repository }))]
+	return [
+		...(repository ? [{ _tag: "Repository" as const, repository, stateFilter: "open" as const }] : []),
+		...pullRequestQueueModes.map((mode) => ({ _tag: "Queue" as const, mode, repository: null, stateFilter: "open" as const })),
+	]
 }
 
 export const nextView = (view: PullRequestView, views: readonly PullRequestView[], delta: 1 | -1) => {
@@ -27,7 +35,16 @@ export const nextView = (view: PullRequestView, views: readonly PullRequestView[
 	return views[(index + delta + views.length) % views.length]!
 }
 
-export const viewLabel = (view: PullRequestView) => (view._tag === "Repository" ? view.repository : pullRequestQueueLabels[view.mode])
+const stateFilterLabel: Record<PullRequestStateFilter, string> = {
+	open: "open",
+	closed: "closed",
+	merged: "merged",
+}
+
+export const viewLabel = (view: PullRequestView) => {
+	const base = view._tag === "Repository" ? view.repository : pullRequestQueueLabels[view.mode]
+	return view.stateFilter === "open" ? base : `${base} (${stateFilterLabel[view.stateFilter]})`
+}
 
 export const parseRepositoryInput = (input: string) => {
 	const trimmed = input.trim()

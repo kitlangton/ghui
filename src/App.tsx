@@ -24,10 +24,11 @@ import {
 	type PullRequestMergeAction,
 	type PullRequestMergeMethod,
 	type PullRequestReviewComment,
+	type PullRequestStateFilter,
 	type RepositoryMergeMethods,
 	type SubmitPullRequestReviewInput,
 } from "./domain.js"
-import { allowedMergeMethodList, pullRequestMergeMethods } from "./domain.js"
+import { allowedMergeMethodList, pullRequestMergeMethods, pullRequestStateFilters } from "./domain.js"
 import { formatShortDate, formatTimestamp } from "./date.js"
 import { errorMessage } from "./errors.js"
 import { getMergeKindDefinition, mergeInfoFromPullRequest, requiresMarkReady, visibleMergeKinds } from "./mergeActions.js"
@@ -45,6 +46,8 @@ import {
 	viewLabel,
 	viewMode,
 	viewRepository,
+	viewStateKey,
+	viewStateFilter,
 } from "./pullRequestViews.js"
 import { BrowserOpener } from "./services/BrowserOpener.js"
 import { CacheService, type PullRequestCacheKey } from "./services/CacheService.js"
@@ -131,6 +134,7 @@ import {
 	initialMergeModalState,
 	initialModal,
 	initialOpenRepositoryModalState,
+	initialPullRequestFilterModalState,
 	initialPullRequestStateModalState,
 	initialSubmitReviewModalState,
 	initialThemeModalState,
@@ -138,6 +142,7 @@ import {
 	MergeModal,
 	Modal,
 	OpenRepositoryModal,
+	PullRequestFilterModal,
 	PullRequestStateModal,
 	submitReviewOptions,
 	SubmitReviewModal,
@@ -153,6 +158,7 @@ import {
 	type ModalState,
 	type ModalTag,
 	type OpenRepositoryModalState,
+	type PullRequestFilterModalState,
 	type PullRequestStateModalState,
 	type SubmitReviewModalState,
 	type ThemeModalState,
@@ -202,7 +208,10 @@ interface DetailPlaceholderInput {
 	readonly loadingIndicator: string
 	readonly visibleCount: number
 	readonly filterText: string
+	readonly stateFilter: PullRequestStateFilter
 }
+
+const pullRequestStatePhrase = (stateFilter: PullRequestStateFilter) => `${stateFilter} pull requests`
 
 type DiffLineColorConfig = {
 	readonly gutter: string
@@ -275,6 +284,7 @@ const retryProgressAtom = Atom.make<RetryProgress>(initialRetryProgress).pipe(At
 const activeViewAtom = Atom.make<PullRequestView>(initialPullRequestView()).pipe(Atom.keepAlive)
 const queueLoadCacheAtom = Atom.make<Partial<Record<string, PullRequestLoad>>>({}).pipe(Atom.keepAlive)
 const queueSelectionAtom = Atom.make<Partial<Record<string, number>>>({}).pipe(Atom.keepAlive)
+const stateFiltersByViewAtom = Atom.make<Partial<Record<string, PullRequestStateFilter>>>({}).pipe(Atom.keepAlive)
 const trimQueueLoadCache = (cache: Partial<Record<string, PullRequestLoad>>) => {
 	const repositoryKeys = Object.keys(cache).filter((key) => key.startsWith("repository:"))
 	if (repositoryKeys.length <= MAX_REPOSITORY_CACHE_ENTRIES) return cache
@@ -289,6 +299,7 @@ const pullRequestsAtom = githubRuntime
 				const view = yield* Atom.get(activeViewAtom)
 				const queueMode = viewMode(view)
 				const repository = viewRepository(view)
+				const stateFilter = viewStateFilter(view)
 				const cacheKey = viewCacheKey(view)
 				const cacheUsername = view._tag === "Repository" ? null : yield* github.getAuthenticatedUser().pipe(Effect.catch(() => Effect.succeed(null)))
 				const cacheViewer = cacheViewerFor(view, cacheUsername)
@@ -304,6 +315,7 @@ const pullRequestsAtom = githubRuntime
 					.listOpenPullRequestPage({
 						mode: queueMode,
 						repository,
+						stateFilter,
 						cursor: null,
 						pageSize: Math.min(pullRequestPageSize, config.prFetchLimit),
 					})
@@ -666,11 +678,12 @@ const setDiffCommentLineColor = (diff: DiffRenderable, entry: AppliedDiffLineCol
 	}
 }
 
-const getDetailPlaceholderContent = ({ status, retryProgress, loadingIndicator, visibleCount, filterText }: DetailPlaceholderInput): DetailPlaceholderContent => {
+const getDetailPlaceholderContent = ({ status, retryProgress, loadingIndicator, visibleCount, filterText, stateFilter }: DetailPlaceholderInput): DetailPlaceholderContent => {
+	const statePhrase = pullRequestStatePhrase(stateFilter)
 	if (status === "loading") {
 		return {
 			title: `${loadingIndicator} Loading pull requests`,
-			hint: retryProgress._tag === "Retrying" ? `Retry ${retryProgress.attempt}/${retryProgress.max}` : "Fetching latest open PRs",
+			hint: retryProgress._tag === "Retrying" ? `Retry ${retryProgress.attempt}/${retryProgress.max}` : `Fetching latest ${statePhrase}`,
 		}
 	}
 
@@ -690,7 +703,7 @@ const getDetailPlaceholderContent = ({ status, retryProgress, loadingIndicator, 
 
 	if (visibleCount === 0) {
 		return {
-			title: "No open pull requests",
+			title: `No ${statePhrase}`,
 			hint: "Press r to refresh",
 		}
 	}
@@ -708,6 +721,7 @@ export const App = ({ systemThemeGeneration = 0 }: AppProps) => {
 	const pullRequestResult = useAtomValue(pullRequestsAtom)
 	const refreshPullRequestsAtom = useAtomRefresh(pullRequestsAtom)
 	const [activeView, setActiveView] = useAtom(activeViewAtom)
+	const [stateFiltersByView, setStateFiltersByView] = useAtom(stateFiltersByViewAtom)
 	const setQueueLoadCache = useAtomSet(queueLoadCacheAtom)
 	const setQueueSelection = useAtomSet(queueSelectionAtom)
 	const [selectedIndex, setSelectedIndex] = useAtom(selectedIndexAtom)
@@ -741,6 +755,7 @@ export const App = ({ systemThemeGeneration = 0 }: AppProps) => {
 	const labelModalActive = Modal.$is("Label")(activeModal)
 	const closeModalActive = Modal.$is("Close")(activeModal)
 	const pullRequestStateModalActive = Modal.$is("PullRequestState")(activeModal)
+	const pullRequestFilterModalActive = Modal.$is("PullRequestFilter")(activeModal)
 	const mergeModalActive = Modal.$is("Merge")(activeModal)
 	const commentModalActive = Modal.$is("Comment")(activeModal)
 	const deleteCommentModalActive = Modal.$is("DeleteComment")(activeModal)
@@ -753,6 +768,7 @@ export const App = ({ systemThemeGeneration = 0 }: AppProps) => {
 	const labelModal: LabelModalState = labelModalActive ? activeModal : initialLabelModalState
 	const closeModal: CloseModalState = closeModalActive ? activeModal : initialCloseModalState
 	const pullRequestStateModal: PullRequestStateModalState = pullRequestStateModalActive ? activeModal : initialPullRequestStateModalState
+	const pullRequestFilterModal: PullRequestFilterModalState = pullRequestFilterModalActive ? activeModal : initialPullRequestFilterModalState
 	const mergeModal: MergeModalState = mergeModalActive ? activeModal : initialMergeModalState
 	const commentModal: CommentModalState = commentModalActive ? activeModal : initialCommentModalState
 	const deleteCommentModal: DeleteCommentModalState = deleteCommentModalActive ? activeModal : initialDeleteCommentModalState
@@ -777,6 +793,7 @@ export const App = ({ systemThemeGeneration = 0 }: AppProps) => {
 	const setLabelModal = makeModalSetter("Label")
 	const setCloseModal = makeModalSetter("Close")
 	const setPullRequestStateModal = makeModalSetter("PullRequestState")
+	const setPullRequestFilterModal = makeModalSetter("PullRequestFilter")
 	const setMergeModal = makeModalSetter("Merge")
 	const setCommentModal = makeModalSetter("Comment")
 	const setDeleteCommentModal = makeModalSetter("DeleteComment")
@@ -954,7 +971,10 @@ export const App = ({ systemThemeGeneration = 0 }: AppProps) => {
 	const pullRequestComments = useAtomValue(pullRequestCommentsAtom)
 	const pullRequestCommentsLoaded = useAtomValue(pullRequestCommentsLoadedAtom)
 	const selectedRepository = viewRepository(activeView)
-	const activeViews = activePullRequestViews(activeView)
+	const activeViews = activePullRequestViews(activeView).map((view) => {
+		const override = stateFiltersByView[viewStateKey(view)]
+		return override ? { ...view, stateFilter: override } : view
+	})
 	const currentQueueCacheKey = viewCacheKey(activeView)
 	const loadedPullRequestCount = pullRequestLoad?.data.length ?? 0
 	const hasMorePullRequests = Boolean(pullRequestLoad?.hasNextPage && loadedPullRequestCount < config.prFetchLimit)
@@ -967,11 +987,23 @@ export const App = ({ systemThemeGeneration = 0 }: AppProps) => {
 				error: pullRequestError,
 				filterText: visibleFilterText,
 				showFilterBar: filterMode || filterQuery.length > 0,
+				stateFilter: activeView.stateFilter,
 				loadedCount: loadedPullRequestCount,
 				hasMore: hasMorePullRequests,
 				isLoadingMore: isLoadingMorePullRequests,
 			}),
-		[visibleGroups, pullRequestStatus, pullRequestError, visibleFilterText, filterMode, filterQuery, loadedPullRequestCount, hasMorePullRequests, isLoadingMorePullRequests],
+		[
+			visibleGroups,
+			pullRequestStatus,
+			pullRequestError,
+			visibleFilterText,
+			filterMode,
+			filterQuery,
+			activeView.stateFilter,
+			loadedPullRequestCount,
+			hasMorePullRequests,
+			isLoadingMorePullRequests,
+		],
 	)
 	const selectedPullRequestRowIndex = pullRequestListRowIndex(pullRequestListRows, selectedPullRequest?.url ?? null)
 	const selectedDiffKey = useAtomValue(selectedDiffKeyAtom)
@@ -1108,6 +1140,11 @@ export const App = ({ systemThemeGeneration = 0 }: AppProps) => {
 		if (viewEquals(view, activeView)) return
 		refreshGenerationRef.current += 1
 		setQueueSelection((current) => ({ ...current, [currentQueueCacheKey]: selectedIndex }))
+		setStateFiltersByView((current) => ({
+			...current,
+			[viewStateKey(activeView)]: activeView.stateFilter,
+			[viewStateKey(view)]: view.stateFilter,
+		}))
 		setActiveView(view)
 		setSelectedIndex(registry.get(queueSelectionAtom)[viewCacheKey(view)] ?? 0)
 		setRecentlyCompletedPullRequests({})
@@ -1135,6 +1172,7 @@ export const App = ({ systemThemeGeneration = 0 }: AppProps) => {
 		void loadPullRequestPage({
 			mode: viewMode(activeView),
 			repository: selectedRepository,
+			stateFilter: viewStateFilter(activeView),
 			cursor: pullRequestLoad.endCursor,
 			pageSize: Math.min(pullRequestPageSize, remaining),
 		})
@@ -1559,6 +1597,13 @@ export const App = ({ systemThemeGeneration = 0 }: AppProps) => {
 	}, [startupLoadComplete, pullRequestStatus])
 
 	useEffect(() => {
+		if (pullRequestFilterModalActive) return
+		const selectedIndex = pullRequestStateFilters.indexOf(activeView.stateFilter)
+		if (selectedIndex < 0) return
+		setPullRequestFilterModal((current) => (current.selectedIndex === selectedIndex ? current : { selectedIndex }))
+	}, [activeView, pullRequestFilterModalActive])
+
+	useEffect(() => {
 		if (pullRequestStatus !== "ready" || !selectedPullRequest) return
 		hydratePullRequestDetails(selectedPullRequest, true)
 	}, [
@@ -1603,6 +1648,7 @@ export const App = ({ systemThemeGeneration = 0 }: AppProps) => {
 		loadingIndicator,
 		visibleCount: visiblePullRequests.length,
 		filterText: visibleFilterText,
+		stateFilter: activeView.stateFilter,
 	})
 	const isSelectedPullRequestDetailLoading = selectedPullRequest !== null && !selectedPullRequest.detailLoaded
 	const halfPage = Math.max(1, Math.floor(wideBodyHeight / 2))
@@ -2844,6 +2890,19 @@ export const App = ({ systemThemeGeneration = 0 }: AppProps) => {
 	const openRepositoryPicker = () => {
 		setOpenRepositoryModal({ query: selectedRepository ?? "", error: null })
 	}
+	const openPullRequestFilterModal = () => {
+		const selectedIndex = Math.max(0, pullRequestStateFilters.indexOf(activeView.stateFilter))
+		setPullRequestFilterModal({ selectedIndex })
+	}
+	const movePullRequestFilterSelection = (delta: -1 | 1) => {
+		setPullRequestFilterModal((current) => ({ ...current, selectedIndex: wrapIndex(current.selectedIndex + delta, pullRequestStateFilters.length) }))
+	}
+	const confirmPullRequestFilterSelection = () => {
+		const selected = pullRequestStateFilters[Math.max(0, Math.min(pullRequestFilterModal.selectedIndex, pullRequestStateFilters.length - 1))] ?? "open"
+		closeActiveModal()
+		setStateFiltersByView((current) => ({ ...current, [viewStateKey(activeView)]: selected }))
+		switchViewTo({ ...activeView, stateFilter: selected })
+	}
 	const openRepositoryFromInput = () => {
 		const repository = parseRepositoryInput(openRepositoryModal.query)
 		if (!repository) {
@@ -2851,7 +2910,7 @@ export const App = ({ systemThemeGeneration = 0 }: AppProps) => {
 			return
 		}
 		closeActiveModal()
-		switchViewTo({ _tag: "Repository", repository })
+		switchViewTo({ _tag: "Repository", repository, stateFilter: activeView.stateFilter })
 		flashNotice(`Opened ${repository}`)
 	}
 	const insertPastedText = (text: string) => {
@@ -2958,6 +3017,7 @@ export const App = ({ systemThemeGeneration = 0 }: AppProps) => {
 				setFilterMode(false)
 			},
 			openThemeModal,
+			openPullRequestFilterModal,
 			openRepositoryPicker,
 			loadMorePullRequests,
 			switchViewTo,
@@ -3031,7 +3091,7 @@ export const App = ({ systemThemeGeneration = 0 }: AppProps) => {
 				title: `Open ${repository}`,
 				scope: "View",
 				subtitle: "Switch to this repository",
-				run: () => switchViewTo({ _tag: "Repository", repository }),
+				run: () => switchViewTo({ _tag: "Repository", repository, stateFilter: activeView.stateFilter }),
 			}),
 		]
 	})()
@@ -3158,6 +3218,7 @@ export const App = ({ systemThemeGeneration = 0 }: AppProps) => {
 	const appCtx: AppCtx = {
 		closeModalActive,
 		pullRequestStateModalActive,
+		pullRequestFilterModalActive,
 		mergeModalActive,
 		commentThreadModalActive,
 		changedFilesModalActive,
@@ -3189,6 +3250,11 @@ export const App = ({ systemThemeGeneration = 0 }: AppProps) => {
 			closeModal: closeActiveModal,
 			confirmStateChange: confirmPullRequestStateChange,
 			moveSelection: movePullRequestStateSelection,
+		},
+		pullRequestFilterModal: {
+			closeModal: closeActiveModal,
+			confirmSelection: confirmPullRequestFilterSelection,
+			moveSelection: movePullRequestFilterSelection,
 		},
 		mergeModal: {
 			availableActionCount: visibleMergeKinds(mergeModal.info, mergeModal.allowedMethods, mergeModal.selectedMethod).length,
@@ -3500,6 +3566,7 @@ export const App = ({ systemThemeGeneration = 0 }: AppProps) => {
 		filterText: visibleFilterText,
 		showFilterBar: filterMode || filterQuery.length > 0,
 		isFilterEditing: filterMode,
+		stateFilter: activeView.stateFilter,
 		loadedCount: loadedPullRequestCount,
 		hasMore: hasMorePullRequests,
 		isLoadingMore: isLoadingMorePullRequests,
@@ -3547,6 +3614,11 @@ export const App = ({ systemThemeGeneration = 0 }: AppProps) => {
 	const pullRequestStateModalHeight = pullRequestStateLayout.height
 	const pullRequestStateModalLeft = pullRequestStateLayout.left
 	const pullRequestStateModalTop = pullRequestStateLayout.top
+	const pullRequestFilterLayout = sizedModal(46, 68, 12, 10)
+	const pullRequestFilterModalWidth = pullRequestFilterLayout.width
+	const pullRequestFilterModalHeight = pullRequestFilterLayout.height
+	const pullRequestFilterModalLeft = pullRequestFilterLayout.left
+	const pullRequestFilterModalTop = pullRequestFilterLayout.top
 	const commentLayout = sizedModal(46, 76, 8, 16)
 	const commentModalWidth = commentLayout.width
 	const commentModalHeight = commentLayout.height
@@ -3842,7 +3914,8 @@ export const App = ({ systemThemeGeneration = 0 }: AppProps) => {
 							closeModal.running ||
 							pullRequestStateModal.running ||
 							mergeModal.running ||
-							submitReviewModal.running
+							submitReviewModal.running ||
+							pullRequestFilterModalActive
 						}
 						loadingIndicator={loadingIndicator}
 						retryProgress={retryProgress}
@@ -3878,6 +3951,15 @@ export const App = ({ systemThemeGeneration = 0 }: AppProps) => {
 					offsetLeft={pullRequestStateModalLeft}
 					offsetTop={pullRequestStateModalTop}
 					loadingIndicator={loadingIndicator}
+				/>
+			) : null}
+			{pullRequestFilterModalActive ? (
+				<PullRequestFilterModal
+					state={pullRequestFilterModal}
+					modalWidth={pullRequestFilterModalWidth}
+					modalHeight={pullRequestFilterModalHeight}
+					offsetLeft={pullRequestFilterModalLeft}
+					offsetTop={pullRequestFilterModalTop}
 				/>
 			) : null}
 			{commentModalActive ? (

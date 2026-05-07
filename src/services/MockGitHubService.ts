@@ -10,6 +10,7 @@ import type {
 	PullRequestPage,
 	PullRequestQueueMode,
 	PullRequestReviewComment,
+	PullRequestStateFilter,
 	ReviewStatus,
 } from "../domain.js"
 import { mergeInfoFromPullRequest } from "../mergeActions.js"
@@ -88,9 +89,12 @@ export const buildMockPullRequests = (options: MockOptions): readonly PullReques
 	return Array.from({ length: resolved.prCount }, (_, index) => buildPullRequest(index, resolved))
 }
 
-const filterByView = (mode: PullRequestQueueMode, repository: string | null, source: readonly PullRequestItem[]) => {
-	if (mode === "repository") return repository ? source.filter((item) => item.repository === repository) : []
-	return source
+const filterByState = (stateFilter: PullRequestStateFilter, source: readonly PullRequestItem[]) => source.filter((item) => item.state === stateFilter)
+
+const filterByView = (mode: PullRequestQueueMode, repository: string | null, stateFilter: PullRequestStateFilter, source: readonly PullRequestItem[]) => {
+	const filtered = filterByState(stateFilter, source)
+	if (mode === "repository") return repository ? filtered.filter((item) => item.repository === repository) : []
+	return filtered
 }
 
 const pageItems = (source: readonly PullRequestItem[], cursor: string | null, pageSize: number): PullRequestPage => {
@@ -191,9 +195,11 @@ export const MockGitHubService = {
 		return Layer.succeed(
 			GitHubService,
 			GitHubService.of({
-				listOpenPullRequests: (mode: PullRequestQueueMode, repository: string | null) => Effect.succeed(filterByView(mode, repository, summaryItems)),
-				listOpenPullRequestPage: (input) => Effect.succeed(pageItems(filterByView(input.mode, input.repository, summaryItems), input.cursor, input.pageSize)),
-				listOpenPullRequestDetails: (mode: PullRequestQueueMode, repository: string | null) => Effect.succeed(filterByView(mode, repository, items)),
+				listOpenPullRequests: (mode: PullRequestQueueMode, repository: string | null, stateFilter: PullRequestStateFilter) =>
+					Effect.succeed(filterByView(mode, repository, stateFilter, summaryItems)),
+				listOpenPullRequestPage: (input) => Effect.succeed(pageItems(filterByView(input.mode, input.repository, input.stateFilter, summaryItems), input.cursor, input.pageSize)),
+				listOpenPullRequestDetails: (mode: PullRequestQueueMode, repository: string | null, stateFilter: PullRequestStateFilter) =>
+					Effect.succeed(filterByView(mode, repository, stateFilter, items)),
 				getPullRequestDetails: (repository, number) => Effect.succeed(findPullRequest(repository, number)),
 				getAuthenticatedUser: () => Effect.succeed(username),
 				getPullRequestDiff: (_repo, _number) => Effect.succeed(mockDiff),

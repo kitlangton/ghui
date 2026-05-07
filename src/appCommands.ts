@@ -10,6 +10,7 @@ interface AppCommandActions {
 	readonly openFilter: () => void
 	readonly clearFilter: () => void
 	readonly openThemeModal: () => void
+	readonly openPullRequestFilterModal: () => void
 	readonly openRepositoryPicker: () => void
 	readonly loadMorePullRequests: () => void
 	readonly switchViewTo: (view: PullRequestView) => void
@@ -166,6 +167,15 @@ export const buildAppCommands = ({
 			shortcut: "t",
 			keywords: ["colors", "appearance"],
 			run: actions.openThemeModal,
+		}),
+		defineCommand({
+			id: "pull.filter-state",
+			title: "Filter pull requests by state",
+			scope: "View",
+			subtitle: "Show open, closed, or merged pull requests",
+			shortcut: "f",
+			keywords: ["state", "open", "closed", "merged"],
+			run: actions.openPullRequestFilterModal,
 		}),
 		defineCommand({
 			id: "repository.open",

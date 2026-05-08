@@ -101,7 +101,7 @@ describe("stacked diff helpers", () => {
 		const anchors = getDiffCommentAnchors(visible!)
 		const target = { ...anchors[1]!, line: 99 }
 
-		expect(nearestDiffAnchorForLocation(anchors, target)).toBe(anchors[2])
+		expect(nearestDiffAnchorForLocation(anchors, target)).toBe(anchors[2]!)
 	})
 
 	test("keeps visible lines stable while scrolling only near viewport edges", () => {

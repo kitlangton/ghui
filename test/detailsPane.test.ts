@@ -6,6 +6,7 @@ const pullRequest = (body: string): PullRequestItem => ({
 	repository: "owner/repo",
 	author: "kitlangton",
 	headRefOid: "abc123",
+	headRefName: "feat/details",
 	number: 1,
 	title: "Title",
 	body,

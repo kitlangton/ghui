@@ -18,5 +18,5 @@
 		"types": ["bun"],
 		"plugins": [{ "name": "@effect/language-service" }]
 	},
-	"include": ["src/**/*.ts", "src/**/*.tsx", "dev/**/*.ts", "dev/**/*.tsx"]
+	"include": ["src/**/*.ts", "src/**/*.tsx", "dev/**/*.ts", "dev/**/*.tsx", "test/**/*.ts", "test/**/*.tsx"]
 }

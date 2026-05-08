@@ -114,6 +114,7 @@ running.
 - `l`: manage labels
 - `o`: open PR in browser
 - `y`: copy PR metadata
+- `shift-y`: copy PR URL
 - `q`: quit
 
 Review submission:

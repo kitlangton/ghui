@@ -2419,7 +2419,14 @@ export const App = ({ systemThemeGeneration = 0 }: AppProps) => {
 	const copySelectedPullRequestMetadata = () => {
 		if (!selectedPullRequest) return
 		void copyToClipboard(pullRequestMetadataText(selectedPullRequest))
-			.then(() => flashNotice(`Copied #${selectedPullRequest.number} metadata`))
+			.then((result) => flashNotice(result === "sent-osc52" ? `Sent OSC52 copy for #${selectedPullRequest.number} metadata` : `Copied #${selectedPullRequest.number} metadata`))
+			.catch((error) => flashNotice(errorMessage(error)))
+	}
+
+	const copySelectedPullRequestUrl = () => {
+		if (!selectedPullRequest) return
+		void copyToClipboard(selectedPullRequest.url)
+			.then((result) => flashNotice(result === "sent-osc52" ? `Sent OSC52 copy for #${selectedPullRequest.number} URL` : `Copied #${selectedPullRequest.number} URL`))
 			.catch((error) => flashNotice(errorMessage(error)))
 	}
 
@@ -3003,6 +3010,7 @@ export const App = ({ systemThemeGeneration = 0 }: AppProps) => {
 				if (selectedPullRequest) openSelectedPullRequestInBrowser(selectedPullRequest)
 			},
 			copyPullRequestMetadata: copySelectedPullRequestMetadata,
+			copyPullRequestUrl: copySelectedPullRequestUrl,
 			quit: () => renderer.destroy(),
 		},
 	})
@@ -3335,6 +3343,7 @@ export const App = ({ systemThemeGeneration = 0 }: AppProps) => {
 			refresh: () => runCommandById("pull.refresh"),
 			openInBrowser: () => runCommandById("pull.open-browser"),
 			copyMetadata: () => runCommandById("pull.copy-metadata"),
+			copyUrl: () => runCommandById("pull.copy-url"),
 		},
 		commentsView: {
 			halfPage,

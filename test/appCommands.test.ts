@@ -39,6 +39,7 @@ const buildCommands = (overrides: Partial<Parameters<typeof buildAppCommands>[0]
 		loadedPullRequestCount: 1,
 		hasMorePullRequests: false,
 		isLoadingMorePullRequests: false,
+		listSplitResizable: true,
 		selectedPullRequest,
 		detailFullView: false,
 		diffFullView: true,
@@ -64,6 +65,7 @@ const buildCommands = (overrides: Partial<Parameters<typeof buildAppCommands>[0]
 			openRepositoryPicker: noop,
 			loadMorePullRequests: noop,
 			switchViewTo: noop,
+			resizeListSplit: noop,
 			openDetails: noop,
 			closeDetails: noop,
 			openDiffView: noop,
@@ -76,6 +78,7 @@ const buildCommands = (overrides: Partial<Parameters<typeof buildAppCommands>[0]
 			openDeleteSelectedComment: noop,
 			reloadDiff: noop,
 			toggleDiffRenderView: noop,
+			resizeDiffSplit: noop,
 			toggleDiffWrapMode: noop,
 			toggleDiffWhitespaceMode: noop,
 			openChangedFilesModal: noop,
@@ -103,6 +106,36 @@ const commandById = (id: string, overrides?: Partial<Parameters<typeof buildAppC
 }
 
 describe("review UX commands", () => {
+	test("list split resize commands are available from the command palette", () => {
+		const left = commandById("list.resize-left")
+		const right = commandById("list.resize-right")
+
+		expect(left.shortcut).toBe("<")
+		expect(right.shortcut).toBe(">")
+		expect(left.disabledReason).toBeFalsy()
+		expect(right.disabledReason).toBeFalsy()
+	})
+
+	test("list split resize commands require split layout", () => {
+		expect(commandById("list.resize-left", { listSplitResizable: false }).disabledReason).toBe("Split layout is not active.")
+		expect(commandById("list.resize-right", { listSplitResizable: false }).disabledReason).toBe("Split layout is not active.")
+	})
+
+	test("diff split resize commands are available from a split diff", () => {
+		const left = commandById("diff.resize-split-left")
+		const right = commandById("diff.resize-split-right")
+
+		expect(left.shortcut).toBe("<")
+		expect(right.shortcut).toBe(">")
+		expect(left.disabledReason).toBeFalsy()
+		expect(right.disabledReason).toBeFalsy()
+	})
+
+	test("diff split resize commands require split diff view", () => {
+		expect(commandById("diff.resize-split-left", { effectiveDiffRenderView: "unified" }).disabledReason).toBe("Split diff view is not active.")
+		expect(commandById("diff.resize-split-right", { diffFullView: false }).disabledReason).toBe("Open a diff first.")
+	})
+
 	test("changed-files navigator is available from a ready diff", () => {
 		const command = commandById("diff.changed-files")
 

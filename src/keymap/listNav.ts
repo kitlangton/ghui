@@ -6,10 +6,12 @@ export interface ListNavCtx {
 	readonly visibleCount: number
 	readonly hasFilter: boolean
 	readonly canScrollDetailPreview: boolean
+	readonly canResizeSplit: boolean
 	readonly runCommandById: (id: string) => void
 	readonly switchQueueMode: (delta: 1 | -1) => void
 	readonly scrollDetailPreviewBy: (delta: number) => void
 	readonly scrollDetailPreviewTo: (line: number) => void
+	readonly resizeSplit: (delta: number) => void
 	readonly clearFilter: () => void
 	readonly stepSelected: (delta: number) => void
 	readonly stepSelectedUp: (count?: number) => void
@@ -38,6 +40,20 @@ export const listNavKeymap = List(
 	{ id: "list.toggle-draft", title: "Toggle draft", keys: ["s", "shift+s"], run: (s) => s.runCommandById("pull.toggle-draft") },
 	{ id: "list.copy", title: "Copy metadata", keys: ["y"], run: (s) => s.runCommandById("pull.copy-metadata") },
 	{ id: "list.detail.open", title: "Open details", keys: ["return"], run: (s) => s.runCommandById("detail.open") },
+	{
+		id: "list.resize-left",
+		title: "Resize split left",
+		keys: ["<"],
+		enabled: (s) => (s.canResizeSplit ? true : "Split layout is not active."),
+		run: (s) => s.resizeSplit(-1),
+	},
+	{
+		id: "list.resize-right",
+		title: "Resize split right",
+		keys: [">"],
+		enabled: (s) => (s.canResizeSplit ? true : "Split layout is not active."),
+		run: (s) => s.resizeSplit(1),
+	},
 
 	// Queue mode tabs
 	{ id: "list.next-tab", title: "Next view", keys: ["tab"], run: (s) => s.switchQueueMode(1) },

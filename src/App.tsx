@@ -263,6 +263,12 @@ const DETAIL_PREFETCH_BEHIND = 1
 const DETAIL_PREFETCH_AHEAD = 3
 const DETAIL_PREFETCH_CONCURRENCY = 3
 const DETAIL_PREFETCH_DELAY_MS = 120
+const DEFAULT_SPLIT_RATIO = 0.56
+const DEFAULT_DIFF_SPLIT_RATIO = 0.5
+const SPLIT_RESIZE_COLUMNS = 4
+const MIN_LIST_PANE_WIDTH = 44
+const MIN_DETAIL_PANE_WIDTH = 28
+const MIN_DIFF_SIDE_WIDTH = 24
 const appendPullRequestPage = (existing: readonly PullRequestItem[], incoming: readonly PullRequestItem[]) => {
 	const seen = new Set(existing.map((pullRequest) => pullRequest.url))
 	const mergedIncoming = mergeCachedDetails(incoming, existing)
@@ -342,6 +348,7 @@ const pullRequestsAtom = githubRuntime
 	)
 	.pipe(Atom.keepAlive)
 const wrapIndex = (index: number, length: number) => (length === 0 ? 0 : ((index % length) + length) % length)
+const clampNumber = (value: number, min: number, max: number) => Math.max(min, Math.min(value, max))
 const selectedIndexAtom = Atom.make(0)
 const noticeAtom = Atom.make<string | null>(null)
 const filterQueryAtom = Atom.make("")
@@ -357,6 +364,8 @@ const diffScrollTopAtom = Atom.make(0)
 const diffRenderViewAtom = Atom.make<DiffView>("split")
 const diffWrapModeAtom = Atom.make<DiffWrapMode>("none")
 const diffWhitespaceModeAtom = Atom.make<DiffWhitespaceMode>(initialDiffWhitespaceMode)
+const diffSplitRatioAtom = Atom.make(DEFAULT_DIFF_SPLIT_RATIO)
+const listDetailSplitRatioAtom = Atom.make(DEFAULT_SPLIT_RATIO)
 const diffCommentAnchorIndexAtom = Atom.make(0)
 const diffPreferredSideAtom = Atom.make<DiffCommentSide | null>(null)
 const diffCommentRangeStartIndexAtom = Atom.make<number | null>(null)
@@ -725,6 +734,8 @@ export const App = ({ systemThemeGeneration = 0 }: AppProps) => {
 	const [diffRenderView, setDiffRenderView] = useAtom(diffRenderViewAtom)
 	const [diffWrapMode, setDiffWrapMode] = useAtom(diffWrapModeAtom)
 	const [diffWhitespaceMode, setDiffWhitespaceMode] = useAtom(diffWhitespaceModeAtom)
+	const [diffSplitRatio, setDiffSplitRatio] = useAtom(diffSplitRatioAtom)
+	const [listDetailSplitRatio, setListDetailSplitRatio] = useAtom(listDetailSplitRatioAtom)
 	const [diffCommentAnchorIndex, setDiffCommentAnchorIndex] = useAtom(diffCommentAnchorIndexAtom)
 	const [diffPreferredSide, setDiffPreferredSide] = useAtom(diffPreferredSideAtom)
 	const [diffCommentRangeStartIndex, setDiffCommentRangeStartIndex] = useAtom(diffCommentRangeStartIndexAtom)
@@ -839,8 +850,10 @@ export const App = ({ systemThemeGeneration = 0 }: AppProps) => {
 	const isWideLayout = terminalWidth >= 100
 	const splitGap = 1
 	const sectionPadding = 1
-	const leftPaneWidth = isWideLayout ? Math.max(44, Math.floor((contentWidth - splitGap) * 0.56)) : contentWidth
-	const rightPaneWidth = isWideLayout ? Math.max(28, contentWidth - leftPaneWidth - splitGap) : contentWidth
+	const splitAvailableWidth = Math.max(1, contentWidth - splitGap)
+	const maxListPaneWidth = Math.max(MIN_LIST_PANE_WIDTH, splitAvailableWidth - MIN_DETAIL_PANE_WIDTH)
+	const leftPaneWidth = isWideLayout ? clampNumber(Math.floor(splitAvailableWidth * listDetailSplitRatio), MIN_LIST_PANE_WIDTH, maxListPaneWidth) : contentWidth
+	const rightPaneWidth = isWideLayout ? Math.max(MIN_DETAIL_PANE_WIDTH, contentWidth - leftPaneWidth - splitGap) : contentWidth
 	const dividerJunctionAt = Math.max(1, leftPaneWidth)
 	const leftContentWidth = isWideLayout ? Math.max(24, leftPaneWidth - 2) : Math.max(24, contentWidth - sectionPadding * 2)
 	const rightContentWidth = isWideLayout ? Math.max(24, rightPaneWidth - sectionPadding * 2) : Math.max(24, contentWidth - sectionPadding * 2)
@@ -995,12 +1008,12 @@ export const App = ({ systemThemeGeneration = 0 }: AppProps) => {
 		[selectedDiffState, readyDiffFiles],
 	)
 	const stackedDiffFiles = useMemo(
-		() => buildStackedDiffFiles(readyDiffFiles, effectiveDiffRenderView, diffWrapMode, contentWidth),
-		[readyDiffFiles, effectiveDiffRenderView, diffWrapMode, contentWidth],
+		() => buildStackedDiffFiles(readyDiffFiles, effectiveDiffRenderView, diffWrapMode, contentWidth, diffSplitRatio),
+		[readyDiffFiles, effectiveDiffRenderView, diffWrapMode, contentWidth, diffSplitRatio],
 	)
 	const diffCommentAnchors = useMemo(
-		() => (diffFullView ? getStackedDiffCommentAnchors(stackedDiffFiles, effectiveDiffRenderView, diffWrapMode, contentWidth) : []),
-		[diffFullView, stackedDiffFiles, effectiveDiffRenderView, diffWrapMode, contentWidth],
+		() => (diffFullView ? getStackedDiffCommentAnchors(stackedDiffFiles, effectiveDiffRenderView, diffWrapMode, contentWidth, diffSplitRatio) : []),
+		[diffFullView, stackedDiffFiles, effectiveDiffRenderView, diffWrapMode, contentWidth, diffSplitRatio],
 	)
 	const selectedDiffCommentAnchorIndex = Math.max(0, Math.min(diffCommentAnchorIndex, diffCommentAnchors.length - 1))
 	const selectedDiffCommentAnchor = diffCommentAnchors[selectedDiffCommentAnchorIndex] ?? null
@@ -1606,6 +1619,21 @@ export const App = ({ systemThemeGeneration = 0 }: AppProps) => {
 	})
 	const isSelectedPullRequestDetailLoading = selectedPullRequest !== null && !selectedPullRequest.detailLoaded
 	const halfPage = Math.max(1, Math.floor(wideBodyHeight / 2))
+
+	const resizeListPane = (columns: number) => {
+		if (!isWideLayout) return
+		const nextLeftPaneWidth = clampNumber(leftPaneWidth + columns, MIN_LIST_PANE_WIDTH, maxListPaneWidth)
+		setListDetailSplitRatio(nextLeftPaneWidth / splitAvailableWidth)
+	}
+
+	const resizeDiffSplit = (columns: number) => {
+		if (effectiveDiffRenderView !== "split") return
+		const availableWidth = Math.max(1, contentWidth)
+		const minRatio = Math.min(0.5, MIN_DIFF_SIDE_WIDTH / availableWidth)
+		const maxRatio = 1 - minRatio
+		preserveCurrentDiffLocation()
+		setDiffSplitRatio((current) => clampNumber(current + columns / availableWidth, minRatio, maxRatio))
+	}
 
 	const loadPullRequestReviewComments = (pullRequest: PullRequestItem, force = false) => {
 		const key = pullRequestDiffKey(pullRequest)
@@ -2929,6 +2957,7 @@ export const App = ({ systemThemeGeneration = 0 }: AppProps) => {
 		loadedPullRequestCount,
 		hasMorePullRequests,
 		isLoadingMorePullRequests,
+		listSplitResizable: isWideLayout && !detailFullView && !diffFullView && !commentsViewActive,
 		selectedPullRequest,
 		detailFullView,
 		diffFullView,
@@ -2961,6 +2990,7 @@ export const App = ({ systemThemeGeneration = 0 }: AppProps) => {
 			openRepositoryPicker,
 			loadMorePullRequests,
 			switchViewTo,
+			resizeListSplit: (delta) => resizeListPane(delta * SPLIT_RESIZE_COLUMNS),
 			openDetails: () => {
 				setDetailFullView(true)
 				setDetailScrollOffset(0)
@@ -2986,6 +3016,7 @@ export const App = ({ systemThemeGeneration = 0 }: AppProps) => {
 				flashNotice(`Refreshing diff for #${selectedPullRequest.number}`)
 			},
 			toggleDiffRenderView,
+			resizeDiffSplit: (delta) => resizeDiffSplit(delta * SPLIT_RESIZE_COLUMNS),
 			toggleDiffWrapMode,
 			toggleDiffWhitespaceMode,
 			openChangedFilesModal,
@@ -3306,6 +3337,8 @@ export const App = ({ systemThemeGeneration = 0 }: AppProps) => {
 			toggleRange: () => runCommandById("diff.toggle-range"),
 			toggleView: () => runCommandById("diff.toggle-view"),
 			toggleWrap: () => runCommandById("diff.toggle-wrap"),
+			splitView: effectiveDiffRenderView === "split",
+			resizeSplit: (delta) => resizeDiffSplit(delta * SPLIT_RESIZE_COLUMNS),
 			reload: () => runCommandById("diff.reload"),
 			nextThread: () => runCommandById("diff.next-thread"),
 			previousThread: () => runCommandById("diff.previous-thread"),
@@ -3355,12 +3388,14 @@ export const App = ({ systemThemeGeneration = 0 }: AppProps) => {
 			visibleCount: visiblePullRequests.length,
 			hasFilter: filterQuery.length > 0,
 			canScrollDetailPreview: isWideLayout && selectedPullRequest !== null,
+			canResizeSplit: isWideLayout && !detailFullView && !diffFullView && !commentsViewActive,
 			runCommandById: (id) => {
 				runCommandById(id)
 			},
 			switchQueueMode,
 			scrollDetailPreviewBy,
 			scrollDetailPreviewTo,
+			resizeSplit: (delta) => resizeListPane(delta * SPLIT_RESIZE_COLUMNS),
 			clearFilter: () => {
 				runCommandById("filter.clear")
 			},
@@ -3623,6 +3658,7 @@ export const App = ({ systemThemeGeneration = 0 }: AppProps) => {
 					view={effectiveDiffRenderView}
 					whitespaceMode={diffWhitespaceMode}
 					wrapMode={diffWrapMode}
+					splitRatio={diffSplitRatio}
 					paneWidth={contentWidth}
 					height={wideBodyHeight}
 					loadingIndicator={loadingIndicator}

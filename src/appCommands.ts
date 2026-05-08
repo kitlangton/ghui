@@ -13,6 +13,7 @@ interface AppCommandActions {
 	readonly openRepositoryPicker: () => void
 	readonly loadMorePullRequests: () => void
 	readonly switchViewTo: (view: PullRequestView) => void
+	readonly resizeListSplit: (delta: 1 | -1) => void
 	readonly openDetails: () => void
 	readonly closeDetails: () => void
 	readonly openDiffView: () => void
@@ -25,6 +26,7 @@ interface AppCommandActions {
 	readonly openDeleteSelectedComment: () => void
 	readonly reloadDiff: () => void
 	readonly toggleDiffRenderView: () => void
+	readonly resizeDiffSplit: (delta: 1 | -1) => void
 	readonly toggleDiffWrapMode: () => void
 	readonly toggleDiffWhitespaceMode: () => void
 	readonly openChangedFilesModal: () => void
@@ -53,6 +55,7 @@ interface BuildAppCommandsInput {
 	readonly loadedPullRequestCount: number
 	readonly hasMorePullRequests: boolean
 	readonly isLoadingMorePullRequests: boolean
+	readonly listSplitResizable: boolean
 	readonly selectedPullRequest: PullRequestItem | null
 	readonly detailFullView: boolean
 	readonly diffFullView: boolean
@@ -82,6 +85,7 @@ export const buildAppCommands = ({
 	loadedPullRequestCount,
 	hasMorePullRequests,
 	isLoadingMorePullRequests,
+	listSplitResizable,
 	selectedPullRequest,
 	detailFullView,
 	diffFullView,
@@ -108,6 +112,7 @@ export const buildAppCommands = ({
 	const selectedDiffLineReason = diffFullView && diffReady ? (selectedDiffCommentAnchorLabel ? null : "No diff line selected.") : diffOpenReadyReason
 	const diffThreadReason = diffFullView && diffReady ? (hasDiffCommentThreads ? null : "No diff comments loaded.") : diffOpenReadyReason
 	const changedFilesReason = diffFullView && diffReady ? (readyDiffFileCount > 0 ? null : "No changed files loaded.") : diffOpenReadyReason
+	const diffSplitReason = diffFullView ? (effectiveDiffRenderView === "split" ? null : "Split diff view is not active.") : "Open a diff first."
 	const selectedCommentReason = selectedPullRequest ? (commentsViewActive ? (hasSelectedComment ? null : "No comment selected.") : "Open comments first.") : noPullRequestReason
 	const ownCommentReason = selectedCommentReason ?? (canEditSelectedComment ? null : "Only your own (synced) comments can be edited or deleted.")
 	const loadMoreDisabledReason = isLoadingMorePullRequests ? "Already loading more pull requests." : hasMorePullRequests ? null : "No more pull requests loaded by this view."
@@ -194,6 +199,26 @@ export const buildAppCommands = ({
 			disabledReason: loadMoreDisabledReason,
 			keywords: ["next page", "pagination", "more"],
 			run: actions.loadMorePullRequests,
+		}),
+		defineCommand({
+			id: "list.resize-left",
+			title: "Resize list split left",
+			scope: "Navigation",
+			subtitle: "Give more space to pull request details",
+			shortcut: "<",
+			disabledReason: listSplitResizable ? null : "Split layout is not active.",
+			keywords: ["pane", "split", "width", "shrink list"],
+			run: () => actions.resizeListSplit(-1),
+		}),
+		defineCommand({
+			id: "list.resize-right",
+			title: "Resize list split right",
+			scope: "Navigation",
+			subtitle: "Give more space to the pull request list",
+			shortcut: ">",
+			disabledReason: listSplitResizable ? null : "Split layout is not active.",
+			keywords: ["pane", "split", "width", "grow list"],
+			run: () => actions.resizeListSplit(1),
 		}),
 		forSelected({
 			id: "detail.open",
@@ -292,6 +317,26 @@ export const buildAppCommands = ({
 			shortcut: "shift-v",
 			disabledReason: diffFullView ? null : "Open a diff first.",
 			run: actions.toggleDiffRenderView,
+		}),
+		defineCommand({
+			id: "diff.resize-split-left",
+			title: "Resize diff split left",
+			scope: "Diff",
+			subtitle: "Give more space to the right side",
+			shortcut: "<",
+			disabledReason: diffSplitReason,
+			keywords: ["pane", "split", "width", "old side"],
+			run: () => actions.resizeDiffSplit(-1),
+		}),
+		defineCommand({
+			id: "diff.resize-split-right",
+			title: "Resize diff split right",
+			scope: "Diff",
+			subtitle: "Give more space to the left side",
+			shortcut: ">",
+			disabledReason: diffSplitReason,
+			keywords: ["pane", "split", "width", "new side"],
+			run: () => actions.resizeDiffSplit(1),
 		}),
 		defineCommand({
 			id: "diff.toggle-wrap",

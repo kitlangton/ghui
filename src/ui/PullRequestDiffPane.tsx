@@ -1,5 +1,5 @@
-import type { DiffRenderable, MouseEvent, ScrollBoxRenderable } from "@opentui/core"
-import { useMemo, type Ref } from "react"
+import type { DiffRenderable, MouseEvent, Renderable, ScrollBoxRenderable } from "@opentui/core"
+import { useEffect, useMemo, useRef, type Ref } from "react"
 import type { DiffCommentSide, PullRequestItem, PullRequestReviewComment } from "../domain.js"
 import { colors, lineNumberTextColor, type ThemeId } from "./colors.js"
 import { CommentBodyLine, commentCountText, commentMetaSegments, CommentSegmentsLine } from "./comments.js"
@@ -51,6 +51,36 @@ const FileStats = ({ stats }: { stats: DiffFileStats }) => {
 	)
 }
 
+type SplitDiffInternals = {
+	readonly leftSide?: Renderable
+	readonly rightSide?: Renderable
+}
+
+const percentWidth = (ratio: number) => `${(ratio * 100).toFixed(3)}%` as `${number}%`
+let hasWarnedMissingSplitInternals = false
+
+const splitDiffInternals = (diff: DiffRenderable | null) => {
+	const candidate = diff as Partial<SplitDiffInternals> | null
+	if (candidate?.leftSide && candidate.rightSide) return candidate as Required<SplitDiffInternals>
+
+	if (!hasWarnedMissingSplitInternals && process.env.NODE_ENV !== "production") {
+		hasWarnedMissingSplitInternals = true
+		console.warn("Unable to resize split diff: @opentui/core DiffRenderable no longer exposes leftSide/rightSide internals.")
+	}
+	return null
+}
+
+// Called on attach, ratio changes, and diff render so the private split panes stay in sync with React state.
+const applyDiffSplitRatio = (diff: DiffRenderable | null, splitRatio: number, requestRender = true) => {
+	const splitDiff = splitDiffInternals(diff)
+	if (!splitDiff) return false
+
+	splitDiff.leftSide.width = percentWidth(splitRatio)
+	splitDiff.rightSide.width = percentWidth(1 - splitRatio)
+	if (requestRender) diff?.requestRender()
+	return true
+}
+
 const FileHeader = ({
 	file,
 	index,
@@ -89,6 +119,7 @@ export const PullRequestDiffPane = ({
 	view,
 	whitespaceMode,
 	wrapMode,
+	splitRatio,
 	paneWidth,
 	height,
 	loadingIndicator,
@@ -108,6 +139,7 @@ export const PullRequestDiffPane = ({
 	view: DiffView
 	whitespaceMode: DiffWhitespaceMode
 	wrapMode: DiffWrapMode
+	splitRatio: number
 	paneWidth: number
 	height: number
 	loadingIndicator: string
@@ -121,7 +153,15 @@ export const PullRequestDiffPane = ({
 	themeGeneration: number
 }) => {
 	const readyFiles = diffState?._tag === "Ready" ? diffState.files : []
+	const diffRefs = useRef(new Map<number, DiffRenderable>())
 	const syntaxStyle = useMemo(() => createDiffSyntaxStyle(), [themeId, themeGeneration])
+
+	useEffect(() => {
+		if (view !== "split") return
+		for (const diff of diffRefs.current.values()) {
+			applyDiffSplitRatio(diff, splitRatio)
+		}
+	}, [view, splitRatio, stackedFiles])
 
 	if (!pullRequest) {
 		return <LoadingPane content={{ title: "No pull request selected", hint: "Press esc to go back" }} width={paneWidth} height={height} />
@@ -215,9 +255,20 @@ export const PullRequestDiffPane = ({
 						</PaddedRow>
 						<Divider width={paneWidth} />
 						<diff
-							ref={(diff: DiffRenderable | null) => setDiffRef(stackedFile.index, diff)}
+							ref={(diff: DiffRenderable | null) => {
+								if (diff) {
+									diffRefs.current.set(stackedFile.index, diff)
+									if (view === "split") applyDiffSplitRatio(diff, splitRatio)
+								} else {
+									diffRefs.current.delete(stackedFile.index)
+								}
+								setDiffRef(stackedFile.index, diff)
+							}}
 							diff={stackedFile.file.patch}
 							view={view}
+							renderBefore={function (this: DiffRenderable) {
+								if (view === "split") applyDiffSplitRatio(this, splitRatio, false)
+							}}
 							syncScroll
 							filetype={stackedFile.file.filetype ?? "text"}
 							syntaxStyle={syntaxStyle}

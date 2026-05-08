@@ -107,6 +107,7 @@ running.
 - `f`: open the changed-files navigator while viewing a diff
 - `left` / `right`: choose the deleted or added side while in split diff comment mode
 - `[` / `]`: switch files while viewing or commenting on a diff
+- `<` / `>`: resize split panes in wide layout or split diff view
 - `s`: toggle draft or ready-for-review state
 - `m`: merge
 - `x`: close with confirmation

@@ -81,6 +81,27 @@ describe("stacked diff helpers", () => {
 		expect(context).toMatchObject({ side: "RIGHT", renderLine: 4, colorLine: 3 })
 	})
 
+	test("uses asymmetric split widths for wrapped split diffs", () => {
+		const [file] = splitPatchFiles(`diff --git a/ratio.ts b/ratio.ts
+--- a/ratio.ts
++++ b/ratio.ts
+@@ -1,2 +1,2 @@
+-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
++b
+ c`)
+		const anchors = getDiffCommentAnchors(file!, "split", "word", 60, 0.25)
+		const stacked = buildStackedDiffFiles([file!], "split", "word", 60, 0.25)
+		const deletion = anchors.find((anchor) => anchor.kind === "deletion")!
+		const addition = anchors.find((anchor) => anchor.kind === "addition")!
+		const context = anchors.find((anchor) => anchor.kind === "context")!
+
+		expect(patchRenderableLineCount(file!.patch, "split", "word", 60, 0.25)).toBe(5)
+		expect(stacked[0]).toMatchObject({ diffHeight: 5 })
+		expect(deletion).toMatchObject({ side: "LEFT", renderLine: 0, colorLine: 0 })
+		expect(addition).toMatchObject({ side: "RIGHT", renderLine: 0, colorLine: 0 })
+		expect(context).toMatchObject({ side: "RIGHT", renderLine: 4, colorLine: 4 })
+	})
+
 	test("chooses the first anchor at or below the current scroll line", () => {
 		const stacked = buildStackedDiffFiles(splitPatchFiles(patch), "unified", "none", 120)
 		const anchors = getStackedDiffCommentAnchors(stacked, "unified")

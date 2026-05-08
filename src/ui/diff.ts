@@ -327,10 +327,16 @@ export const pullRequestDiffKey = (pullRequest: PullRequestItem) => `${pullReque
 
 export const safeDiffFileIndex = (files: readonly DiffFilePatch[], index: number) => (files.length > 0 ? Math.max(0, Math.min(index, files.length - 1)) : 0)
 
-export const buildStackedDiffFiles = (files: readonly DiffFilePatch[], view: DiffView, wrapMode: DiffWrapMode, width: number): readonly StackedDiffFilePatch[] => {
+export const buildStackedDiffFiles = (
+	files: readonly DiffFilePatch[],
+	view: DiffView,
+	wrapMode: DiffWrapMode,
+	width: number,
+	splitRatio = 0.5,
+): readonly StackedDiffFilePatch[] => {
 	let offset = 0
 	return files.map((file, index) => {
-		const diffHeight = patchRenderableLineCount(file.patch, view, wrapMode, width)
+		const diffHeight = patchRenderableLineCount(file.patch, view, wrapMode, width, splitRatio)
 		const separatorBefore = index === 0 ? 0 : 1
 		const headerLine = offset + separatorBefore
 		const stackedFile = {
@@ -380,9 +386,16 @@ export const diffCommentAnchorLabel = (anchor: Pick<DiffCommentAnchor, "side" | 
 
 type PendingDiffCommentAnchor = Omit<DiffCommentAnchor, "renderLine" | "colorLine">
 
-const diffContentWidth = (lines: readonly string[], view: DiffView, width: number) => {
+const diffContentWidths = (lines: readonly string[], view: DiffView, width: number, splitRatio = 0.5) => {
 	const lineNumberGutterWidth = patchLineNumberGutterWidth(lines)
-	return view === "split" ? Math.max(1, Math.floor(width / 2) - lineNumberGutterWidth) : Math.max(1, width - lineNumberGutterWidth)
+	const splitLeftPaneWidth = Math.max(1, Math.floor(width * splitRatio) - lineNumberGutterWidth)
+	const splitRightPaneWidth = Math.max(1, width - Math.floor(width * splitRatio) - lineNumberGutterWidth)
+	const unifiedPaneWidth = Math.max(1, width - lineNumberGutterWidth)
+	return {
+		left: view === "split" ? splitLeftPaneWidth : unifiedPaneWidth,
+		right: view === "split" ? splitRightPaneWidth : unifiedPaneWidth,
+		unified: unifiedPaneWidth,
+	}
 }
 
 export const diffFileStats = (file: DiffFilePatch): DiffFileStats => {
@@ -410,10 +423,16 @@ export const diffFileStatsText = (stats: DiffFileStats) => {
 	return [stats.additions > 0 ? `+${stats.additions}` : null, stats.deletions > 0 ? `-${stats.deletions}` : null].filter((part): part is string => part !== null).join(" ")
 }
 
-export const getDiffCommentAnchors = (file: DiffFilePatch, view: DiffView = "unified", wrapMode: DiffWrapMode = "none", width = 120): readonly DiffCommentAnchor[] => {
+export const getDiffCommentAnchors = (
+	file: DiffFilePatch,
+	view: DiffView = "unified",
+	wrapMode: DiffWrapMode = "none",
+	width = 120,
+	splitRatio = 0.5,
+): readonly DiffCommentAnchor[] => {
 	const anchors: DiffCommentAnchor[] = []
 	const lines = file.patch.split("\n")
-	const contentWidth = diffContentWidth(lines, view, width)
+	const contentWidths = diffContentWidths(lines, view, width, splitRatio)
 	let oldLine = 0
 	let newLine = 0
 	let renderLine = 0
@@ -503,14 +522,14 @@ export const getDiffCommentAnchors = (file: DiffFilePatch, view: DiffView = "uni
 
 		if (firstChar === "+") {
 			const text = line.slice(1)
-			additions.push({ path: file.name, line: newLine, side: "RIGHT", kind: "addition", text, height: estimatedWrappedLineCount(text, contentWidth, wrapMode) })
+			additions.push({ path: file.name, line: newLine, side: "RIGHT", kind: "addition", text, height: estimatedWrappedLineCount(text, contentWidths.right, wrapMode) })
 			newLine++
 			continue
 		}
 
 		if (firstChar === "-") {
 			const text = line.slice(1)
-			deletions.push({ path: file.name, line: oldLine, side: "LEFT", kind: "deletion", text, height: estimatedWrappedLineCount(text, contentWidth, wrapMode) })
+			deletions.push({ path: file.name, line: oldLine, side: "LEFT", kind: "deletion", text, height: estimatedWrappedLineCount(text, contentWidths.left, wrapMode) })
 			oldLine++
 			continue
 		}
@@ -518,7 +537,11 @@ export const getDiffCommentAnchors = (file: DiffFilePatch, view: DiffView = "uni
 		if (firstChar === " ") {
 			flushChangeBlock()
 			const text = line.slice(1)
-			const anchor = { path: file.name, line: newLine, side: "RIGHT", kind: "context", text, height: estimatedWrappedLineCount(text, contentWidth, wrapMode) } as const
+			const height =
+				view === "split"
+					? Math.max(estimatedWrappedLineCount(text, contentWidths.left, wrapMode), estimatedWrappedLineCount(text, contentWidths.right, wrapMode))
+					: estimatedWrappedLineCount(text, contentWidths.unified, wrapMode)
+			const anchor = { path: file.name, line: newLine, side: "RIGHT", kind: "context", text, height } as const
 			if (view === "split") {
 				pushSplitContext(anchor)
 			} else {
@@ -540,9 +563,10 @@ export const getStackedDiffCommentAnchors = (
 	view: DiffView = "unified",
 	wrapMode: DiffWrapMode = "none",
 	width = 120,
+	splitRatio = 0.5,
 ): readonly StackedDiffCommentAnchor[] =>
 	stackedFiles.flatMap((stackedFile) =>
-		getDiffCommentAnchors(stackedFile.file, view, wrapMode, width).map((anchor) => ({
+		getDiffCommentAnchors(stackedFile.file, view, wrapMode, width, splitRatio).map((anchor) => ({
 			...anchor,
 			fileIndex: stackedFile.index,
 			localRenderLine: anchor.renderLine,
@@ -646,9 +670,9 @@ const patchLineNumberGutterWidth = (lines: readonly string[]) => {
 	return Math.max(3, digits + 2) + (hasSigns ? 2 : 0)
 }
 
-export const patchRenderableLineCount = (patch: string, view: DiffView, wrapMode: DiffWrapMode, width: number) => {
+export const patchRenderableLineCount = (patch: string, view: DiffView, wrapMode: DiffWrapMode, width: number, splitRatio = 0.5) => {
 	const lines = patch.split("\n")
-	const contentWidth = diffContentWidth(lines, view, width)
+	const contentWidths = diffContentWidths(lines, view, width, splitRatio)
 	let count = 0
 	let inHunk = false
 	let deletions: number[] = []
@@ -684,18 +708,21 @@ export const patchRenderableLineCount = (patch: string, view: DiffView, wrapMode
 		if (firstChar === "\\") continue
 
 		if (firstChar === "-") {
-			deletions.push(estimatedWrappedLineCount(line.slice(1), contentWidth, wrapMode))
+			deletions.push(estimatedWrappedLineCount(line.slice(1), contentWidths.left, wrapMode))
 			continue
 		}
 
 		if (firstChar === "+") {
-			additions.push(estimatedWrappedLineCount(line.slice(1), contentWidth, wrapMode))
+			additions.push(estimatedWrappedLineCount(line.slice(1), contentWidths.right, wrapMode))
 			continue
 		}
 
 		if (firstChar === " ") {
 			flushChangeBlock()
-			count += estimatedWrappedLineCount(line.slice(1), contentWidth, wrapMode)
+			count +=
+				view === "split"
+					? Math.max(estimatedWrappedLineCount(line.slice(1), contentWidths.left, wrapMode), estimatedWrappedLineCount(line.slice(1), contentWidths.right, wrapMode))
+					: estimatedWrappedLineCount(line.slice(1), contentWidths.unified, wrapMode)
 		}
 	}
 

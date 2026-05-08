@@ -67,11 +67,11 @@ describe("filterChangedFiles", () => {
 	})
 
 	test("path match is case-insensitive and keeps source index", () => {
-		expect(filterChangedFiles(files, "REVIEW").map((entry) => ({ file: entry.file, index: entry.index }))).toEqual([{ file: files[1], index: 1 }])
+		expect(filterChangedFiles(files, "REVIEW").map((entry) => ({ file: entry.file, index: entry.index }))).toEqual([{ file: files[1]!, index: 1 }])
 	})
 
 	test("trims whitespace from query", () => {
-		expect(filterChangedFiles(files, "  readme  ").map((entry) => ({ file: entry.file, index: entry.index }))).toEqual([{ file: files[2], index: 2 }])
+		expect(filterChangedFiles(files, "  readme  ").map((entry) => ({ file: entry.file, index: entry.index }))).toEqual([{ file: files[2]!, index: 2 }])
 	})
 
 	test("matches all query tokens across path segments", () => {

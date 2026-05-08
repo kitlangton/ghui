@@ -116,7 +116,7 @@ const press = async (
 ) => {
 	await act(async () => {
 		if (key.kind === "arrow") mockInput.pressArrow(key.dir)
-		else mockInput.pressKey(key.name, { shift: key.shift })
+		else mockInput.pressKey(key.name, key.shift === undefined ? undefined : { shift: key.shift })
 	})
 	for (let i = 0; i < settleFrames; i++) await stepFrame(renderOnce)
 }

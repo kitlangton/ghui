@@ -23,29 +23,32 @@ const tempCachePath = async () => {
 
 const view: PullRequestView = { _tag: "Queue", mode: "authored", repository: null }
 
-const pullRequest = (number: number, overrides: Partial<PullRequestItem> = {}): PullRequestItem => ({
-	repository: "owner/repo",
-	author: "author",
-	headRefOid: `sha-${number}`,
-	number,
-	title: `PR ${number}`,
-	body: "Body",
-	labels: [{ name: "bug", color: "#d73a4a" }],
-	additions: 10,
-	deletions: 2,
-	changedFiles: 3,
-	state: "open",
-	reviewStatus: "none",
-	checkStatus: "passing",
-	checkSummary: "1/1",
-	checks: [{ name: "ci", status: "completed", conclusion: "success" }],
-	autoMergeEnabled: false,
-	detailLoaded: true,
-	createdAt: new Date(`2026-01-${String(number).padStart(2, "0")}T00:00:00Z`),
-	closedAt: null,
-	url: `https://github.com/owner/repo/pull/${number}`,
-	...overrides,
-})
+const pullRequest = (number: number, overrides: Partial<PullRequestItem> = {}): PullRequestItem => {
+	const base: PullRequestItem = {
+		repository: "owner/repo",
+		author: "author",
+		headRefOid: `sha-${number}`,
+		headRefName: `feature/pr-${number}`,
+		number,
+		title: `PR ${number}`,
+		body: "Body",
+		labels: [{ name: "bug", color: "#d73a4a" }],
+		additions: 10,
+		deletions: 2,
+		changedFiles: 3,
+		state: "open",
+		reviewStatus: "none",
+		checkStatus: "passing",
+		checkSummary: "1/1",
+		checks: [{ name: "ci", status: "completed", conclusion: "success" }],
+		autoMergeEnabled: false,
+		detailLoaded: true,
+		createdAt: new Date(`2026-01-${String(number).padStart(2, "0")}T00:00:00Z`),
+		closedAt: null,
+		url: `https://github.com/owner/repo/pull/${number}`,
+	}
+	return { ...base, ...overrides }
+}
 
 const load = (data: readonly PullRequestItem[]): PullRequestLoad => ({
 	view,
@@ -179,7 +182,7 @@ describe("CacheService", () => {
 		)
 
 		const db = new Database(filename)
-		db.run("update pull_requests set data_json = ? where pr_key = ?", "{", pullRequestCacheKey({ repository: "owner/repo", number: 1 }))
+		db.run("update pull_requests set data_json = ? where pr_key = ?", ["{", pullRequestCacheKey({ repository: "owner/repo", number: 1 })])
 		db.close()
 
 		const cached = await runCache(

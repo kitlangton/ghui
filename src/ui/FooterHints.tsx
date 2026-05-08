@@ -43,6 +43,7 @@ const diffViewHints = (ctx: HintsContext): readonly HintItem[] => [
 	{ key: "v", label: ctx.diffRangeActive ? "clear" : "range" },
 	{ key: "w", label: "wrap" },
 	{ key: "[]", label: "files" },
+	{ key: "{}", label: "hunks" },
 	{ key: "r", label: "reload" },
 ]
 

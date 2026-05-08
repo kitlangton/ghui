@@ -14,6 +14,10 @@ export interface DiffViewCtx {
 	readonly reload: () => void
 	readonly nextThread: () => void
 	readonly previousThread: () => void
+	readonly nextHunk: () => void
+	readonly previousHunk: () => void
+	readonly copyHunk: () => void
+	readonly copyFileDiff: () => void
 	readonly moveAnchor: (delta: number, opts?: { preserveViewportRow?: boolean }) => void
 	readonly moveAnchorToBoundary: (boundary: "first" | "last") => void
 	readonly alignAnchor: (align: DiffAlign) => void
@@ -36,6 +40,10 @@ export const diffViewKeymap = Diff(
 	{ id: "diff.reload", title: "Reload diff", keys: ["r"], run: (s) => s.reload() },
 	{ id: "diff.next-thread", title: "Next thread", keys: ["n"], run: (s) => s.nextThread() },
 	{ id: "diff.previous-thread", title: "Previous thread", keys: ["p"], run: (s) => s.previousThread() },
+	{ id: "diff.next-hunk", title: "Next hunk", keys: ["}"], run: (s) => s.nextHunk() },
+	{ id: "diff.previous-hunk", title: "Previous hunk", keys: ["{"], run: (s) => s.previousHunk() },
+	{ id: "diff.copy-hunk", title: "Copy hunk", keys: ["y"], run: (s) => s.copyHunk() },
+	{ id: "diff.copy-file", title: "Copy file diff", keys: ["shift+y"], run: (s) => s.copyFileDiff() },
 
 	// Half-page anchor moves preserve viewport row (true vim semantics)
 	{

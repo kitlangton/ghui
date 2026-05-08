@@ -21,6 +21,18 @@ export interface DiffFilePatch {
 	readonly patch: string
 }
 
+export interface DiffHunkPatch {
+	readonly header: string
+	readonly patch: string
+	readonly startLine: number
+}
+
+export interface DiffHunkLineRange {
+	/** Logical line-sign coordinates inside the DiffRenderable side, not wrapped visual rows. */
+	readonly start: number
+	readonly end: number
+}
+
 export interface DiffFileStats {
 	readonly additions: number
 	readonly deletions: number
@@ -32,6 +44,17 @@ export interface StackedDiffFilePatch {
 	readonly headerLine: number
 	readonly diffStartLine: number
 	readonly diffHeight: number
+}
+
+export interface StackedDiffHunk {
+	readonly file: DiffFilePatch
+	readonly fileIndex: number
+	readonly hunkIndex: number
+	readonly hunkCount: number
+	readonly header: string
+	readonly patch: string
+	readonly lineRange: DiffHunkLineRange
+	readonly renderLine: number
 }
 
 export interface DiffCommentAnchor {
@@ -321,6 +344,74 @@ export const splitPatchFiles = (patch: string): readonly DiffFilePatch[] => {
 		const name = patchFileName(filePatch)
 		return { name, filetype: pathToFiletype(name), patch: filePatch }
 	})
+}
+
+export const splitPatchHunks = (patch: string): readonly DiffHunkPatch[] => {
+	const lines = patch.trimEnd().split("\n")
+	const hunkIndexes = lines.map((line, index) => ({ line, index })).filter(({ line }) => hunkHeaderPattern.test(line))
+	if (hunkIndexes.length === 0) return []
+
+	const fileHeader = lines.slice(0, hunkIndexes[0]!.index).join("\n")
+	return hunkIndexes.map(({ line, index }, hunkIndex) => {
+		const end = hunkIndex + 1 < hunkIndexes.length ? hunkIndexes[hunkIndex + 1]!.index : lines.length
+		const hunkBody = lines.slice(index, end).join("\n")
+		return {
+			header: line,
+			patch: fileHeader.length > 0 ? `${fileHeader}\n${hunkBody}` : hunkBody,
+			startLine: index,
+		}
+	})
+}
+
+const patchLogicalLineCount = (lines: readonly string[], view: DiffView) => {
+	let count = 0
+	let inHunk = false
+	let deletions = 0
+	let additions = 0
+
+	const flushChangeBlock = () => {
+		if (deletions === 0 && additions === 0) return
+		count += view === "split" ? Math.max(deletions, additions) : deletions + additions
+		deletions = 0
+		additions = 0
+	}
+
+	for (const line of lines) {
+		if (line.startsWith("@@")) {
+			flushChangeBlock()
+			inHunk = true
+			continue
+		}
+
+		if (!inHunk) continue
+
+		const firstChar = line[0]
+		if (firstChar === "\\") continue
+		if (firstChar === "-") {
+			deletions++
+			continue
+		}
+		if (firstChar === "+") {
+			additions++
+			continue
+		}
+		if (firstChar === " ") {
+			flushChangeBlock()
+			count++
+		}
+	}
+
+	flushChangeBlock()
+	return count
+}
+
+export const patchHunkLineRange = (patch: string, hunk: DiffHunkPatch, view: DiffView): DiffHunkLineRange => {
+	const lines = patch.trimEnd().split("\n")
+	const nextHunkIndex = lines.findIndex((line, index) => index > hunk.startLine && hunkHeaderPattern.test(line))
+	const endLine = nextHunkIndex >= 0 ? nextHunkIndex : lines.length
+	const start = patchLogicalLineCount(lines.slice(0, hunk.startLine), view)
+	const lineCount = patchLogicalLineCount(lines.slice(hunk.startLine, endLine), view)
+	return { start, end: Math.max(start, start + lineCount - 1) }
 }
 
 export const pullRequestDiffKey = (pullRequest: PullRequestItem) => `${pullRequest.repository}#${pullRequest.number}:${pullRequest.headRefOid}`
@@ -646,7 +737,7 @@ const patchLineNumberGutterWidth = (lines: readonly string[]) => {
 	return Math.max(3, digits + 2) + (hasSigns ? 2 : 0)
 }
 
-export const patchRenderableLineCount = (patch: string, view: DiffView, wrapMode: DiffWrapMode, width: number) => {
+const patchRenderableLineCountRaw = (patch: string, view: DiffView, wrapMode: DiffWrapMode, width: number) => {
 	const lines = patch.split("\n")
 	const contentWidth = diffContentWidth(lines, view, width)
 	let count = 0
@@ -700,5 +791,43 @@ export const patchRenderableLineCount = (patch: string, view: DiffView, wrapMode
 	}
 
 	flushChangeBlock()
-	return Math.max(1, count)
+	return count
+}
+
+export const patchRenderableLineCount = (patch: string, view: DiffView, wrapMode: DiffWrapMode, width: number) => {
+	return Math.max(1, patchRenderableLineCountRaw(patch, view, wrapMode, width))
+}
+
+export const patchHunkRenderableOffset = (patch: string, hunk: DiffHunkPatch, view: DiffView, wrapMode: DiffWrapMode, width: number) => {
+	const beforeHunk = patch.split("\n").slice(0, hunk.startLine).join("\n")
+	return patchRenderableLineCountRaw(beforeHunk, view, wrapMode, width)
+}
+
+export const buildStackedDiffHunks = (stackedFiles: readonly StackedDiffFilePatch[], view: DiffView, wrapMode: DiffWrapMode, width: number): readonly StackedDiffHunk[] => {
+	const fileHunks = stackedFiles.map((stackedFile) => ({ stackedFile, hunks: splitPatchHunks(stackedFile.file.patch) }))
+	const hunkCount = fileHunks.reduce((count, { hunks }) => count + hunks.length, 0)
+	let hunkIndex = 0
+
+	return fileHunks.flatMap(({ stackedFile, hunks }) =>
+		hunks.map((hunk) => ({
+			file: stackedFile.file,
+			fileIndex: stackedFile.index,
+			hunkIndex: hunkIndex++,
+			hunkCount,
+			header: hunk.header,
+			patch: hunk.patch,
+			lineRange: patchHunkLineRange(stackedFile.file.patch, hunk, view),
+			renderLine: stackedFile.diffStartLine + patchHunkRenderableOffset(stackedFile.file.patch, hunk, view, wrapMode, width),
+		})),
+	)
+}
+
+export const stackedDiffHunkIndexAtLine = (hunks: readonly StackedDiffHunk[], line: number) =>
+	hunks.findIndex((hunk, index) => hunk.renderLine <= line && (hunks[index + 1]?.renderLine ?? Number.POSITIVE_INFINITY) > line)
+
+export const nearestStackedDiffHunkIndexForFile = (hunks: readonly StackedDiffHunk[], fileIndex: number) => {
+	const exactIndex = hunks.findIndex((hunk) => hunk.fileIndex === fileIndex)
+	if (exactIndex >= 0) return exactIndex
+	const nextIndex = hunks.findIndex((hunk) => hunk.fileIndex > fileIndex)
+	return nextIndex >= 0 ? nextIndex : null
 }

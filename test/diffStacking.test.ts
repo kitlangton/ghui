@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test"
 import {
 	buildStackedDiffFiles,
+	buildStackedDiffHunks,
 	diffAnchorOnSide,
 	getDiffCommentAnchors,
 	getStackedDiffCommentAnchors,
@@ -8,9 +9,12 @@ import {
 	minimizeWhitespacePatch,
 	nearestDiffAnchorForLocation,
 	nearestDiffCommentAnchorIndex,
+	nearestStackedDiffHunkIndexForFile,
 	patchRenderableLineCount,
 	scrollTopForVisibleLine,
 	splitPatchFiles,
+	splitPatchHunks,
+	stackedDiffHunkIndexAtLine,
 	verticalDiffAnchor,
 } from "../src/ui/diff.ts"
 
@@ -48,6 +52,77 @@ describe("stacked diff helpers", () => {
 		expect(secondFileAnchor?.fileIndex).toBe(1)
 		expect(secondFileAnchor?.localRenderLine).toBe(1)
 		expect(secondFileAnchor?.renderLine).toBe(stacked[1]!.diffStartLine + 1)
+	})
+
+	test("orders stacked hunks globally across files", () => {
+		const files = splitPatchFiles(`diff --git a/one.ts b/one.ts
+--- a/one.ts
++++ b/one.ts
+@@ -1,2 +1,2 @@
+-const one = 1
++const one = 10
+ const two = 2
+@@ -10,2 +10,2 @@
+-const ten = 10
++const ten = 100
+ const eleven = 11
+diff --git a/two.ts b/two.ts
+--- a/two.ts
++++ b/two.ts
+@@ -20,2 +20,2 @@
+-const twenty = 20
++const twenty = 200
+ const twentyOne = 21`)
+		const hunks = buildStackedDiffHunks(buildStackedDiffFiles(files, "unified", "none", 120), "unified", "none", 120)
+
+		expect(hunks.map((hunk) => `${hunk.fileIndex}:${hunk.hunkIndex}/${hunk.hunkCount}`)).toEqual(["0:0/3", "0:1/3", "1:2/3"])
+		expect(stackedDiffHunkIndexAtLine(hunks, hunks[2]!.renderLine - 1)).toBe(1)
+		expect(stackedDiffHunkIndexAtLine(hunks, hunks[2]!.renderLine)).toBe(2)
+	})
+
+	test("keeps hunk marker ranges in logical line-sign coordinates when wrapping", () => {
+		const files = splitPatchFiles(`diff --git a/wrap.ts b/wrap.ts
+--- a/wrap.ts
++++ b/wrap.ts
+@@ -1,1 +1,1 @@
+ const first = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+@@ -10,1 +10,1 @@
+ const second = true`)
+		const [file] = files
+		const hunks = splitPatchHunks(file!.patch)
+		const stacked = buildStackedDiffHunks(buildStackedDiffFiles(files, "unified", "word", 20), "unified", "word", 20)
+
+		expect(hunks).toHaveLength(2)
+		expect(stacked[1]!.lineRange).toEqual({ start: 1, end: 1 })
+		expect(stacked[1]!.renderLine).toBeGreaterThan(stacked[0]!.renderLine + 1)
+	})
+
+	test("finds the same-file or next hunk without jumping backward from hunk-less files", () => {
+		const files = splitPatchFiles(`diff --git a/one.ts b/one.ts
+--- a/one.ts
++++ b/one.ts
+@@ -1,1 +1,1 @@
+-const one = 1
++const one = 10
+diff --git a/rename-only.ts b/rename-only.ts
+similarity index 100%
+rename from rename-only.ts
+rename to renamed.ts
+diff --git a/three.ts b/three.ts
+--- a/three.ts
++++ b/three.ts
+@@ -3,1 +3,1 @@
+-const three = 3
++const three = 30
+diff --git a/mode-only.ts b/mode-only.ts
+old mode 100644
+new mode 100755`)
+		const hunks = buildStackedDiffHunks(buildStackedDiffFiles(files, "unified", "none", 120), "unified", "none", 120)
+
+		expect(nearestStackedDiffHunkIndexForFile(hunks, 0)).toBe(0)
+		expect(nearestStackedDiffHunkIndexForFile(hunks, 1)).toBe(1)
+		expect(nearestStackedDiffHunkIndexForFile(hunks, 2)).toBe(1)
+		expect(nearestStackedDiffHunkIndexForFile(hunks, 3)).toBeNull()
 	})
 
 	test("keeps separate visual and color lines for wrapped unified diffs", () => {

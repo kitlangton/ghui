@@ -1,5 +1,5 @@
-import type { DiffRenderable, MouseEvent, ScrollBoxRenderable } from "@opentui/core"
-import { useMemo, type Ref } from "react"
+import type { DiffRenderable, LineSign, MouseEvent, ScrollBoxRenderable } from "@opentui/core"
+import { useEffect, useMemo, useRef, type MutableRefObject, type Ref } from "react"
 import type { DiffCommentSide, PullRequestItem, PullRequestReviewComment } from "../domain.js"
 import { colors, lineNumberTextColor, type ThemeId } from "./colors.js"
 import { CommentBodyLine, commentCountText, commentMetaSegments, CommentSegmentsLine } from "./comments.js"
@@ -16,6 +16,7 @@ import {
 	type DiffWhitespaceMode,
 	type DiffWrapMode,
 	type PullRequestDiffState,
+	type StackedDiffHunk,
 	type StackedDiffCommentAnchor,
 	type StackedDiffFilePatch,
 } from "./diff.js"
@@ -49,6 +50,110 @@ const FileStats = ({ stats }: { stats: DiffFileStats }) => {
 			{stats.deletions > 0 ? <span fg={colors.status.failing}>{`-${stats.deletions}`}</span> : null}
 		</>
 	)
+}
+
+type MarkableSide = {
+	readonly getLineSigns: () => Map<number, LineSign>
+	readonly setLineSign: (line: number, sign: LineSign) => void
+	readonly clearLineSign: (line: number) => void
+}
+
+type MarkableDiffInternals = {
+	readonly leftSide?: unknown
+	readonly rightSide?: unknown
+}
+
+interface HunkMarkerSnapshot {
+	readonly fileIndex: number
+	readonly left: Map<number, LineSign | null>
+	readonly right: Map<number, LineSign | null>
+}
+
+const hunkMarkerSign = "│"
+
+const hunkRangeText = (header: string | undefined) => header?.match(/^@@ [^@]+ @@/)?.[0] ?? header
+
+const isRecord = (value: unknown): value is Record<string, unknown> => typeof value === "object" && value !== null
+
+const isMarkableSide = (side: unknown): side is MarkableSide =>
+	isRecord(side) && typeof side.getLineSigns === "function" && typeof side.setLineSign === "function" && typeof side.clearLineSign === "function"
+
+const diffMarkableSides = (diff: DiffRenderable) => {
+	const candidate: unknown = diff
+	const internals: MarkableDiffInternals = isRecord(candidate) ? { leftSide: candidate.leftSide, rightSide: candidate.rightSide } : {}
+	return {
+		left: isMarkableSide(internals.leftSide) ? internals.leftSide : undefined,
+		right: isMarkableSide(internals.rightSide) ? internals.rightSide : undefined,
+	}
+}
+
+const saveLineSigns = (side: MarkableSide | undefined, start: number, end: number) => {
+	const saved = new Map<number, LineSign | null>()
+	if (!side) return saved
+
+	const signs = side.getLineSigns()
+	for (let line = start; line <= end; line++) {
+		const existing = signs.get(line)
+		saved.set(line, existing ? { ...existing } : null)
+	}
+	return saved
+}
+
+const restoreLineSigns = (side: MarkableSide | undefined, saved: Map<number, LineSign | null>) => {
+	if (!side) return
+
+	for (const [line, sign] of saved) {
+		if (sign) {
+			side.setLineSign(line, sign)
+		} else {
+			side.clearLineSign(line)
+		}
+	}
+}
+
+const restoreHunkMarker = (diffRefs: ReadonlyMap<number, DiffRenderable>, snapshot: HunkMarkerSnapshot | null) => {
+	if (!snapshot) return
+	const diff = diffRefs.get(snapshot.fileIndex)
+	if (!diff) return
+	const sides = diffMarkableSides(diff)
+	restoreLineSigns(sides.left, snapshot.left)
+	restoreLineSigns(sides.right, snapshot.right)
+	diff.requestRender()
+}
+
+const clearHunkMarker = (diffRefs: ReadonlyMap<number, DiffRenderable>, previousRef: MutableRefObject<HunkMarkerSnapshot | null>) => {
+	restoreHunkMarker(diffRefs, previousRef.current)
+	previousRef.current = null
+}
+
+const applyMarkerToSide = (side: MarkableSide | undefined, hunk: StackedDiffHunk) => {
+	if (!side) return
+
+	const signs = side.getLineSigns()
+	for (let line = hunk.lineRange.start; line <= hunk.lineRange.end; line++) {
+		const existing = signs.get(line)
+		side.setLineSign(line, { ...existing, before: hunkMarkerSign, beforeColor: colors.accent })
+	}
+}
+
+const applyHunkMarker = (diffRefs: ReadonlyMap<number, DiffRenderable>, hunk: StackedDiffHunk | null, previousRef: MutableRefObject<HunkMarkerSnapshot | null>) => {
+	clearHunkMarker(diffRefs, previousRef)
+	if (!hunk || hunk.hunkCount <= 1) return
+
+	const diff = diffRefs.get(hunk.fileIndex)
+	if (!diff) return
+	const sides = diffMarkableSides(diff)
+	if (!sides.left && !sides.right) return
+
+	const snapshot: HunkMarkerSnapshot = {
+		fileIndex: hunk.fileIndex,
+		left: saveLineSigns(sides.left, hunk.lineRange.start, hunk.lineRange.end),
+		right: saveLineSigns(sides.right, hunk.lineRange.start, hunk.lineRange.end),
+	}
+	previousRef.current = snapshot
+	applyMarkerToSide(sides.left, hunk)
+	applyMarkerToSide(sides.right, hunk)
+	diff.requestRender()
 }
 
 const FileHeader = ({
@@ -97,6 +202,7 @@ export const PullRequestDiffPane = ({
 	selectedCommentAnchor,
 	selectedCommentLabel,
 	selectedCommentThread,
+	selectedHunk,
 	onSelectCommentLine,
 	themeId,
 	themeGeneration,
@@ -116,12 +222,20 @@ export const PullRequestDiffPane = ({
 	selectedCommentAnchor: StackedDiffCommentAnchor | null
 	selectedCommentLabel: string | null
 	selectedCommentThread: readonly PullRequestReviewComment[]
+	selectedHunk: StackedDiffHunk | null
 	onSelectCommentLine: (renderLine: number, side: DiffCommentSide | null) => void
 	themeId: ThemeId
 	themeGeneration: number
 }) => {
 	const readyFiles = diffState?._tag === "Ready" ? diffState.files : []
+	const diffRefs = useRef(new Map<number, DiffRenderable>())
+	const hunkMarkerRef = useRef<HunkMarkerSnapshot | null>(null)
 	const syntaxStyle = useMemo(() => createDiffSyntaxStyle(), [themeId, themeGeneration])
+
+	useEffect(() => {
+		applyHunkMarker(diffRefs.current, selectedHunk, hunkMarkerRef)
+		return () => clearHunkMarker(diffRefs.current, hunkMarkerRef)
+	}, [selectedHunk?.fileIndex, selectedHunk?.hunkIndex, selectedHunk?.lineRange.start, selectedHunk?.lineRange.end, view, stackedFiles])
 
 	if (!pullRequest) {
 		return <LoadingPane content={{ title: "No pull request selected", hint: "Press esc to go back" }} width={paneWidth} height={height} />
@@ -184,10 +298,20 @@ export const PullRequestDiffPane = ({
 	const incomingStickyFile = stickyArrayIndex >= 0 ? stackedFiles[stickyArrayIndex + 1] : undefined
 	const incomingHeaderDistance = incomingStickyFile ? incomingStickyFile.headerLine - stickyScrollTop : Number.POSITIVE_INFINITY
 	const incomingFile = incomingHeaderDistance === 1 ? incomingStickyFile : undefined
+	const hunkLabelFor = (stackedFile: StackedDiffFilePatch | undefined) => {
+		if (!selectedHunk || selectedHunk.fileIndex !== stackedFile?.index) return ""
+		return `  hunk ${selectedHunk.hunkIndex + 1}/${selectedHunk.hunkCount} ${hunkRangeText(selectedHunk.header) ?? ""}`
+	}
 	const stickyCommentLabelFor = (stackedFile: StackedDiffFilePatch | undefined) => {
 		if (!selectedCommentAnchor) return "  no lines"
 		if (selectedCommentAnchor.fileIndex !== stackedFile?.index) return ""
 		return `  ${selectedCommentLabel ?? diffCommentAnchorLabel(selectedCommentAnchor)}`
+	}
+	const headerSuffixFor = (stackedFile: StackedDiffFilePatch | undefined) => {
+		const comment = stickyCommentLabelFor(stackedFile)
+		const hunk = hunkLabelFor(stackedFile)
+		if (comment && hunk) return `${comment}${hunk}`
+		return comment || hunk
 	}
 	const stickyCommentColor = selectedCommentAnchor?.side === "LEFT" ? colors.status.failing : colors.status.passing
 	const diffLineNumberFg = lineNumberTextColor(colors.diff.lineNumberBg, colors.text)
@@ -211,11 +335,28 @@ export const PullRequestDiffPane = ({
 					<box key={`${pullRequest.url}-${stackedFile.index}-${view}-${wrapMode}`} flexDirection="column" flexShrink={0}>
 						{stackedFile.index > 0 ? <Divider width={paneWidth} /> : null}
 						<PaddedRow>
-							<FileHeader file={stackedFile.file} index={stackedFile.index} count={readyFiles.length} width={paneWidth} />
+							<FileHeader
+								file={stackedFile.file}
+								index={stackedFile.index}
+								count={readyFiles.length}
+								width={paneWidth}
+								suffix={headerSuffixFor(stackedFile)}
+								suffixColor={stickyCommentLabelFor(stackedFile) ? stickyCommentColor : colors.count}
+							/>
 						</PaddedRow>
 						<Divider width={paneWidth} />
 						<diff
-							ref={(diff: DiffRenderable | null) => setDiffRef(stackedFile.index, diff)}
+							ref={(diff: DiffRenderable | null) => {
+								if (!diff && hunkMarkerRef.current?.fileIndex === stackedFile.index) {
+									clearHunkMarker(diffRefs.current, hunkMarkerRef)
+								}
+								if (diff) {
+									diffRefs.current.set(stackedFile.index, diff)
+								} else {
+									diffRefs.current.delete(stackedFile.index)
+								}
+								setDiffRef(stackedFile.index, diff)
+							}}
 							diff={stackedFile.file.patch}
 							view={view}
 							syncScroll
@@ -252,8 +393,8 @@ export const PullRequestDiffPane = ({
 									index={incomingFile.index}
 									count={readyFiles.length}
 									width={paneWidth}
-									suffix={stickyCommentLabelFor(incomingFile)}
-									suffixColor={stickyCommentColor}
+									suffix={headerSuffixFor(incomingFile)}
+									suffixColor={stickyCommentLabelFor(incomingFile) ? stickyCommentColor : colors.count}
 								/>
 							</PaddedRow>
 						</>
@@ -265,8 +406,8 @@ export const PullRequestDiffPane = ({
 									index={stickyFile.index}
 									count={readyFiles.length}
 									width={paneWidth}
-									suffix={stickyCommentLabelFor(stickyFile)}
-									suffixColor={stickyCommentColor}
+									suffix={headerSuffixFor(stickyFile)}
+									suffixColor={stickyCommentLabelFor(stickyFile) ? stickyCommentColor : colors.count}
 								/>
 							</PaddedRow>
 							<Divider width={paneWidth} />

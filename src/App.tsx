@@ -74,6 +74,7 @@ import {
 } from "./ui/commentEditor.js"
 import {
 	buildStackedDiffFiles,
+	buildStackedDiffHunks,
 	diffAnchorOnSide,
 	diffCommentAnchorLabel,
 	diffCommentLineLabel,
@@ -82,12 +83,14 @@ import {
 	getStackedDiffCommentAnchors,
 	minimizeWhitespaceDiffFiles,
 	nearestDiffAnchorForLocation,
+	nearestStackedDiffHunkIndexForFile,
 	PullRequestDiffState,
 	pullRequestDiffKey,
 	safeDiffFileIndex,
 	scrollTopForVisibleLine,
 	splitPatchFiles,
 	stackedDiffFileIndexAtLine,
+	stackedDiffHunkIndexAtLine,
 	type DiffCommentAnchor,
 	type DiffCommentKind,
 	type DiffView,
@@ -353,6 +356,7 @@ const diffFullViewAtom = Atom.make(false)
 const commentsViewActiveAtom = Atom.make(false)
 const commentsViewSelectionAtom = Atom.make(0)
 const diffFileIndexAtom = Atom.make(0)
+const diffHunkIndexAtom = Atom.make(0)
 const diffScrollTopAtom = Atom.make(0)
 const diffRenderViewAtom = Atom.make<DiffView>("split")
 const diffWrapModeAtom = Atom.make<DiffWrapMode>("none")
@@ -721,6 +725,7 @@ export const App = ({ systemThemeGeneration = 0 }: AppProps) => {
 	const [commentsViewActive, setCommentsViewActive] = useAtom(commentsViewActiveAtom)
 	const [commentsViewSelection, setCommentsViewSelection] = useAtom(commentsViewSelectionAtom)
 	const [diffFileIndex, setDiffFileIndex] = useAtom(diffFileIndexAtom)
+	const [diffHunkIndex, setDiffHunkIndex] = useAtom(diffHunkIndexAtom)
 	const [diffScrollTop, setDiffScrollTop] = useAtom(diffScrollTopAtom)
 	const [diffRenderView, setDiffRenderView] = useAtom(diffRenderViewAtom)
 	const [diffWrapMode, setDiffWrapMode] = useAtom(diffWrapModeAtom)
@@ -998,6 +1003,12 @@ export const App = ({ systemThemeGeneration = 0 }: AppProps) => {
 		() => buildStackedDiffFiles(readyDiffFiles, effectiveDiffRenderView, diffWrapMode, contentWidth),
 		[readyDiffFiles, effectiveDiffRenderView, diffWrapMode, contentWidth],
 	)
+	const stackedDiffHunks = useMemo(
+		() => buildStackedDiffHunks(stackedDiffFiles, effectiveDiffRenderView, diffWrapMode, contentWidth),
+		[stackedDiffFiles, effectiveDiffRenderView, diffWrapMode, contentWidth],
+	)
+	const selectedDiffHunkIndex = Math.max(0, Math.min(diffHunkIndex, stackedDiffHunks.length - 1))
+	const selectedDiffHunk = stackedDiffHunks[selectedDiffHunkIndex] ?? null
 	const diffCommentAnchors = useMemo(
 		() => (diffFullView ? getStackedDiffCommentAnchors(stackedDiffFiles, effectiveDiffRenderView, diffWrapMode, contentWidth) : []),
 		[diffFullView, stackedDiffFiles, effectiveDiffRenderView, diffWrapMode, contentWidth],
@@ -1368,6 +1379,7 @@ export const App = ({ systemThemeGeneration = 0 }: AppProps) => {
 
 	useEffect(() => {
 		setDiffFileIndex(0)
+		setDiffHunkIndex(0)
 		setDiffScrollTop(0)
 		setDiffCommentAnchorIndex(0)
 		setDiffPreferredSide(null)
@@ -1378,6 +1390,13 @@ export const App = ({ systemThemeGeneration = 0 }: AppProps) => {
 	useEffect(() => {
 		setDiffFileIndex((current) => safeDiffFileIndex(readyDiffFiles, current))
 	}, [readyDiffFiles.length])
+
+	useEffect(() => {
+		setDiffHunkIndex((current) => {
+			if (stackedDiffHunks.length === 0) return 0
+			return Math.max(0, Math.min(current, stackedDiffHunks.length - 1))
+		})
+	}, [stackedDiffHunks.length])
 
 	useEffect(() => {
 		setDiffCommentAnchorIndex((current) => {
@@ -1781,6 +1800,8 @@ export const App = ({ systemThemeGeneration = 0 }: AppProps) => {
 		setDiffScrollTop((current) => (current === scrollTop ? current : scrollTop))
 		const nextIndex = Math.max(0, stackedDiffFileIndexAtLine(stackedDiffFiles, scrollTop))
 		setDiffFileIndex((current) => (current === nextIndex ? current : nextIndex))
+		const nextHunkIndex = stackedDiffHunkIndexAtLine(stackedDiffHunks, scrollTop + DIFF_STICKY_HEADER_LINES)
+		if (nextHunkIndex >= 0) setDiffHunkIndex((current) => (current === nextHunkIndex ? current : nextHunkIndex))
 	}
 
 	const scrollDetailPreviewBy = (y: number) => {
@@ -1807,10 +1828,40 @@ export const App = ({ systemThemeGeneration = 0 }: AppProps) => {
 		return () => globalThis.clearInterval(interval)
 	}, [diffFullView, stackedDiffFiles])
 
+	const selectDiffHunk = (index: number) => {
+		if (stackedDiffHunks.length === 0) return
+		const nextIndex = Math.max(0, Math.min(index, stackedDiffHunks.length - 1))
+		const hunk = stackedDiffHunks[nextIndex]
+		if (!hunk) return
+		setDiffHunkIndex(nextIndex)
+		setDiffFileIndex(hunk.fileIndex)
+		setDiffCommentRangeStartIndex(null)
+		const targetSide = diffPreferredSide ?? selectedDiffCommentAnchor?.side
+		const nextAnchor =
+			diffCommentAnchors.find((anchor) => anchor.fileIndex === hunk.fileIndex && anchor.side === targetSide && anchor.renderLine >= hunk.renderLine) ??
+			diffCommentAnchors.find((anchor) => anchor.fileIndex === hunk.fileIndex && anchor.renderLine >= hunk.renderLine) ??
+			diffCommentAnchors.find((anchor) => anchor.fileIndex === hunk.fileIndex && anchor.side === targetSide) ??
+			diffCommentAnchors.find((anchor) => anchor.fileIndex === hunk.fileIndex)
+		if (nextAnchor) setDiffCommentAnchorIndex(diffCommentAnchors.indexOf(nextAnchor))
+		const scroll = diffScrollRef.current
+		if (scroll) {
+			const nextTop = Math.max(0, hunk.renderLine - DIFF_STICKY_HEADER_LINES)
+			suppressNextDiffCommentScrollRef.current = true
+			scroll.scrollTo({ x: 0, y: nextTop })
+			syncDiffScrollState()
+		}
+	}
+
+	const moveDiffHunk = (delta: number) => {
+		selectDiffHunk(selectedDiffHunkIndex + delta)
+	}
+
 	const selectDiffFile = (index: number) => {
 		if (readyDiffFiles.length === 0) return
 		const nextIndex = safeDiffFileIndex(readyDiffFiles, index)
 		setDiffFileIndex(nextIndex)
+		const nextHunkIndex = nearestStackedDiffHunkIndexForFile(stackedDiffHunks, nextIndex)
+		if (nextHunkIndex !== null) setDiffHunkIndex(nextHunkIndex)
 		setDiffCommentRangeStartIndex(null)
 		const targetSide = diffPreferredSide ?? selectedDiffCommentAnchor?.side
 		const nextAnchor =
@@ -2423,6 +2474,21 @@ export const App = ({ systemThemeGeneration = 0 }: AppProps) => {
 			.catch((error) => flashNotice(errorMessage(error)))
 	}
 
+	const copySelectedDiffHunk = () => {
+		if (!selectedDiffHunk) return
+		void copyToClipboard(selectedDiffHunk.patch)
+			.then(() => flashNotice("Copied hunk diff"))
+			.catch((error) => flashNotice(errorMessage(error)))
+	}
+
+	const copySelectedDiffFile = () => {
+		const file = selectedDiffHunk?.file ?? readyDiffFiles[safeDiffFileIndex(readyDiffFiles, diffFileIndex)]
+		if (!file) return
+		void copyToClipboard(file.patch)
+			.then(() => flashNotice(`Copied ${file.name} diff`))
+			.catch((error) => flashNotice(errorMessage(error)))
+	}
+
 	const openPullRequestStateModal = () => {
 		if (!selectedPullRequest || selectedPullRequest.state !== "open") return
 		setPullRequestStateModal({
@@ -2941,6 +3007,8 @@ export const App = ({ systemThemeGeneration = 0 }: AppProps) => {
 		diffWhitespaceMode,
 		readyDiffFileCount: readyDiffFiles.length,
 		diffFileIndex,
+		readyDiffHunkCount: stackedDiffHunks.length,
+		diffHunkIndex: selectedDiffHunkIndex,
 		diffRangeActive: diffCommentRangeActive,
 		selectedDiffCommentAnchorLabel: selectedDiffCommentLabel,
 		selectedDiffCommentThreadCount: selectedDiffCommentThread.length,
@@ -2990,6 +3058,9 @@ export const App = ({ systemThemeGeneration = 0 }: AppProps) => {
 			toggleDiffWhitespaceMode,
 			openChangedFilesModal,
 			jumpDiffFile,
+			moveDiffHunk,
+			copySelectedDiffHunk,
+			copySelectedDiffFile,
 			openSelectedDiffComment,
 			toggleDiffCommentRange,
 			moveDiffCommentThread,
@@ -3309,6 +3380,10 @@ export const App = ({ systemThemeGeneration = 0 }: AppProps) => {
 			reload: () => runCommandById("diff.reload"),
 			nextThread: () => runCommandById("diff.next-thread"),
 			previousThread: () => runCommandById("diff.previous-thread"),
+			nextHunk: () => runCommandById("diff.next-hunk"),
+			previousHunk: () => runCommandById("diff.previous-hunk"),
+			copyHunk: () => runCommandById("diff.copy-hunk"),
+			copyFileDiff: () => runCommandById("diff.copy-file"),
 			moveAnchor: moveDiffCommentAnchor,
 			moveAnchorToBoundary: moveDiffCommentToBoundary,
 			alignAnchor: alignSelectedDiffCommentAnchor,
@@ -3631,6 +3706,7 @@ export const App = ({ systemThemeGeneration = 0 }: AppProps) => {
 					selectedCommentAnchor={selectedDiffCommentAnchor}
 					selectedCommentLabel={selectedDiffCommentLabel}
 					selectedCommentThread={selectedDiffCommentThread}
+					selectedHunk={selectedDiffHunk}
 					onSelectCommentLine={selectDiffCommentLine}
 					themeId={themeId}
 					themeGeneration={systemThemeGeneration}

@@ -107,6 +107,9 @@ running.
 - `f`: open the changed-files navigator while viewing a diff
 - `left` / `right`: choose the deleted or added side while in split diff comment mode
 - `[` / `]`: switch files while viewing or commenting on a diff
+- `{` / `}`: navigate diff hunks; the active hunk shows a thin gutter line
+- `y`: copy the selected diff hunk
+- `Y`: copy the selected file diff
 - `s`: toggle draft or ready-for-review state
 - `m`: merge
 - `x`: close with confirmation

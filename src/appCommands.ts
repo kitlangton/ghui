@@ -29,6 +29,9 @@ interface AppCommandActions {
 	readonly toggleDiffWhitespaceMode: () => void
 	readonly openChangedFilesModal: () => void
 	readonly jumpDiffFile: (delta: 1 | -1) => void
+	readonly moveDiffHunk: (delta: 1 | -1) => void
+	readonly copySelectedDiffHunk: () => void
+	readonly copySelectedDiffFile: () => void
 	readonly openSelectedDiffComment: () => void
 	readonly toggleDiffCommentRange: () => void
 	readonly moveDiffCommentThread: (delta: 1 | -1) => void
@@ -65,6 +68,8 @@ interface BuildAppCommandsInput {
 	readonly diffWhitespaceMode: DiffWhitespaceMode
 	readonly readyDiffFileCount: number
 	readonly diffFileIndex: number
+	readonly readyDiffHunkCount: number
+	readonly diffHunkIndex: number
 	readonly diffRangeActive: boolean
 	readonly selectedDiffCommentAnchorLabel: string | null
 	readonly selectedDiffCommentThreadCount: number
@@ -94,6 +99,8 @@ export const buildAppCommands = ({
 	diffWhitespaceMode,
 	readyDiffFileCount,
 	diffFileIndex,
+	readyDiffHunkCount,
+	diffHunkIndex,
 	diffRangeActive,
 	selectedDiffCommentAnchorLabel,
 	selectedDiffCommentThreadCount,
@@ -108,6 +115,7 @@ export const buildAppCommands = ({
 	const selectedDiffLineReason = diffFullView && diffReady ? (selectedDiffCommentAnchorLabel ? null : "No diff line selected.") : diffOpenReadyReason
 	const diffThreadReason = diffFullView && diffReady ? (hasDiffCommentThreads ? null : "No diff comments loaded.") : diffOpenReadyReason
 	const changedFilesReason = diffFullView && diffReady ? (readyDiffFileCount > 0 ? null : "No changed files loaded.") : diffOpenReadyReason
+	const diffHunksReason = diffFullView && diffReady ? (readyDiffHunkCount > 0 ? null : "No diff hunks loaded.") : diffOpenReadyReason
 	const selectedCommentReason = selectedPullRequest ? (commentsViewActive ? (hasSelectedComment ? null : "No comment selected.") : "Open comments first.") : noPullRequestReason
 	const ownCommentReason = selectedCommentReason ?? (canEditSelectedComment ? null : "Only your own (synced) comments can be edited or deleted.")
 	const loadMoreDisabledReason = isLoadingMorePullRequests ? "Already loading more pull requests." : hasMorePullRequests ? null : "No more pull requests loaded by this view."
@@ -338,6 +346,46 @@ export const buildAppCommands = ({
 			shortcut: "[",
 			disabledReason: changedFilesReason,
 			run: () => actions.jumpDiffFile(-1),
+		}),
+		defineCommand({
+			id: "diff.next-hunk",
+			title: "Next diff hunk",
+			scope: "Diff",
+			subtitle: readyDiffHunkCount > 0 ? `${diffHunkIndex + 1}/${readyDiffHunkCount}` : "No diff hunks loaded",
+			shortcut: "}",
+			disabledReason: diffHunksReason,
+			keywords: ["patch", "section"],
+			run: () => actions.moveDiffHunk(1),
+		}),
+		defineCommand({
+			id: "diff.previous-hunk",
+			title: "Previous diff hunk",
+			scope: "Diff",
+			subtitle: readyDiffHunkCount > 0 ? `${diffHunkIndex + 1}/${readyDiffHunkCount}` : "No diff hunks loaded",
+			shortcut: "{",
+			disabledReason: diffHunksReason,
+			keywords: ["patch", "section"],
+			run: () => actions.moveDiffHunk(-1),
+		}),
+		defineCommand({
+			id: "diff.copy-hunk",
+			title: "Copy selected hunk diff",
+			scope: "Diff",
+			subtitle: readyDiffHunkCount > 0 ? `${diffHunkIndex + 1}/${readyDiffHunkCount}` : "No diff hunks loaded",
+			shortcut: "y",
+			disabledReason: diffHunksReason,
+			keywords: ["clipboard", "patch"],
+			run: actions.copySelectedDiffHunk,
+		}),
+		defineCommand({
+			id: "diff.copy-file",
+			title: "Copy selected file diff",
+			scope: "Diff",
+			subtitle: readyDiffFileCount > 0 ? `${diffFileIndex + 1}/${readyDiffFileCount}` : "No diff files loaded",
+			shortcut: "shift-y",
+			disabledReason: changedFilesReason,
+			keywords: ["clipboard", "patch"],
+			run: actions.copySelectedDiffFile,
 		}),
 		defineCommand({
 			id: "diff.open-comment-target",

@@ -51,6 +51,8 @@ const buildCommands = (overrides: Partial<Parameters<typeof buildAppCommands>[0]
 		diffWhitespaceMode: "ignore",
 		readyDiffFileCount: 2,
 		diffFileIndex: 0,
+		readyDiffHunkCount: 3,
+		diffHunkIndex: 0,
 		diffRangeActive: false,
 		selectedDiffCommentAnchorLabel: "→ +1",
 		selectedDiffCommentThreadCount: 0,
@@ -80,6 +82,9 @@ const buildCommands = (overrides: Partial<Parameters<typeof buildAppCommands>[0]
 			toggleDiffWhitespaceMode: noop,
 			openChangedFilesModal: noop,
 			jumpDiffFile: noop,
+			moveDiffHunk: noop,
+			copySelectedDiffHunk: noop,
+			copySelectedDiffFile: noop,
 			openSelectedDiffComment: noop,
 			toggleDiffCommentRange: noop,
 			moveDiffCommentThread: noop,
@@ -112,6 +117,24 @@ describe("review UX commands", () => {
 
 	test("changed-files navigator is disabled when no files are loaded", () => {
 		expect(commandById("diff.changed-files", { readyDiffFileCount: 0 }).disabledReason).toBe("No changed files loaded.")
+	})
+
+	test("hunk navigation is available from a ready diff", () => {
+		const command = commandById("diff.next-hunk")
+
+		expect(command.shortcut).toBe("}")
+		expect(command.disabledReason).toBeFalsy()
+	})
+
+	test("hunk navigation is disabled when no hunks are loaded", () => {
+		expect(commandById("diff.next-hunk", { readyDiffHunkCount: 0 }).disabledReason).toBe("No diff hunks loaded.")
+	})
+
+	test("diff copy commands are available from a ready diff", () => {
+		expect(commandById("diff.copy-hunk").shortcut).toBe("y")
+		expect(commandById("diff.copy-hunk").disabledReason).toBeFalsy()
+		expect(commandById("diff.copy-file").shortcut).toBe("shift-y")
+		expect(commandById("diff.copy-file").disabledReason).toBeFalsy()
 	})
 
 	test("submit-review command is available from an open pull request", () => {

@@ -1,6 +1,7 @@
 import { TextAttributes } from "@opentui/core"
 import { Data } from "effect"
 import type {
+	PullRequestItem,
 	PullRequestLabel,
 	PullRequestMergeInfo,
 	PullRequestMergeKind,
@@ -9,6 +10,8 @@ import type {
 	PullRequestReviewEvent,
 	RepositoryMergeMethods,
 } from "../domain.js"
+import type { StackForest, StackNode } from "../stack.js"
+import { reviewIcon } from "./pullRequests.js"
 import { allowedMergeMethodList } from "../domain.js"
 import { getMergeKindDefinition, mergeKindRowTitle, visibleMergeKinds } from "../mergeActions.js"
 import { clampCursor, commentEditorLines, cursorLineIndexForLines } from "./commentEditor.js"
@@ -138,6 +141,11 @@ export interface CommandPaletteState {
 export interface OpenRepositoryModalState {
 	readonly query: string
 	readonly error: string | null
+}
+
+export interface StackTreeModalState {
+	readonly selectedIndex: number
+	readonly anchorUrl: string | null
 }
 
 export const filterLabels = (labels: readonly PullRequestLabel[], query: string) => {
@@ -419,6 +427,11 @@ export const initialCommandPaletteState: CommandPaletteState = {
 	selectedIndex: 0,
 }
 
+export const initialStackTreeModalState: StackTreeModalState = {
+	selectedIndex: 0,
+	anchorUrl: null,
+}
+
 export const initialOpenRepositoryModalState: OpenRepositoryModalState = {
 	query: "",
 	error: null,
@@ -438,6 +451,7 @@ export type Modal = Data.TaggedEnum<{
 	Theme: ThemeModalState
 	CommandPalette: CommandPaletteState
 	OpenRepository: OpenRepositoryModalState
+	StackTree: StackTreeModalState
 }>
 
 export const Modal = Data.taggedEnum<Modal>()
@@ -459,6 +473,7 @@ export const modalInitialStates = {
 	Theme: initialThemeModalState,
 	CommandPalette: initialCommandPaletteState,
 	OpenRepository: initialOpenRepositoryModalState,
+	StackTree: initialStackTreeModalState,
 } as const satisfies { [Tag in Exclude<ModalTag, "None">]: ModalState<Tag> }
 
 export const OpenRepositoryModal = ({
@@ -1375,5 +1390,175 @@ export const ThemeModal = ({
 				})
 			)}
 		</StandardModal>
+	)
+}
+
+export type StackTreeRow =
+	| { readonly kind: "repo-header"; readonly repository: string; readonly prCount: number; readonly isStacked: boolean }
+	| { readonly kind: "pr"; readonly node: StackNode; readonly prefix: string; readonly isLast: boolean }
+	| { readonly kind: "spacer" }
+
+export const buildStackTreeRows = (forests: readonly StackForest[]): readonly StackTreeRow[] => {
+	const rows: StackTreeRow[] = []
+	forests.forEach((forest, forestIndex) => {
+		if (forestIndex > 0) rows.push({ kind: "spacer" })
+		const flatCount = forest.roots.reduce((sum, root) => sum + countNodes(root), 0)
+		rows.push({ kind: "repo-header", repository: forest.repository, prCount: flatCount, isStacked: forest.roots.some((r) => r.children.length > 0) })
+		const walk = (node: StackNode, ancestorIsLast: readonly boolean[], isLast: boolean) => {
+			const ancestorPrefix = ancestorIsLast.map((wasLast) => (wasLast ? "   " : "│  ")).join("")
+			const connector = ancestorIsLast.length > 0 ? (isLast ? "└─ " : "├─ ") : ""
+			rows.push({ kind: "pr", node, prefix: `${ancestorPrefix}${connector}`, isLast })
+			node.children.forEach((child, childIndex) => walk(child, [...ancestorIsLast, isLast], childIndex === node.children.length - 1))
+		}
+		forest.roots.forEach((root, rootIndex) => walk(root, [], rootIndex === forest.roots.length - 1))
+	})
+	return rows
+}
+
+const countNodes = (node: StackNode): number => 1 + node.children.reduce((sum, child) => sum + countNodes(child), 0)
+
+export const stackTreeSelectableUrls = (rows: readonly StackTreeRow[]): readonly string[] => rows.flatMap((row) => (row.kind === "pr" ? [row.node.pullRequest.url] : []))
+
+export const stackTreeRowIndexForUrl = (rows: readonly StackTreeRow[], url: string | null): number | null => {
+	if (!url) return null
+	const index = stackTreeSelectableUrls(rows).indexOf(url)
+	return index >= 0 ? index : null
+}
+
+const stackTreeReviewColor = (pr: PullRequestItem): string => {
+	if (pr.state === "merged") return colors.status.passing
+	if (pr.state === "closed") return colors.muted
+	if (pr.autoMergeEnabled) return colors.accent
+	return colors.status[pr.reviewStatus] ?? colors.text
+}
+
+const stackTreeBranchSegment = (head: string, base: string, available: number): { readonly text: string; readonly truncated: boolean } => {
+	const arrow = " → "
+	if (available <= 0) return { text: "", truncated: false }
+	const full = `${head}${arrow}${base}`
+	if (full.length <= available) return { text: full, truncated: false }
+	const reserve = arrow.length
+	const each = Math.max(3, Math.floor((available - reserve) / 2))
+	const truncatedHead = head.length > each ? `${head.slice(0, each - 1)}…` : head
+	const remaining = Math.max(3, available - reserve - truncatedHead.length)
+	const truncatedBase = base.length > remaining ? `${base.slice(0, remaining - 1)}…` : base
+	return { text: `${truncatedHead}${arrow}${truncatedBase}`, truncated: true }
+}
+
+interface StackTreePullRequestRowProps {
+	readonly row: Extract<StackTreeRow, { kind: "pr" }>
+	readonly width: number
+	readonly selected: boolean
+}
+
+const StackTreePullRequestRow = ({ row, width, selected }: StackTreePullRequestRowProps) => {
+	const pr = row.node.pullRequest
+	const numberText = `#${pr.number}`
+	const reviewIconText = reviewIcon(pr)
+	const branchTarget = Math.min(40, Math.max(12, Math.floor(width * 0.36)))
+	const reservedFixed = row.prefix.length + 1 + 1 + numberText.length + 1
+	const branchAvailable = Math.max(0, Math.min(branchTarget, width - reservedFixed - 6))
+	const { text: branchText } = stackTreeBranchSegment(pr.headRefName || "?", pr.baseRefName || "?", branchAvailable)
+	const branchWidth = branchText.length
+	const titleWidth = Math.max(1, width - reservedFixed - (branchWidth > 0 ? branchWidth + 2 : 0))
+	const reviewFg = stackTreeReviewColor(pr)
+	const titleFg = selected ? colors.selectedText : pr.state === "open" ? colors.text : colors.muted
+	const numberFg = selected ? colors.accent : colors.count
+	return (
+		<TextLine width={width} bg={selected ? colors.selectedBg : undefined} fg={titleFg}>
+			<span fg={colors.separator}>{row.prefix}</span>
+			<span fg={reviewFg}>{reviewIconText}</span>
+			<span> </span>
+			<span fg={numberFg}>{numberText}</span>
+			<span> </span>
+			<span>{fitCell(pr.title, titleWidth)}</span>
+			{branchWidth > 0 ? (
+				<>
+					<span>{"  "}</span>
+					<span fg={selected ? colors.selectedText : colors.muted}>{branchText}</span>
+				</>
+			) : null}
+		</TextLine>
+	)
+}
+
+export const StackTreeModal = ({
+	rows,
+	totalPullRequests,
+	selectableCount,
+	selectedIndex,
+	modalWidth,
+	modalHeight,
+	offsetLeft,
+	offsetTop,
+	viewLabel,
+}: {
+	rows: readonly StackTreeRow[]
+	totalPullRequests: number
+	selectableCount: number
+	selectedIndex: number
+	modalWidth: number
+	modalHeight: number
+	offsetLeft: number
+	offsetTop: number
+	viewLabel: string
+}) => {
+	const { bodyHeight: maxVisible, contentWidth, rowWidth } = searchModalDims(modalWidth, modalHeight)
+	const messageTopRows = Math.max(0, Math.floor((maxVisible - 1) / 2))
+	const messageBottomRows = Math.max(0, maxVisible - messageTopRows - 1)
+	const safeSelected = Math.max(0, Math.min(selectedIndex, Math.max(0, selectableCount - 1)))
+	const selectableRowIndexes = rows.flatMap((row, index) => (row.kind === "pr" ? [index] : []))
+	const targetRowIndex = selectableRowIndexes[safeSelected] ?? 0
+	const scrollStart = Math.min(Math.max(0, rows.length - maxVisible), Math.max(0, targetRowIndex - Math.floor(maxVisible / 2)))
+	const visibleRows = rows.slice(scrollStart, scrollStart + maxVisible)
+	const title = "Stack tree"
+	const countText = totalPullRequests > 0 ? `${selectableCount}/${totalPullRequests} PRs` : ""
+
+	return (
+		<SearchModalFrame
+			left={offsetLeft}
+			top={offsetTop}
+			width={modalWidth}
+			height={modalHeight}
+			title={title}
+			query={viewLabel}
+			placeholder="No view"
+			countText={countText}
+			footer={
+				<HintRow
+					items={[
+						{ key: "↑↓", label: "move" },
+						{ key: "enter", label: "open" },
+						{ key: "esc", label: "close" },
+					]}
+				/>
+			}
+		>
+			{rows.length === 0 ? (
+				<>
+					<Filler rows={messageTopRows} prefix="top" />
+					<PlainLine text={centerCell("No open pull requests in this view", rowWidth)} fg={colors.muted} />
+					<Filler rows={messageBottomRows} prefix="bottom" />
+				</>
+			) : (
+				visibleRows.map((row, visibleIndex) => {
+					const actualRowIndex = scrollStart + visibleIndex
+					if (row.kind === "spacer") return <PlainLine key={`spacer-${actualRowIndex}`} text=" " />
+					if (row.kind === "repo-header") {
+						const detail = row.isStacked ? `${row.prCount} PRs · stacked` : `${row.prCount} PR${row.prCount === 1 ? "" : "s"}`
+						return (
+							<TextLine key={`repo-${row.repository}`}>
+								<span fg={colors.accent} attributes={TextAttributes.BOLD}>
+									◆ {row.repository}
+								</span>
+								<span fg={colors.muted}>{` · ${detail}`}</span>
+							</TextLine>
+						)
+					}
+					const selectableIndex = selectableRowIndexes.indexOf(actualRowIndex)
+					return <StackTreePullRequestRow key={row.node.pullRequest.url} row={row} width={contentWidth} selected={selectableIndex === safeSelected} />
+				})
+			)}
+		</SearchModalFrame>
 	)
 }

@@ -11,6 +11,7 @@ interface AppCommandActions {
 	readonly clearFilter: () => void
 	readonly openThemeModal: () => void
 	readonly openRepositoryPicker: () => void
+	readonly openStackTree: () => void
 	readonly loadMorePullRequests: () => void
 	readonly switchViewTo: (view: PullRequestView) => void
 	readonly openDetails: () => void
@@ -174,6 +175,15 @@ export const buildAppCommands = ({
 			subtitle: selectedRepository ? `Current repository: ${selectedRepository}` : "Enter owner/name or a GitHub URL",
 			keywords: ["repo", "repository", "owner", "github"],
 			run: actions.openRepositoryPicker,
+		}),
+		defineCommand({
+			id: "stack.open",
+			title: "Show stack tree",
+			scope: "View",
+			subtitle: "Tree of open PRs grouped by base/head branch relationships",
+			shortcut: "b",
+			keywords: ["stack", "tree", "branches", "graphite", "stacked", "base"],
+			run: actions.openStackTree,
 		}),
 		...activeViews.map((view) =>
 			defineCommand({

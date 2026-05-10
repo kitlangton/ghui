@@ -14,6 +14,7 @@ import { listNavKeymap, type ListNavCtx } from "./listNav.ts"
 import { mergeModalKeymap, type MergeModalCtx } from "./mergeModal.ts"
 import { openRepositoryModalKeymap, type OpenRepositoryModalCtx } from "./openRepositoryModal.ts"
 import { pullRequestStateModalKeymap, type PullRequestStateModalCtx } from "./pullRequestStateModal.ts"
+import { stackTreeModalKeymap, type StackTreeModalCtx } from "./stackTreeModal.ts"
 import { submitReviewModalKeymap, type SubmitReviewModalCtx } from "./submitReviewModal.ts"
 import { themeModalKeymap, type ThemeModalCtx } from "./themeModal.ts"
 
@@ -31,6 +32,7 @@ export interface AppCtx {
 	readonly commentModalActive: boolean
 	readonly deleteCommentModalActive: boolean
 	readonly commandPaletteActive: boolean
+	readonly stackTreeModalActive: boolean
 	readonly filterMode: boolean
 	readonly diffFullView: boolean
 	readonly detailFullView: boolean
@@ -53,6 +55,7 @@ export interface AppCtx {
 	readonly commentModal: CommentModalCtx
 	readonly deleteCommentModal: DeleteCommentModalCtx
 	readonly commandPalette: CommandPaletteCtx
+	readonly stackTreeModal: StackTreeModalCtx
 	readonly filterModeCtx: FilterModeCtx
 	readonly diff: DiffViewCtx
 	readonly detail: DetailViewCtx
@@ -78,7 +81,8 @@ const modalActive = (a: AppCtx): boolean =>
 	a.openRepositoryModalActive ||
 	a.commentModalActive ||
 	a.deleteCommentModalActive ||
-	a.commandPaletteActive
+	a.commandPaletteActive ||
+	a.stackTreeModalActive
 
 const inListMode = (a: AppCtx): boolean => !modalActive(a) && !a.filterMode && !a.diffFullView && !a.detailFullView && !a.commentsViewActive
 
@@ -115,6 +119,7 @@ export const appKeymap = App(
 	commentModalKeymap.scope((a) => a.commentModalActive && a.commentModal),
 	deleteCommentModalKeymap.scope((a) => a.deleteCommentModalActive && a.deleteCommentModal),
 	commandPaletteKeymap.scope((a) => a.commandPaletteActive && a.commandPalette),
+	stackTreeModalKeymap.scope((a) => a.stackTreeModalActive && a.stackTreeModal),
 	filterModeKeymap.scope((a) => a.filterMode && a.filterModeCtx),
 
 	// Full-view layers (only when no modal is on top)

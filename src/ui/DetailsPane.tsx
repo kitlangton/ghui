@@ -521,6 +521,19 @@ export const getDetailsPaneHeight = ({
 		? getDetailHeaderHeight(pullRequest, paneWidth, showChecks, comments, commentsStatus) + getDetailBodyHeight(pullRequest, contentWidth, bodyLines)
 		: bodyLines + DETAIL_PLACEHOLDER_ROWS + 1
 
+const formatBranchHeader = (head: string, base: string, available: number): string => {
+	if (available < 4 || !head) return ""
+	if (!base) return trimCell(head, available)
+	const arrow = " → "
+	const full = `${head}${arrow}${base}`
+	if (full.length <= available) return full
+	const minBaseRoom = 4
+	if (head.length + arrow.length + minBaseRoom <= available) {
+		return `${head}${arrow}${trimCell(base, available - head.length - arrow.length)}`
+	}
+	return trimCell(head, available)
+}
+
 export const DetailHeader = ({
 	pullRequest,
 	viewerUsername,
@@ -554,7 +567,7 @@ export const DetailHeader = ({
 	const statusParts = [review].filter((part): part is string => Boolean(part))
 	const rightSide = statusParts.length > 0 ? `${statusParts.join(" ")} ${opened}` : opened
 	const branchBudget = Math.max(0, contentWidth - (1 + number.length + author.length) - rightSide.length - 3)
-	const branch = pullRequest.headRefName && branchBudget >= 4 ? trimCell(pullRequest.headRefName, branchBudget) : ""
+	const branch = formatBranchHeader(pullRequest.headRefName, pullRequest.baseRefName, branchBudget)
 	const leftWidth = 1 + number.length + (branch.length > 0 ? 1 + branch.length : 0) + author.length
 	const gap = Math.max(2, contentWidth - leftWidth - rightSide.length)
 

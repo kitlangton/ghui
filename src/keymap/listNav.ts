@@ -38,6 +38,7 @@ export const listNavKeymap = List(
 	{ id: "list.toggle-draft", title: "Toggle draft", keys: ["s", "shift+s"], run: (s) => s.runCommandById("pull.toggle-draft") },
 	{ id: "list.copy", title: "Copy metadata", keys: ["y"], run: (s) => s.runCommandById("pull.copy-metadata") },
 	{ id: "list.detail.open", title: "Open details", keys: ["return"], run: (s) => s.runCommandById("detail.open") },
+	{ id: "list.stack-tree", title: "Stack tree", keys: ["b"], run: (s) => s.runCommandById("stack.open") },
 
 	// Queue mode tabs
 	{ id: "list.next-tab", title: "Next view", keys: ["tab"], run: (s) => s.switchQueueMode(1) },

@@ -54,12 +54,17 @@ const buildPullRequest = (index: number, options: Required<MockOptions>): PullRe
 	const passed = total - (index % 3 === 0 ? 1 : 0)
 	const review = REVIEW_CYCLE[index % REVIEW_CYCLE.length]!
 	const createdAt = new Date(Date.now() - index * 86_400_000)
+	const isStackedRepo = repoIndex === 0
+	const repoSiblings = Math.floor(index / options.repoCount)
+	const headRefName = `mock-branch-${index}`
+	const baseRefName = isStackedRepo && repoSiblings > 0 ? `mock-branch-${index - options.repoCount}` : "main"
 
 	return {
 		repository,
 		author: options.username,
 		headRefOid: `deadbeef${index.toString(16).padStart(8, "0")}`,
-		headRefName: `mock-branch-${index}`,
+		headRefName,
+		baseRefName,
 		number,
 		title: `Mock PR ${number}: example change ${index}`,
 		body: `This is mock pull request #${number}.\n\nLine A.\nLine B.`,

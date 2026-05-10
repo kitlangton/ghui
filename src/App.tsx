@@ -132,6 +132,7 @@ import {
 	initialModal,
 	initialOpenRepositoryModalState,
 	initialPullRequestStateModalState,
+	initialStackTreeModalState,
 	initialSubmitReviewModalState,
 	initialThemeModalState,
 	LabelModal,
@@ -139,9 +140,12 @@ import {
 	Modal,
 	OpenRepositoryModal,
 	PullRequestStateModal,
+	StackTreeModal,
+	stackTreeSelectableUrls,
 	submitReviewOptions,
 	SubmitReviewModal,
 	ThemeModal,
+	buildStackTreeRows,
 	type ChangedFilesModalState,
 	type CloseModalState,
 	type CommandPaletteState,
@@ -154,10 +158,12 @@ import {
 	type ModalTag,
 	type OpenRepositoryModalState,
 	type PullRequestStateModalState,
+	type StackTreeModalState,
 	type SubmitReviewModalState,
 	type ThemeModalState,
 } from "./ui/modals.js"
 import { groupBy, pullRequestMetadataText } from "./ui/pullRequests.js"
+import { buildStackForests } from "./stack.js"
 import { quotedReplyBody } from "./ui/comments.js"
 import { CommentsPane, commentsViewRowCount, orderCommentsForDisplay } from "./ui/CommentsPane.js"
 import { PullRequestDiffPane } from "./ui/PullRequestDiffPane.js"
@@ -750,6 +756,7 @@ export const App = ({ systemThemeGeneration = 0 }: AppProps) => {
 	const themeModalActive = Modal.$is("Theme")(activeModal)
 	const commandPaletteActive = Modal.$is("CommandPalette")(activeModal)
 	const openRepositoryModalActive = Modal.$is("OpenRepository")(activeModal)
+	const stackTreeModalActive = Modal.$is("StackTree")(activeModal)
 	const labelModal: LabelModalState = labelModalActive ? activeModal : initialLabelModalState
 	const closeModal: CloseModalState = closeModalActive ? activeModal : initialCloseModalState
 	const pullRequestStateModal: PullRequestStateModalState = pullRequestStateModalActive ? activeModal : initialPullRequestStateModalState
@@ -762,6 +769,7 @@ export const App = ({ systemThemeGeneration = 0 }: AppProps) => {
 	const themeModal: ThemeModalState = themeModalActive ? activeModal : initialThemeModalState
 	const commandPalette: CommandPaletteState = commandPaletteActive ? activeModal : initialCommandPaletteState
 	const openRepositoryModal: OpenRepositoryModalState = openRepositoryModalActive ? activeModal : initialOpenRepositoryModalState
+	const stackTreeModal: StackTreeModalState = stackTreeModalActive ? activeModal : initialStackTreeModalState
 	const makeModalSetter =
 		<Tag extends Exclude<ModalTag, "None">>(tag: Tag) =>
 		(next: ModalState<Tag> | ((prev: ModalState<Tag>) => ModalState<Tag>)) =>
@@ -785,6 +793,7 @@ export const App = ({ systemThemeGeneration = 0 }: AppProps) => {
 	const setSubmitReviewModal = makeModalSetter("SubmitReview")
 	const setThemeModal = makeModalSetter("Theme")
 	const setCommandPalette = makeModalSetter("CommandPalette")
+	const setStackTreeModal = makeModalSetter("StackTree")
 	const setOpenRepositoryModal = makeModalSetter("OpenRepository")
 	const themeIdRef = useRef(themeId)
 	const themeConfigRef = useRef(themeConfig)
@@ -950,6 +959,28 @@ export const App = ({ systemThemeGeneration = 0 }: AppProps) => {
 	const visibleFilterText = filterMode ? filterDraft : filterQuery
 	const visibleGroups = useAtomValue(visibleGroupsAtom)
 	const visiblePullRequests = useAtomValue(visiblePullRequestsAtom)
+	const stackTreeForests = useMemo(() => buildStackForests(visiblePullRequests), [visiblePullRequests])
+	const stackTreeRows = useMemo(() => buildStackTreeRows(stackTreeForests), [stackTreeForests])
+	const stackTreeSelectableUrlList = useMemo(() => stackTreeSelectableUrls(stackTreeRows), [stackTreeRows])
+	const stackParentsByUrl = useMemo(() => {
+		const headByRepo = new Map<string, Map<string, PullRequestItem>>()
+		for (const pr of visiblePullRequests) {
+			let repoMap = headByRepo.get(pr.repository)
+			if (!repoMap) {
+				repoMap = new Map<string, PullRequestItem>()
+				headByRepo.set(pr.repository, repoMap)
+			}
+			if (pr.headRefName) repoMap.set(pr.headRefName, pr)
+		}
+		const result = new Map<string, PullRequestItem>()
+		for (const pr of visiblePullRequests) {
+			const repoMap = headByRepo.get(pr.repository)
+			if (!repoMap || !pr.baseRefName) continue
+			const parent = repoMap.get(pr.baseRefName)
+			if (parent && parent.url !== pr.url) result.set(pr.url, parent)
+		}
+		return result
+	}, [visiblePullRequests])
 	const selectedPullRequest = useAtomValue(selectedPullRequestAtom)
 	const pullRequestComments = useAtomValue(pullRequestCommentsAtom)
 	const pullRequestCommentsLoaded = useAtomValue(pullRequestCommentsLoadedAtom)
@@ -1829,6 +1860,15 @@ export const App = ({ systemThemeGeneration = 0 }: AppProps) => {
 			query: "",
 			selectedIndex: safeDiffFileIndex(readyDiffFiles, diffFileIndex),
 		})
+	}
+
+	const openStackTree = () => {
+		const forests = buildStackForests(visiblePullRequests)
+		const rows = buildStackTreeRows(forests)
+		const urls = stackTreeSelectableUrls(rows)
+		const anchorUrl = selectedPullRequest?.url ?? null
+		const initialIndex = anchorUrl ? Math.max(0, urls.indexOf(anchorUrl)) : 0
+		setStackTreeModal({ selectedIndex: initialIndex, anchorUrl })
 	}
 
 	const selectChangedFile = () => {
@@ -2959,6 +2999,7 @@ export const App = ({ systemThemeGeneration = 0 }: AppProps) => {
 			},
 			openThemeModal,
 			openRepositoryPicker,
+			openStackTree,
 			loadMorePullRequests,
 			switchViewTo,
 			openDetails: () => {
@@ -3074,6 +3115,28 @@ export const App = ({ systemThemeGeneration = 0 }: AppProps) => {
 			const selectedIndex = wrapIndex(current.selectedIndex + delta, changedFileResults.length)
 			return selectedIndex === current.selectedIndex ? current : { ...current, selectedIndex }
 		})
+	const moveStackTreeSelection = (delta: -1 | 1) =>
+		setStackTreeModal((current) => {
+			if (stackTreeSelectableUrlList.length === 0) return current
+			const selectedIndex = wrapIndex(current.selectedIndex + delta, stackTreeSelectableUrlList.length)
+			return selectedIndex === current.selectedIndex ? current : { ...current, selectedIndex }
+		})
+	const moveStackTreeSelectionPage = (delta: -1 | 1) =>
+		setStackTreeModal((current) => {
+			if (stackTreeSelectableUrlList.length === 0) return current
+			const step = Math.max(1, halfPage)
+			const next = Math.max(0, Math.min(stackTreeSelectableUrlList.length - 1, current.selectedIndex + delta * step))
+			return next === current.selectedIndex ? current : { ...current, selectedIndex: next }
+		})
+	const selectStackTreePullRequest = () => {
+		if (stackTreeSelectableUrlList.length === 0) return
+		const safeIndex = Math.max(0, Math.min(stackTreeModal.selectedIndex, stackTreeSelectableUrlList.length - 1))
+		const targetUrl = stackTreeSelectableUrlList[safeIndex]
+		if (!targetUrl) return
+		const targetIndex = visiblePullRequests.findIndex((pr) => pr.url === targetUrl)
+		if (targetIndex >= 0) setSelectedIndex(targetIndex)
+		closeActiveModal()
+	}
 	const moveSubmitReviewActionSelection = (delta: -1 | 1) =>
 		setSubmitReviewModal((current) => {
 			const selectedIndex = wrapIndex(current.selectedIndex + delta, submitReviewOptions.length)
@@ -3168,6 +3231,7 @@ export const App = ({ systemThemeGeneration = 0 }: AppProps) => {
 		commentModalActive,
 		deleteCommentModalActive,
 		commandPaletteActive,
+		stackTreeModalActive,
 		filterMode,
 		diffFullView,
 		detailFullView,
@@ -3285,6 +3349,13 @@ export const App = ({ systemThemeGeneration = 0 }: AppProps) => {
 				if (selectedCommand) runCommandPaletteCommand(selectedCommand)
 			},
 			moveSelection: moveCommandPaletteSelection,
+		},
+		stackTreeModal: {
+			hasResults: stackTreeSelectableUrlList.length > 0,
+			closeModal: closeActiveModal,
+			selectPullRequest: selectStackTreePullRequest,
+			moveSelection: moveStackTreeSelection,
+			moveSelectionPage: moveStackTreeSelectionPage,
 		},
 		filterModeCtx: {
 			cancel: () => {
@@ -3504,6 +3575,7 @@ export const App = ({ systemThemeGeneration = 0 }: AppProps) => {
 		hasMore: hasMorePullRequests,
 		isLoadingMore: isLoadingMorePullRequests,
 		loadingIndicator,
+		stackParents: stackParentsByUrl,
 		onSelectPullRequest: selectPullRequestByUrl,
 	} as const
 	const widePullRequestList = (
@@ -3590,6 +3662,12 @@ export const App = ({ systemThemeGeneration = 0 }: AppProps) => {
 	const commandPaletteHeight = commandPaletteLayout.height
 	const commandPaletteLeft = commandPaletteLayout.left
 	const commandPaletteTop = commandPaletteLayout.top
+	const stackTreeLayout = sizedModal(60, 120, 6, 32)
+	const stackTreeModalWidth = stackTreeLayout.width
+	const stackTreeModalHeight = stackTreeLayout.height
+	const stackTreeModalLeft = stackTreeLayout.left
+	const stackTreeModalTop = stackTreeLayout.top
+	const stackTreeViewLabel = viewLabel(activeView)
 
 	return (
 		<box width={terminalWidth} height={terminalHeight} flexDirection="column" backgroundColor={colors.background}>
@@ -3964,6 +4042,19 @@ export const App = ({ systemThemeGeneration = 0 }: AppProps) => {
 					offsetTop={commandPaletteTop}
 					onSelectCommandIndex={selectCommandPaletteIndex}
 					onRunCommand={runCommandPaletteCommand}
+				/>
+			) : null}
+			{stackTreeModalActive ? (
+				<StackTreeModal
+					rows={stackTreeRows}
+					totalPullRequests={visiblePullRequests.length}
+					selectableCount={stackTreeSelectableUrlList.length}
+					selectedIndex={stackTreeModal.selectedIndex}
+					modalWidth={stackTreeModalWidth}
+					modalHeight={stackTreeModalHeight}
+					offsetLeft={stackTreeModalLeft}
+					offsetTop={stackTreeModalTop}
+					viewLabel={stackTreeViewLabel}
 				/>
 			) : null}
 		</box>

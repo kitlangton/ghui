@@ -18,12 +18,28 @@ export type PullRequestListRow =
 
 const GROUP_ICON = "◆"
 
-const getRowLayout = (contentWidth: number, numberWidth: number, ageWidth: number) => {
+const DEFAULT_BASE_BRANCHES = new Set(["main", "master", "develop", "trunk", "default"])
+
+interface StackHint {
+	readonly text: string
+	readonly fg: string
+}
+
+const stackHintFor = (pullRequest: PullRequestItem, parent: PullRequestItem | null | undefined): StackHint | null => {
+	if (parent) return { text: `↪ #${parent.number}`, fg: colors.accent }
+	const base = pullRequest.baseRefName
+	if (!base) return null
+	if (DEFAULT_BASE_BRANCHES.has(base)) return null
+	return { text: `→ ${base}`, fg: colors.muted }
+}
+
+const getRowLayout = (contentWidth: number, numberWidth: number, ageWidth: number, hintWidth: number) => {
 	const reviewWidth = 1
 	const checkWidth = 2
-	const fixedWidth = reviewWidth + 1 + numberWidth + 1 + checkWidth + ageWidth
+	const hintGap = hintWidth > 0 ? 1 : 0
+	const fixedWidth = reviewWidth + 1 + numberWidth + 1 + hintGap + hintWidth + checkWidth + ageWidth
 	const titleWidth = Math.max(8, contentWidth - fixedWidth)
-	return { reviewWidth, checkWidth, ageWidth, numberWidth, titleWidth }
+	return { reviewWidth, checkWidth, ageWidth, numberWidth, titleWidth, hintWidth, hintGap }
 }
 
 const groupNumberWidth = (pullRequests: readonly PullRequestItem[]) => {
@@ -101,6 +117,7 @@ const PullRequestRow = ({
 	numWidth,
 	ageColWidth,
 	filterText,
+	stackParent,
 	onSelect,
 	onHoverChange,
 }: {
@@ -111,15 +128,20 @@ const PullRequestRow = ({
 	numWidth: number
 	ageColWidth: number
 	filterText: string
+	stackParent: PullRequestItem | null
 	onSelect: () => void
 	onHoverChange: (hovered: boolean) => void
 }) => {
 	const ageText = `${daysOpen(pullRequest.createdAt)}d`
-	const { reviewWidth, checkWidth, ageWidth, numberWidth, titleWidth } = getRowLayout(contentWidth, numWidth, ageColWidth)
-	const rowWidth = reviewWidth + 1 + numberWidth + 1 + titleWidth + checkWidth + ageWidth
+	const stackHint = stackHintFor(pullRequest, stackParent)
+	const hintLength = stackHint?.text.length ?? 0
+	const maxHintWidth = Math.min(hintLength, Math.max(0, Math.floor(contentWidth * 0.32)))
+	const { reviewWidth, checkWidth, ageWidth, numberWidth, titleWidth, hintWidth, hintGap } = getRowLayout(contentWidth, numWidth, ageColWidth, maxHintWidth)
+	const rowWidth = reviewWidth + 1 + numberWidth + 1 + titleWidth + hintGap + hintWidth + checkWidth + ageWidth
 	const fillerWidth = Math.max(0, contentWidth - rowWidth)
 	const display = pullRequestRowDisplay(pullRequest, selected)
 	const rowBg = selected ? colors.selectedBg : hovered ? rowHoverBackground() : undefined
+	const hintFg = stackHint ? (selected ? colors.selectedText : stackHint.fg) : null
 
 	return (
 		<TextLine width={contentWidth} fg={display.rowFg} bg={rowBg} onMouseDown={onSelect} onMouseOver={() => onHoverChange(true)} onMouseOut={() => onHoverChange(false)}>
@@ -132,6 +154,12 @@ const PullRequestRow = ({
 			<span>
 				<MatchedCell text={pullRequest.title} width={titleWidth} query={filterText} />
 			</span>
+			{stackHint && hintWidth > 0 ? (
+				<>
+					<span> </span>
+					<span fg={hintFg ?? colors.muted}>{fitCell(stackHint.text, hintWidth)}</span>
+				</>
+			) : null}
 			<span fg={colors.muted}>{fitCell(ageText, ageWidth, "right")}</span>
 			<span fg={display.checkFg}>{fitCell(display.checkText, checkWidth, "right")}</span>
 			{fillerWidth > 0 ? <span>{" ".repeat(fillerWidth)}</span> : null}
@@ -152,6 +180,7 @@ export const PullRequestList = ({
 	hasMore,
 	isLoadingMore,
 	loadingIndicator,
+	stackParents,
 	onSelectPullRequest,
 }: {
 	groups: PullRequestGroups
@@ -166,6 +195,7 @@ export const PullRequestList = ({
 	hasMore: boolean
 	isLoadingMore: boolean
 	loadingIndicator: string
+	stackParents: ReadonlyMap<string, PullRequestItem>
 	onSelectPullRequest: (url: string) => void
 }) => {
 	const rows = buildPullRequestListRows({ groups, status, error, filterText, showFilterBar, loadedCount, hasMore, isLoadingMore, loadingIndicator })
@@ -199,6 +229,7 @@ export const PullRequestList = ({
 						numWidth={row.numberWidth}
 						ageColWidth={row.ageWidth}
 						filterText={filterText}
+						stackParent={stackParents.get(pullRequestUrl) ?? null}
 						onSelect={() => onSelectPullRequest(pullRequestUrl)}
 						onHoverChange={(hovered) =>
 							setHoveredUrl((current) => (hovered ? (current === pullRequestUrl ? current : pullRequestUrl) : current === pullRequestUrl ? null : current))

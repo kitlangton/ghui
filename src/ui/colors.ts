@@ -85,7 +85,11 @@ interface TerminalThemeColors {
 	readonly highlightForeground: string | null
 }
 
-const readableHex = (value: string | null | undefined, fallback: string) => (typeof value === "string" && /^#[0-9a-fA-F]{6}(?:[0-9a-fA-F]{2})?$/.test(value) ? value : fallback)
+const HEX_COLOR_RE = /^#[0-9a-fA-F]{6}(?:[0-9a-fA-F]{2})?$/
+
+export const isHexColor = (value: string | null | undefined): value is string => typeof value === "string" && HEX_COLOR_RE.test(value)
+
+const readableHex = (value: string | null | undefined, fallback: string) => (isHexColor(value) ? value : fallback)
 
 const hexToRgb = (hex: string) => {
 	const value = hex.replace(/^#/, "").slice(0, 6)

@@ -296,7 +296,9 @@ const pullRequestsAtom = githubRuntime
 					const cachedLoad = yield* cacheService.readQueue(cacheViewer, view).pipe(Effect.catch(() => Effect.succeed(null)))
 					if (cachedLoad) {
 						const cache = yield* Atom.get(queueLoadCacheAtom)
-						yield* Atom.set(queueLoadCacheAtom, trimQueueLoadCache({ ...cache, [cacheKey]: cachedLoad }))
+						if (!cache[cacheKey]) {
+							yield* Atom.set(queueLoadCacheAtom, trimQueueLoadCache({ ...cache, [cacheKey]: cachedLoad }))
+						}
 					}
 				}
 				yield* Atom.set(retryProgressAtom, initialRetryProgress)

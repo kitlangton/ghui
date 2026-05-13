@@ -177,4 +177,17 @@ In progress — plan written 2026-05-12.
 - `workspace/derivations.ts`, `workspace/repositoryItems.ts` — pure render-prep math.
 - `surfaces/WorkspaceContent.tsx`, `surfaces/WorkspaceFooter.tsx` — JSX bundling.
 
-App.tsx now reads as a coordinated assembly: ~80 imports, atom subscriptions, ~12 hook calls, the keymap `appCtx` build, and a short render block. The ≤300 LOC target proved impractical for one session — the remaining ~1,400 LOC is the App component's own essential state coordination (atoms, refs, the keymap appCtx wiring, header/footer/modals JSX). Each is small individually but together they're the "shell that owns the wiring." Further cleanup is straightforward but high-volume: split the keymap appCtx into per-mode builders, lift the per-modal flag derivations into the modal stack atom, push the small handler helpers (`scrollDetailFullViewBy`, etc.) into the surface modules that consume them.
+App.tsx now reads as a coordinated assembly: ~80 imports, atom subscriptions, ~12 hook calls, the keymap `appCtx` build, and a short render block.
+
+**Continuation push (2026-05-12, ~1,380 LOC):** another ~12 extractions land on top of the earlier pass:
+
+- `useModalStack`, `useDiffViewState`, `useViewModeState`, `useGitHubActions`, `useScrollRefs` — atom-subscription bundles.
+- `useImperativeActions` — `scrollDetailFullView{By,To}`, `scrollDetailPreview{By,To}`, `setCommentEditorValue`, `editSubmitReview`, `openDiffView`.
+- `usePullRequestRefresh`, `usePullRequestMutations`, `useStartupTasks` — refresh + optimistic-update + boot side-effects.
+- `useLoadingStatus` — `isActiveSurfaceLoading`, spinner frame, and the per-PR comments loader effect.
+- `useIssueListDerivations`, `useSelectionDerivations` — issue/selection memo clusters.
+- `workspace/placeholders.ts`, `workspace/headerDerivations.ts` — pure helpers (constants, `getDetailPlaceholderContent`, header text math, `groupIndexAt`).
+- `WorkspaceContent` flipped to a bundle interface (`layout`, `derivations`) — single biggest win, ~80 LOC out of App.tsx.
+- `computeModalLayouts` now returns `ModalTag`-keyed records so the JSX site passes `layouts={modalLayouts}` directly.
+
+The ≤300 LOC target proved impractical for one session — the remaining ~1,380 LOC is the App component's own essential state coordination (atoms, refs, the keymap appCtx wiring, header/footer/modals JSX). The keymap `appCtx` build alone is ~140 LOC; trimming it requires reshaping `BuildAppCtxInput` itself, which is a separate plan.

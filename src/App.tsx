@@ -183,12 +183,12 @@ import {
 import { commentsViewRowCount, orderCommentsForDisplay } from "./ui/CommentsPane.js"
 import { buildPullRequestListRows, pullRequestListRowIndex, pullRequestListVisualLineCount } from "./ui/PullRequestList.js"
 import { type RepositoryListItem } from "./ui/RepoList.js"
-import { IssuesWorkspace } from "./surfaces/IssuesWorkspace.js"
+import { IssueSurface } from "./surfaces/IssueSurface.js"
 import { PullRequestSurface } from "./surfaces/PullRequestSurface.js"
-import { RepoWorkspace } from "./surfaces/RepoWorkspace.js"
+import { RepoSurface } from "./surfaces/RepoSurface.js"
 import { WorkspaceModals } from "./surfaces/WorkspaceModals.js"
 import { WorkspaceTabs, workspaceTabSeparatorColumns } from "./ui/WorkspaceTabs.js"
-import { getIssueDetailJunctionRows, issueListRowIndex, issueListVisualLineCount, IssueDetailPane, orderIssuesForDisplay } from "./ui/IssueList.js"
+import { getIssueDetailJunctionRows, issueListRowIndex, issueListVisualLineCount, orderIssuesForDisplay } from "./ui/IssueList.js"
 import { parseIssueReferenceUrl } from "./ui/inlineSegments.js"
 import { singleLineText } from "./ui/singleLineInput.js"
 import { SPINNER_FRAMES } from "./ui/spinner.js"
@@ -2356,7 +2356,7 @@ export const App = ({ systemThemeGeneration = 0 }: AppProps) => {
 				</>
 			) : null}
 			{activeWorkspaceSurface === "repos" && !commentsViewActive && !diffFullView && !detailFullView ? (
-				<RepoWorkspace
+				<RepoSurface
 					isWideLayout={isWideLayout}
 					wideBodyHeight={wideBodyHeight}
 					contentWidth={contentWidth}
@@ -2374,8 +2374,8 @@ export const App = ({ systemThemeGeneration = 0 }: AppProps) => {
 					selectedRepositoryDetails={selectedRepositoryDetails}
 					detailPreviewScrollRef={detailPreviewScrollRef}
 				/>
-			) : activeWorkspaceSurface === "issues" && !commentsViewActive && !diffFullView && !detailFullView ? (
-				<IssuesWorkspace
+			) : activeWorkspaceSurface === "issues" && !commentsViewActive && !diffFullView ? (
+				<IssueSurface
 					isWideLayout={isWideLayout}
 					wideBodyHeight={wideBodyHeight}
 					contentWidth={contentWidth}
@@ -2394,10 +2394,9 @@ export const App = ({ systemThemeGeneration = 0 }: AppProps) => {
 					selectedIssue={selectedIssue}
 					issueListScrollRef={issueListScrollRef}
 					detailPreviewScrollRef={detailPreviewScrollRef}
+					detailFullView={detailFullView}
 					onLinkOpen={openInlineLink}
 				/>
-			) : detailFullView && activeWorkspaceSurface === "issues" ? (
-				<IssueDetailPane issue={selectedIssue} width={contentWidth} height={wideBodyHeight} onLinkOpen={openInlineLink} />
 			) : (
 				<PullRequestSurface
 					isWideLayout={isWideLayout}

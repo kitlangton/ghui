@@ -6,7 +6,7 @@ import { SplitPane } from "../ui/paneLayout.js"
 import { Divider } from "../ui/primitives.js"
 import { getRepoDetailJunctionRows, RepoDetailPane, RepoList, type RepositoryListItem } from "../ui/RepoList.js"
 
-export interface RepoWorkspaceProps {
+export interface RepoSurfaceProps {
 	readonly isWideLayout: boolean
 	readonly wideBodyHeight: number
 	readonly contentWidth: number
@@ -25,7 +25,7 @@ export interface RepoWorkspaceProps {
 	readonly detailPreviewScrollRef: MutableRefObject<ScrollBoxRenderable | null>
 }
 
-export const RepoWorkspace = ({
+export const RepoSurface = ({
 	isWideLayout,
 	wideBodyHeight,
 	contentWidth,
@@ -42,7 +42,7 @@ export const RepoWorkspace = ({
 	selectedRepositoryItem,
 	selectedRepositoryDetails,
 	detailPreviewScrollRef,
-}: RepoWorkspaceProps) => {
+}: RepoSurfaceProps) => {
 	if (isWideLayout) {
 		return (
 			<SplitPane

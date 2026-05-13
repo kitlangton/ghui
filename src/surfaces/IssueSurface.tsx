@@ -7,7 +7,7 @@ import { getIssueDetailContentHeight, IssueDetailPane, IssueList } from "../ui/I
 import { SplitPane } from "../ui/paneLayout.js"
 import { Divider } from "../ui/primitives.js"
 
-export interface IssuesWorkspaceProps {
+export interface IssueSurfaceProps {
 	readonly isWideLayout: boolean
 	readonly wideBodyHeight: number
 	readonly contentWidth: number
@@ -26,10 +26,11 @@ export interface IssuesWorkspaceProps {
 	readonly selectedIssue: IssueItem | null
 	readonly issueListScrollRef: MutableRefObject<ScrollBoxRenderable | null>
 	readonly detailPreviewScrollRef: MutableRefObject<ScrollBoxRenderable | null>
+	readonly detailFullView: boolean
 	readonly onLinkOpen?: (url: string) => void
 }
 
-export const IssuesWorkspace = ({
+export const IssueSurface = ({
 	isWideLayout,
 	wideBodyHeight,
 	contentWidth,
@@ -48,8 +49,12 @@ export const IssuesWorkspace = ({
 	selectedIssue,
 	issueListScrollRef,
 	detailPreviewScrollRef,
+	detailFullView,
 	onLinkOpen,
-}: IssuesWorkspaceProps) => {
+}: IssueSurfaceProps) => {
+	if (detailFullView) {
+		return <IssueDetailPane issue={selectedIssue} width={contentWidth} height={wideBodyHeight} {...(onLinkOpen ? { onLinkOpen } : {})} />
+	}
 	const wideDetailNeedsScroll = selectedIssue !== null && getIssueDetailContentHeight(selectedIssue, rightPaneWidth, wideBodyHeight, DETAIL_BODY_SCROLL_LIMIT) > wideBodyHeight
 	const narrowDetailNeedsScroll =
 		selectedIssue !== null && getIssueDetailContentHeight(selectedIssue, contentWidth, narrowIssueDetailHeight, DETAIL_BODY_SCROLL_LIMIT) > narrowIssueDetailHeight

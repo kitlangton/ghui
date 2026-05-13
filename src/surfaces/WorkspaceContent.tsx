@@ -25,7 +25,6 @@ export interface WorkspaceContentProps {
 	readonly selectedRepositoryItem: RepositoryListItem | null
 	readonly selectedRepositoryDetails: RepositoryDetails | null
 	readonly selectedIssue: IssueItem | null
-	readonly issueListScrollRef: MutableRefObject<ScrollBoxRenderable | null>
 	readonly selectedPullRequest: PullRequestItem | null
 	readonly selectedComments: readonly PullRequestComment[]
 	readonly selectedCommentsStatus: DetailCommentsStatus
@@ -50,10 +49,13 @@ export interface WorkspaceContentProps {
 	readonly loadingIndicator: string
 	readonly themeId: ThemeId
 	readonly systemThemeGeneration: number
-	readonly prListScrollRef: MutableRefObject<ScrollBoxRenderable | null>
-	readonly detailScrollRef: MutableRefObject<ScrollBoxRenderable | null>
-	readonly detailPreviewScrollRef: MutableRefObject<ScrollBoxRenderable | null>
-	readonly diffScrollRef: MutableRefObject<ScrollBoxRenderable | null>
+	readonly scrollRefs: {
+		readonly prListScrollRef: MutableRefObject<ScrollBoxRenderable | null>
+		readonly detailScrollRef: MutableRefObject<ScrollBoxRenderable | null>
+		readonly detailPreviewScrollRef: MutableRefObject<ScrollBoxRenderable | null>
+		readonly diffScrollRef: MutableRefObject<ScrollBoxRenderable | null>
+		readonly issueListScrollRef: MutableRefObject<ScrollBoxRenderable | null>
+	}
 	readonly openInlineLink: (url: string) => void
 }
 
@@ -77,7 +79,7 @@ export const WorkspaceContent = (props: WorkspaceContentProps) => {
 				repoListProps={derivations.repoListProps}
 				selectedRepositoryItem={props.selectedRepositoryItem}
 				selectedRepositoryDetails={props.selectedRepositoryDetails}
-				detailPreviewScrollRef={props.detailPreviewScrollRef}
+				detailPreviewScrollRef={props.scrollRefs.detailPreviewScrollRef}
 			/>
 		)
 	}
@@ -100,8 +102,8 @@ export const WorkspaceContent = (props: WorkspaceContentProps) => {
 				issueJunctions={derivations.issueJunctions}
 				issueListProps={derivations.issueListProps}
 				selectedIssue={props.selectedIssue}
-				issueListScrollRef={props.issueListScrollRef}
-				detailPreviewScrollRef={props.detailPreviewScrollRef}
+				issueListScrollRef={props.scrollRefs.issueListScrollRef}
+				detailPreviewScrollRef={props.scrollRefs.detailPreviewScrollRef}
 				detailFullView={detailFullView}
 				onLinkOpen={props.openInlineLink}
 			/>
@@ -162,10 +164,10 @@ export const WorkspaceContent = (props: WorkspaceContentProps) => {
 			loadingIndicator={props.loadingIndicator}
 			themeId={props.themeId}
 			systemThemeGeneration={props.systemThemeGeneration}
-			prListScrollRef={props.prListScrollRef}
-			detailScrollRef={props.detailScrollRef}
-			detailPreviewScrollRef={props.detailPreviewScrollRef}
-			diffScrollRef={props.diffScrollRef}
+			prListScrollRef={props.scrollRefs.prListScrollRef}
+			detailScrollRef={props.scrollRefs.detailScrollRef}
+			detailPreviewScrollRef={props.scrollRefs.detailPreviewScrollRef}
+			diffScrollRef={props.scrollRefs.diffScrollRef}
 			onLinkOpen={props.openInlineLink}
 		/>
 	)

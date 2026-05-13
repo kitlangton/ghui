@@ -1306,7 +1306,6 @@ export const App = ({ systemThemeGeneration = 0 }: AppProps) => {
 				selectedRepositoryItem={selectedRepositoryItem}
 				selectedRepositoryDetails={selectedRepositoryDetails}
 				selectedIssue={selectedIssue}
-				issueListScrollRef={issueListScrollRef}
 				selectedPullRequest={selectedPullRequest}
 				selectedComments={selectedComments}
 				selectedCommentsStatus={selectedCommentsStatus}
@@ -1331,10 +1330,7 @@ export const App = ({ systemThemeGeneration = 0 }: AppProps) => {
 				loadingIndicator={loadingIndicator}
 				themeId={themeId}
 				systemThemeGeneration={systemThemeGeneration}
-				prListScrollRef={prListScrollRef}
-				detailScrollRef={detailScrollRef}
-				detailPreviewScrollRef={detailPreviewScrollRef}
-				diffScrollRef={diffScrollRef}
+				scrollRefs={{ prListScrollRef, detailScrollRef, detailPreviewScrollRef, diffScrollRef, issueListScrollRef }}
 				openInlineLink={openInlineLink}
 			/>
 

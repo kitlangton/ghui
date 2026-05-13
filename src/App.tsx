@@ -13,7 +13,7 @@ import type { AppCommand } from "./commands.js"
 import { clampCommandIndex, type CommandScope, commandEnabled, defineCommand, filterCommands, sortCommandsByActiveScope } from "./commands.js"
 import { commandSnapshotsAtom } from "./commands/atoms.js"
 import { dispatchCommandAtom } from "./commands/dispatch.js"
-import { type IssueItem, type LoadStatus, type PullRequestItem, type PullRequestLabel, type PullRequestReviewComment, type SubmitPullRequestReviewInput } from "./domain.js"
+import { type IssueItem, type LoadStatus, type PullRequestItem, type PullRequestReviewComment, type SubmitPullRequestReviewInput } from "./domain.js"
 import { errorMessage } from "./errors.js"
 import { nextView, parseRepositoryInput, type PullRequestView, viewCacheKey, viewEquals } from "./pullRequestViews.js"
 
@@ -190,6 +190,7 @@ import { useSpinnerFrame } from "./ui/useSpinnerFrame.js"
 import { useTextInputDispatcher } from "./ui/useTextInputDispatcher.js"
 import { useCommandHandoffs } from "./hooks/useCommandHandoffs.js"
 import { useDiffCommentNavigator } from "./hooks/useDiffCommentNavigator.js"
+import { usePullRequestModalActions } from "./hooks/usePullRequestModalActions.js"
 import { commandRuntimeAtom } from "./commands/runtimeAtom.js"
 import { issueViewForPullRequestView } from "./viewSync.js"
 import { nextWorkspaceSurface, repositoryWorkspaceSurfaces, userWorkspaceSurfaces, type WorkspaceSurface } from "./workspaceSurfaces.js"
@@ -1357,30 +1358,40 @@ export const App = ({ systemThemeGeneration = 0 }: AppProps) => {
 			diffCommentThreadMapKey,
 		})
 
-	const confirmSubmitReview = () => {
-		if (!submitReviewModal.repository || submitReviewModal.number === null || submitReviewModal.running) return
-		const option = submitReviewOptions[submitReviewModal.selectedIndex]
-		if (!option) return
-		const repository = submitReviewModal.repository
-		const number = submitReviewModal.number
-		const body = submitReviewModal.body.trim()
-		const targetPullRequest = pullRequests.find((pullRequest) => pullRequest.repository === repository && pullRequest.number === number) ?? null
-		const nextReviewStatus = reviewStatusAfterSubmit[option.event]
-
-		setSubmitReviewModal((current) => ({ ...current, running: true, error: null }))
-		void submitPullRequestReview({ repository, number, event: option.event, body })
-			.then(() => {
-				if (targetPullRequest && nextReviewStatus) {
-					updatePullRequest(targetPullRequest.url, (pullRequest) => ({ ...pullRequest, reviewStatus: nextReviewStatus }))
-				}
-				closeActiveModal()
-				flashNotice(`Submitted ${option.title.toLowerCase()} review for #${number}`)
-			})
-			.catch((error) => {
-				setSubmitReviewModal((current) => ({ ...current, running: false, error: errorMessage(error) }))
-				flashNotice(errorMessage(error))
-			})
-	}
+	const { movePullRequestStateSelection, confirmPullRequestStateChange, confirmCloseModal, toggleLabelAtIndex, confirmSubmitReview } = usePullRequestModalActions({
+		pullRequestStateModal,
+		setPullRequestStateModal,
+		closeModal,
+		labelModal,
+		submitReviewModal,
+		setSubmitReviewModal,
+		submitReviewOptions,
+		reviewStatusAfterSubmit,
+		selectedItemLabels,
+		selectedCommentSubject,
+		selectedIssue,
+		selectedPullRequest,
+		activeWorkspaceSurface,
+		pullRequests,
+		allIssues,
+		closeActiveModal,
+		flashNotice,
+		updatePullRequest,
+		updateIssue,
+		setIssueOverrides,
+		markPullRequestCompleted,
+		restoreOptimisticPullRequest,
+		refreshPullRequests,
+		refreshIssuesAtomRaw,
+		toggleDraftStatus,
+		closePullRequest,
+		closeIssue,
+		submitPullRequestReview,
+		addPullRequestLabel,
+		removePullRequestLabel,
+		addIssueLabel,
+		removeIssueLabel,
+	})
 
 	const navigateIssueReference = (repository: string, number: number) => {
 		const issueIndex = issues.findIndex((issue) => issue.repository === repository && issue.number === number)
@@ -1433,63 +1444,6 @@ export const App = ({ systemThemeGeneration = 0 }: AppProps) => {
 			.catch((error) => flashNotice(errorMessage(error)))
 	}
 
-	const movePullRequestStateSelection = () => {
-		setPullRequestStateModal((current) => ({ ...current, selectedIsDraft: !current.selectedIsDraft }))
-	}
-
-	const confirmPullRequestStateChange = () => {
-		if (!pullRequestStateModal.repository || pullRequestStateModal.number === null || !pullRequestStateModal.url || pullRequestStateModal.running) return
-		const { repository, number, url, isDraft, selectedIsDraft } = pullRequestStateModal
-		if (selectedIsDraft === isDraft) {
-			closeActiveModal()
-			return
-		}
-		const previousPullRequest = pullRequests.find((pullRequest) => pullRequest.url === url) ?? null
-		const nextReviewStatus = selectedIsDraft ? "draft" : "review"
-
-		if (previousPullRequest) {
-			updatePullRequest(url, (pullRequest) => ({
-				...pullRequest,
-				reviewStatus: nextReviewStatus,
-			}))
-		}
-		closeActiveModal()
-		flashNotice(selectedIsDraft ? `Converted #${number} to draft` : `Marked #${number} ready for review`)
-		void toggleDraftStatus({ repository, number, isDraft }).catch((error) => {
-			if (previousPullRequest) updatePullRequest(url, () => previousPullRequest)
-			const message = errorMessage(error)
-			flashNotice(message)
-		})
-	}
-
-	const confirmCloseModal = () => {
-		if (!closeModal.repository || closeModal.number === null || !closeModal.url) return
-		const { repository, number, url, kind } = closeModal
-		closeActiveModal()
-		flashNotice(`Closed #${number}`)
-
-		if (kind === "issue") {
-			const previousIssue = allIssues.find((issue) => issue.url === url)
-			if (previousIssue) setIssueOverrides((current) => ({ ...current, [url]: { ...previousIssue, state: "closed" } }))
-			void closeIssue({ repository, number })
-				.then(() => refreshIssuesAtomRaw())
-				.catch((error) => {
-					if (previousIssue) setIssueOverrides((current) => ({ ...current, [url]: previousIssue }))
-					flashNotice(errorMessage(error))
-				})
-			return
-		}
-
-		const previousPullRequest = pullRequests.find((pullRequest) => pullRequest.url === url) ?? null
-		if (previousPullRequest) markPullRequestCompleted(previousPullRequest, "closed")
-		void closePullRequest({ repository, number })
-			.then(() => refreshPullRequests())
-			.catch((error) => {
-				if (previousPullRequest) restoreOptimisticPullRequest(previousPullRequest)
-				flashNotice(errorMessage(error))
-			})
-	}
-
 	const { openThemeModal, closeThemeModal, moveThemeSelection, updateThemeQuery, toggleThemeTone, toggleThemeMode, editThemeQuery } = themeModalActions
 
 	const { openMergeModal, cancelOrCloseMergeModal, confirmMergeAction, cycleMergeMethod, moveMergeSelection } = useMergeFlow({
@@ -1504,50 +1458,6 @@ export const App = ({ systemThemeGeneration = 0 }: AppProps) => {
 		restoreOptimisticPullRequest,
 		refreshPullRequests,
 	})
-
-	const toggleLabelAtIndex = () => {
-		if (!selectedCommentSubject) return
-		const filtered = filterLabels(labelModal.availableLabels, labelModal.query)
-		const label = filtered[labelModal.selectedIndex]
-		if (!label) return
-
-		const isIssue = activeWorkspaceSurface === "issues"
-		const isActive = selectedItemLabels.some((l) => l.name.toLowerCase() === label.name.toLowerCase())
-		const previousPullRequest = isIssue ? null : selectedPullRequest
-		const previousIssue = isIssue ? selectedIssue : null
-		const updateSelectedLabels = (labels: readonly PullRequestLabel[]) => {
-			if (isIssue && selectedIssue) {
-				updateIssue(selectedIssue.url, (issue) => ({ ...issue, labels }))
-			} else if (selectedPullRequest) {
-				updatePullRequest(selectedPullRequest.url, (pr) => ({ ...pr, labels }))
-			}
-		}
-		const restorePreviousLabels = () => {
-			if (previousIssue) updateIssue(previousIssue.url, () => previousIssue)
-			if (previousPullRequest) updatePullRequest(previousPullRequest.url, () => previousPullRequest)
-		}
-		const { repository, number } = selectedCommentSubject
-
-		if (isActive) {
-			updateSelectedLabels(selectedItemLabels.filter((l) => l.name.toLowerCase() !== label.name.toLowerCase()))
-			const removeLabel = isIssue ? removeIssueLabel : removePullRequestLabel
-			void removeLabel({ repository, number, label: label.name })
-				.then(() => flashNotice(`Removed ${label.name} from #${number}`))
-				.catch((error) => {
-					restorePreviousLabels()
-					flashNotice(errorMessage(error))
-				})
-		} else {
-			updateSelectedLabels([...selectedItemLabels, { name: label.name, color: label.color }])
-			const addLabel = isIssue ? addIssueLabel : addPullRequestLabel
-			void addLabel({ repository, number, label: label.name })
-				.then(() => flashNotice(`Added ${label.name} to #${number}`))
-				.catch((error) => {
-					restorePreviousLabels()
-					flashNotice(errorMessage(error))
-				})
-		}
-	}
 
 	const openRepositoryPicker = () => {
 		setOpenRepositoryModal({ query: selectedRepository ?? "", error: null })

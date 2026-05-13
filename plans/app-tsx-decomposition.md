@@ -188,6 +188,13 @@ App.tsx now reads as a coordinated assembly: ~80 imports, atom subscriptions, ~1
 
 App.tsx is at ~1,380 LOC — settled near a floor where each remaining line is either an atom subscription, a hook call with its dependency bundle, or essential render-shell JSX. The keymap context build is the single largest remaining structured chunk (~120 LOC inside `useAppKeymap`); flatting it further requires reshaping `BuildAppCtxInput`, tracked separately.
 
+**Phase 5 closed (2026-05-13, commit `0a8f2ce`).** App.tsx split into:
+
+- `src/hooks/useAppShell.ts` (~1,355 LOC) — owns every hook call, atom subscription, derivation, side-effect, and keymap wiring. Returns a bundle of pre-shaped props for the render layer.
+- `src/App.tsx` (**65 LOC**) — the render manifest the original plan called for. Imports the layout primitives + 5 surface components + `useAppShell`, branches on `isInitialLoading`, and spreads pre-bundled props into each renderer.
+
+The ≤300 LOC target is met. Behavior unchanged, all 439 tests pass, typecheck/lint/format clean. The split is honest about what App.tsx is now: a thin manifest, with the orchestration concentrated in one named hook that future passes can split further (per-domain sub-hooks) without touching the render.
+
 **Continuation push (2026-05-12, ~1,380 LOC):** another ~12 extractions land on top of the earlier pass:
 
 - `useModalStack`, `useDiffViewState`, `useViewModeState`, `useGitHubActions`, `useScrollRefs` — atom-subscription bundles.

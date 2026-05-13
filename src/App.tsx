@@ -15,6 +15,7 @@ import { computeLayout } from "./workspace/layout.js"
 import { AUTO_REFRESH_JITTER_MS, FOCUS_RETURN_REFRESH_MIN_MS, FOCUSED_IDLE_REFRESH_MS, getDetailPlaceholderContent, reviewStatusAfterSubmit } from "./workspace/placeholders.js"
 import { computeModalLayouts } from "./workspace/modalLayouts.js"
 import { computeWorkspaceDerivations } from "./workspace/derivations.js"
+import { computeHeaderDerivations, groupIndexAt } from "./workspace/headerDerivations.js"
 import { buildRepositoryItems } from "./workspace/repositoryItems.js"
 import { useWorkspacePreferencesPersistence } from "./workspace/useWorkspacePreferencesPersistence.js"
 import { pullRequestCommentsAtom, pullRequestCommentsLoadedAtom } from "./ui/comments/atoms.js"
@@ -87,7 +88,7 @@ import { useThemeModal } from "./ui/theme/useThemeModal.js"
 import { useMergeFlow } from "./ui/merge/useMergeFlow.js"
 import type { CommentEditorValue } from "./ui/commentEditor.js"
 import { LoadingLogoPane } from "./ui/LoadingLogo.js"
-import { Divider, fitCell, TextLine } from "./ui/primitives.js"
+import { Divider, TextLine } from "./ui/primitives.js"
 import { initialCommentModalState, submitReviewOptions } from "./ui/modals.js"
 import { commentsViewRowCount, orderCommentsForDisplay } from "./ui/CommentsPane.js"
 import { buildPullRequestListRows } from "./ui/PullRequestList.js"
@@ -421,24 +422,13 @@ export const App = ({ systemThemeGeneration = 0 }: AppProps) => {
 		diffCommentThreads,
 	})
 	const groupStarts = useAtomValue(groupStartsAtom)
-	const getCurrentGroupIndex = (current: number) => {
-		if (groupStarts.length === 0) return 0
-		let low = 0
-		let high = groupStarts.length - 1
-		while (low < high) {
-			const mid = (low + high + 1) >>> 1
-			if (groupStarts[mid]! <= current) low = mid
-			else high = mid - 1
-		}
-		return low
-	}
-	const headerRight = username ? `@${username}` : ""
-	const headerLeftWidth = Math.max(0, headerFooterWidth - headerRight.length)
-	const footerNotice = notice ? fitCell(notice, headerFooterWidth) : null
-	const homeCrumb = "HOME"
-	const breadcrumbSeparator = "/"
-	const breadcrumbSeparatorText = ` ${breadcrumbSeparator} `
-	const headerRepoWidth = selectedRepository ? Math.max(0, headerLeftWidth - homeCrumb.length - breadcrumbSeparatorText.length) : 0
+	const getCurrentGroupIndex = (current: number) => groupIndexAt(groupStarts, current)
+	const { headerRight, headerLeftWidth, footerNotice, homeCrumb, breadcrumbSeparatorText, headerRepoWidth } = computeHeaderDerivations({
+		username,
+		notice,
+		headerFooterWidth,
+		selectedRepository,
+	})
 	const selectPullRequestByUrl = (url: string) => {
 		const index = visiblePullRequests.findIndex((pullRequest) => pullRequest.url === url)
 		if (index >= 0) {

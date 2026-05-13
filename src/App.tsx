@@ -15,6 +15,7 @@ import { computeLayout } from "./workspace/layout.js"
 import { AUTO_REFRESH_JITTER_MS, FOCUS_RETURN_REFRESH_MIN_MS, FOCUSED_IDLE_REFRESH_MS, getDetailPlaceholderContent, reviewStatusAfterSubmit } from "./workspace/placeholders.js"
 import { computeModalLayouts } from "./workspace/modalLayouts.js"
 import { computeWorkspaceDerivations } from "./workspace/derivations.js"
+import { computeFooterProps } from "./workspace/footerProps.js"
 import { computeHeaderDerivations, groupIndexAt } from "./workspace/headerDerivations.js"
 import { buildRepositoryItems } from "./workspace/repositoryItems.js"
 import { useWorkspacePreferencesPersistence } from "./workspace/useWorkspacePreferencesPersistence.js"
@@ -34,7 +35,7 @@ import { repositoryFilterScore } from "./ui/filter/scoring.js"
 import { selectedIndexAtom, selectedIssueIndexAtom } from "./ui/listSelection/atoms.js"
 import { noticeAtom } from "./ui/notice/atoms.js"
 import { useFlashNotice } from "./ui/notice/useFlashNotice.js"
-import { canEditComment, useCommentMutations } from "./ui/comments/useCommentMutations.js"
+import { useCommentMutations } from "./ui/comments/useCommentMutations.js"
 import { useDetailHydration } from "./ui/pullRequests/useDetailHydration.js"
 import {
 	activeViewAtom,
@@ -1258,6 +1259,35 @@ export const App = ({ systemThemeGeneration = 0 }: AppProps) => {
 		}
 		return selectedDiffCommentAnchor && selectedDiffCommentLabel ? `${selectedDiffCommentAnchor.path} ${selectedDiffCommentLabel}` : "No diff line selected"
 	})()
+	const footerProps = computeFooterProps({
+		footerNotice,
+		filterMode,
+		visibleFilterText,
+		filterPlaceholder,
+		filterQuery,
+		detailFullView,
+		diffFullView,
+		diffCommentRangeActive,
+		commentsViewActive,
+		selectedCommentsStatus,
+		selectedOrderedComment,
+		username,
+		selectedCommentsLength: selectedComments.length,
+		selectedCommentCount,
+		selectedCommentSubject,
+		activeWorkspaceSurface,
+		selectedRepositoryItem,
+		selectedRepository,
+		selectedPullRequest,
+		pullRequestStatus,
+		isActiveSurfaceLoading,
+		closeModal,
+		pullRequestStateModal,
+		mergeModal,
+		submitReviewModal,
+		loadingIndicator,
+		retryProgress,
+	})
 	return (
 		<box width={terminalWidth} height={terminalHeight} flexDirection="column" backgroundColor={colors.background}>
 			<box paddingLeft={1} paddingRight={1} flexDirection="column" backgroundColor={colors.background}>
@@ -1335,33 +1365,7 @@ export const App = ({ systemThemeGeneration = 0 }: AppProps) => {
 			/>
 
 			{showPaneSplit ? <Divider width={contentWidth} junctionAt={dividerJunctionAt} junctionChar="┴" /> : <Divider width={contentWidth} />}
-			<WorkspaceFooter
-				footerNotice={footerNotice}
-				filterMode={filterMode}
-				visibleFilterText={visibleFilterText}
-				filterPlaceholder={filterPlaceholder}
-				showFilterClear={filterMode || filterQuery.length > 0}
-				detailFullView={detailFullView}
-				diffFullView={diffFullView}
-				diffRangeActive={diffCommentRangeActive}
-				commentsViewActive={commentsViewActive}
-				commentsViewOnRealComment={commentsViewActive && selectedCommentsStatus === "ready" && selectedOrderedComment !== null}
-				commentsViewCanEditSelected={canEditComment(selectedOrderedComment, username)}
-				commentsViewCount={selectedComments.length}
-				hasSelection={selectedCommentSubject !== null}
-				canOpenDetails={selectedCommentSubject !== null}
-				canOpenRepository={activeWorkspaceSurface === "repos" && selectedRepositoryItem !== null}
-				canAddRepository={activeWorkspaceSurface === "repos"}
-				canRemoveRepository={activeWorkspaceSurface === "repos" && selectedRepositoryItem !== null}
-				canCycleScopeFilter={selectedRepository !== null && (activeWorkspaceSurface === "pullRequests" || activeWorkspaceSurface === "issues")}
-				canOpenDiff={activeWorkspaceSurface === "pullRequests" && selectedPullRequest !== null}
-				canOpenComments={selectedCommentSubject !== null}
-				hasComments={selectedCommentCount > 0}
-				hasError={pullRequestStatus === "error"}
-				isLoading={isActiveSurfaceLoading || closeModal.running || pullRequestStateModal.running || mergeModal.running || submitReviewModal.running}
-				loadingIndicator={loadingIndicator}
-				retryProgress={retryProgress}
-			/>
+			<WorkspaceFooter {...footerProps} />
 			<WorkspaceModals
 				activeModal={activeModal}
 				loadingIndicator={loadingIndicator}

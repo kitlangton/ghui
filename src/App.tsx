@@ -14,7 +14,7 @@ import { commandSnapshotsAtom } from "./commands/atoms.js"
 import { dispatchCommandAtom } from "./commands/dispatch.js"
 import { type IssueItem, type LoadStatus, type PullRequestItem, type SubmitPullRequestReviewInput } from "./domain.js"
 import { errorMessage } from "./errors.js"
-import { nextView, parseRepositoryInput, type PullRequestView, viewCacheKey, viewEquals } from "./pullRequestViews.js"
+import { parseRepositoryInput, viewCacheKey } from "./pullRequestViews.js"
 
 import { colors } from "./ui/colors.js"
 import {
@@ -83,6 +83,7 @@ import {
 import { useFocusReturnRefresh } from "./hooks/useFocusReturnRefresh.js"
 import { useCommentsLoader } from "./hooks/useCommentsLoader.js"
 import { useDiffLoader } from "./hooks/useDiffLoader.js"
+import { useWorkspaceNavigation } from "./hooks/useWorkspaceNavigation.js"
 import { useDiffSelectionSync } from "./hooks/useDiffSelectionSync.js"
 import { useLoadMoreOnScroll } from "./hooks/useLoadMoreOnScroll.js"
 import { useLoadMore } from "./ui/pullRequests/useLoadMore.js"
@@ -178,8 +179,7 @@ import { useDiffCommentDerivations } from "./hooks/useDiffCommentDerivations.js"
 import { useDiffCommentNavigator } from "./hooks/useDiffCommentNavigator.js"
 import { usePullRequestModalActions } from "./hooks/usePullRequestModalActions.js"
 import { commandRuntimeAtom } from "./commands/runtimeAtom.js"
-import { issueViewForPullRequestView } from "./viewSync.js"
-import { nextWorkspaceSurface, repositoryWorkspaceSurfaces, userWorkspaceSurfaces, type WorkspaceSurface } from "./workspaceSurfaces.js"
+import { repositoryWorkspaceSurfaces, userWorkspaceSurfaces, type WorkspaceSurface } from "./workspaceSurfaces.js"
 import { detectedRepository, mockRepositoryCatalog, mockWorkspacePreferencesPath } from "./services/runtime.js"
 
 interface DetailPlaceholderInput {
@@ -654,92 +654,61 @@ export const App = ({ systemThemeGeneration = 0 }: AppProps) => {
 		refreshPullRequestsAtom()
 	}
 	refreshPullRequestsRef.current = refreshPullRequests
-	const switchViewTo = (view: PullRequestView) => {
-		if (viewEquals(view, activeView)) return
-		refreshGenerationRef.current += 1
-		setQueueSelection((current) => ({ ...current, [currentQueueCacheKey]: selectedIndex }))
-		setActiveView(view)
-		setSelectedIndex(registry.get(queueSelectionAtom)[viewCacheKey(view)] ?? 0)
-		setSelectedIssueIndex(0)
-		setRecentlyCompletedPullRequests({})
-		resetHydration()
-		resetLoadingMore()
-		setDetailFullView(false)
-		setDiffFullView(false)
-		setDiffCommentRangeStartIndex(null)
-		setFilterDraft(filterQuery)
-		setNotice(null)
-		cancelRefreshToast()
-		// Keep the issue view's repository scope mirrored to the PR view so the
-		// two surfaces share workspace context until issues get a dedicated
-		// picker. `issueViewForPullRequestView` is a total projection — call
-		// it unconditionally to avoid edge cases where view.repository equals
-		// selectedRepository (e.g. Repository(opencode) → Queue(authored, opencode))
-		// would skip the sync and leave activeIssueView stale.
-		setActiveIssueView(issueViewForPullRequestView(view))
-		if (view._tag === "Repository") {
-			setRecentRepositories((current) => [view.repository, ...current.filter((repository) => repository !== view.repository)].slice(0, 12))
-			if (activeWorkspaceSurface === "repos") setActiveWorkspaceSurface("pullRequests")
-		} else if (view.repository === null && selectedRepository !== null) {
-			setActiveWorkspaceSurface("repos")
-		}
-	}
-	const switchQueueMode = (delta: 1 | -1) => {
-		switchViewTo(nextView(activeView, activeViews, delta))
-	}
-	const switchWorkspaceSurface = (surface: WorkspaceSurface) => {
-		if (!workspaceTabSurfaces.includes(surface)) return
-		if (surface === activeWorkspaceSurface) return
-		setActiveWorkspaceSurface(surface)
-		setSelectedIssueIndex(0)
-		setDetailFullView(false)
-		setDiffFullView(false)
-		setCommentsViewActive(false)
-		setDiffCommentRangeStartIndex(null)
-		setFilterMode(false)
-		setFilterDraft(filterQuery)
-		setNotice(null)
-		// Sync the issue view's scope to whatever the PR view is on, so
-		// pressing 2/clicking the Issues tab doesn't surface a stale repo's
-		// issues under the current breadcrumb.
-		setActiveIssueView(issueViewForPullRequestView(activeView))
-	}
-	const cycleWorkspaceSurface = (delta: 1 | -1) => {
-		switchWorkspaceSurface(nextWorkspaceSurface(activeWorkspaceSurface, delta, workspaceTabSurfaces))
-	}
-	const goUpWorkspaceScope = () => {
-		if (!selectedRepository) return false
-		switchViewTo({ _tag: "Queue", mode: "authored", repository: null })
-		return true
-	}
-	const openSelectedRepository = () => {
-		if (!selectedRepositoryItem) return
-		switchViewTo({ _tag: "Repository", repository: selectedRepositoryItem.repository })
-	}
-	const toggleFavoriteRepository = () => {
-		if (!selectedRepositoryItem) return
-		const repository = selectedRepositoryItem.repository
-		setFavoriteRepositories((current) => {
-			if (current[repository]) {
-				const next = { ...current }
-				delete next[repository]
-				return next
-			}
-			return { ...current, [repository]: true }
-		})
-	}
-	const removeSelectedRepository = () => {
-		if (!selectedRepositoryItem) return
-		const repository = selectedRepositoryItem.repository
-		setFavoriteRepositories((current) => {
-			if (!current[repository]) return current
-			const next = { ...current }
-			delete next[repository]
-			return next
-		})
-		setRecentRepositories((current) => current.filter((item) => item !== repository))
-		flashNotice(repository === detectedRepository ? `Removed saved state for ${repository}; current repo stays pinned` : `Removed ${repository} from tracked repositories`)
-	}
+
+	const { armRefreshToast, cancelRefreshToast } = useRefreshCompletionToast({
+		pullRequestStatus,
+		pullRequestError,
+		fetchedAt: pullRequestLoad?.fetchedAt?.getTime(),
+		pullRequestLoad,
+		selectedPullRequest,
+		lastPullRequestRefreshAtRef,
+		flashNotice,
+		pullRequests,
+	})
+
+	const {
+		switchViewTo,
+		switchQueueMode,
+		switchWorkspaceSurface,
+		cycleWorkspaceSurface,
+		goUpWorkspaceScope,
+		openSelectedRepository,
+		toggleFavoriteRepository,
+		removeSelectedRepository,
+	} = useWorkspaceNavigation({
+		registry,
+		activeView,
+		activeViews,
+		currentQueueCacheKey,
+		selectedIndex,
+		setSelectedIndex,
+		setSelectedIssueIndex,
+		setQueueSelection,
+		setActiveView,
+		setActiveIssueView,
+		setDetailFullView,
+		setDiffFullView,
+		setCommentsViewActive,
+		setDiffCommentRangeStartIndex,
+		setFilterDraft,
+		setFilterMode,
+		setNotice,
+		cancelRefreshToast,
+		filterQuery,
+		setRecentlyCompletedPullRequests,
+		setRecentRepositories,
+		setFavoriteRepositories,
+		setActiveWorkspaceSurface,
+		activeWorkspaceSurface,
+		workspaceTabSurfaces,
+		selectedRepository,
+		selectedRepositoryItem,
+		detectedRepository,
+		refreshGenerationRef,
+		resetHydration,
+		resetLoadingMore,
+		flashNotice,
+	})
 	const { openFilterModal, moveFilterSelection, applySelectedFilter } = useFilterModal({
 		activeWorkspaceSurface,
 		activeView,
@@ -778,17 +747,6 @@ export const App = ({ systemThemeGeneration = 0 }: AppProps) => {
 	// dependency on `activeViewAtom`. `pullRequestLoadAtom` reads the in-memory
 	// cache first, so the user sees the previous list instantly while the new
 	// view's fetch lands.
-
-	const { armRefreshToast, cancelRefreshToast } = useRefreshCompletionToast({
-		pullRequestStatus,
-		pullRequestError,
-		fetchedAt: pullRequestLoad?.fetchedAt?.getTime(),
-		pullRequestLoad,
-		selectedPullRequest,
-		lastPullRequestRefreshAtRef,
-		flashNotice,
-		pullRequests,
-	})
 
 	// Best-effort startup prune: writeQueue prunes after each successful refresh,
 	// but a session that only browses cached state (or stays offline) never prunes.

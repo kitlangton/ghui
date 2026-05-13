@@ -5,7 +5,15 @@ import { loadStoredDiffWhitespaceMode } from "../../themeStore.js"
 import { GitHubService } from "../../services/GitHubService.js"
 import { githubRuntime } from "../../services/runtime.js"
 import { parsePullRequestRevisionAtomKey, selectedPullRequestAtom } from "../pullRequests/atoms.js"
-import { type DiffView, type DiffWhitespaceMode, type DiffWrapMode, type PullRequestDiffState, pullRequestDiffKey } from "../diff.js"
+import {
+	type DiffFilePatch,
+	type DiffView,
+	type DiffWhitespaceMode,
+	type DiffWrapMode,
+	minimizeWhitespaceDiffFiles,
+	type PullRequestDiffState,
+	pullRequestDiffKey,
+} from "../diff.js"
 
 export const initialDiffWhitespaceMode = await Effect.runPromise(loadStoredDiffWhitespaceMode)
 
@@ -46,3 +54,13 @@ export const selectedDiffStateAtom = Atom.make((get) => {
 })
 
 export const diffReadyAtom = Atom.make((get) => get(selectedDiffStateAtom)?._tag === "Ready")
+
+// The files we'd actually render once the diff is loaded — empty if the diff
+// isn't Ready, optionally minimized when the user has whitespace-ignore on.
+// Promoting this means the diff pane and useDiffViewActions don't both have to
+// recompute the same `state._tag === "Ready" ? maybeMinimize(state.files) : []`.
+export const readyDiffFilesAtom = Atom.make((get): readonly DiffFilePatch[] => {
+	const state = get(selectedDiffStateAtom)
+	if (state?._tag !== "Ready") return []
+	return get(diffWhitespaceModeAtom) === "ignore" ? minimizeWhitespaceDiffFiles(state.files) : state.files
+})

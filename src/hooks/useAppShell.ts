@@ -19,7 +19,7 @@ import { computeFooterProps } from "../workspace/footerProps.js"
 import { computeHeaderDerivations, groupIndexAt } from "../workspace/headerDerivations.js"
 import { buildRepositoryItems } from "../workspace/repositoryItems.js"
 import { useWorkspacePreferencesPersistence } from "../workspace/useWorkspacePreferencesPersistence.js"
-import { pullRequestCommentsAtom, pullRequestCommentsLoadedAtom } from "../ui/comments/atoms.js"
+import { commentsRowCountAtom, orderedCommentsAtom, pullRequestCommentsAtom, pullRequestCommentsLoadedAtom, selectedOrderedCommentAtom } from "../ui/comments/atoms.js"
 import {
 	activeIssueViewAtom,
 	hasMoreIssuesAtom,
@@ -100,7 +100,6 @@ import { themeIdAtom } from "../ui/theme/atoms.js"
 import { useThemeModal } from "../ui/theme/useThemeModal.js"
 import { useMergeFlow } from "../ui/merge/useMergeFlow.js"
 import { initialCommentModalState, submitReviewOptions } from "../ui/modals.js"
-import { commentsViewRowCount, orderCommentsForDisplay } from "../ui/CommentsPane.js"
 import { buildPullRequestListRows } from "../ui/PullRequestList.js"
 import { type RepositoryListItem } from "../ui/RepoList.js"
 import { useClampedIndex } from "../ui/useClampedIndex.js"
@@ -346,7 +345,6 @@ export const useAppShell = ({ systemThemeGeneration }: UseAppShellInput) => {
 	const selectedRepositoryItem = repositoryItems[Math.max(0, Math.min(selectedRepositoryIndex, repositoryItems.length - 1))] ?? null
 	const selectedRepositoryDetails = useRepositoryDetails(selectedRepositoryItem?.repository ?? null)
 	const pullRequestComments = useAtomValue(pullRequestCommentsAtom)
-	const pullRequestCommentsLoaded = useAtomValue(pullRequestCommentsLoadedAtom)
 	const activeViews = useAtomValue(activeViewsAtom)
 	const currentQueueCacheKey = viewCacheKey(activeView)
 	const loadedPullRequestCount = useAtomValue(loadedPullRequestCountAtom)
@@ -402,13 +400,6 @@ export const useAppShell = ({ systemThemeGeneration }: UseAppShellInput) => {
 		changedFileResults,
 		selectedPullRequestRowIndex,
 	} = useSelectionDerivations({
-		activeWorkspaceSurface,
-		selectedPullRequest,
-		selectedIssue,
-		pullRequestComments,
-		pullRequestCommentsLoaded,
-		selectedDiffState,
-		diffWhitespaceMode,
 		diffRenderView,
 		contentWidth,
 		changedFilesModalActive,
@@ -732,10 +723,11 @@ export const useAppShell = ({ systemThemeGeneration }: UseAppShellInput) => {
 
 	// j/k navigates the *visual* (threaded) order, not the raw load order — so
 	// the comment under the cursor is the one immediately below the previously
-	// highlighted row, regardless of where it lives in the flat array.
-	const orderedComments = useMemo(() => orderCommentsForDisplay(selectedComments), [selectedComments])
-	const selectedOrderedComment = orderedComments[commentsViewSelection]?.comment ?? null
-	const commentsRowCount = commentsViewRowCount(selectedComments.length)
+	// highlighted row, regardless of where it lives in the flat array. Derived
+	// in `ui/comments/atoms.ts` and read here as plain atom values.
+	const orderedComments = useAtomValue(orderedCommentsAtom)
+	const selectedOrderedComment = useAtomValue(selectedOrderedCommentAtom)
+	const commentsRowCount = useAtomValue(commentsRowCountAtom)
 	const { scrollDetailPreviewBy, scrollDetailPreviewTo, scrollDetailFullViewBy, scrollDetailFullViewTo, setCommentEditorValue, editSubmitReview, openDiffView } =
 		useImperativeActions({
 			contentWidth,

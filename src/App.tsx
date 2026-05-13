@@ -158,9 +158,7 @@ import {
 import { commentsViewRowCount, orderCommentsForDisplay } from "./ui/CommentsPane.js"
 import { buildPullRequestListRows, pullRequestListRowIndex } from "./ui/PullRequestList.js"
 import { type RepositoryListItem } from "./ui/RepoList.js"
-import { IssueSurface } from "./surfaces/IssueSurface.js"
-import { PullRequestSurface } from "./surfaces/PullRequestSurface.js"
-import { RepoSurface } from "./surfaces/RepoSurface.js"
+import { WorkspaceContent } from "./surfaces/WorkspaceContent.js"
 import { WorkspaceFooter } from "./surfaces/WorkspaceFooter.js"
 import { WorkspaceHeader } from "./surfaces/WorkspaceHeader.js"
 import { WorkspaceModals } from "./surfaces/WorkspaceModals.js"
@@ -1585,110 +1583,83 @@ export const App = ({ systemThemeGeneration = 0 }: AppProps) => {
 					<Divider width={contentWidth} junctions={workspaceBottomDividerJunctions} />
 				</>
 			) : null}
-			{activeWorkspaceSurface === "repos" && !commentsViewActive && !diffFullView && !detailFullView ? (
-				<RepoSurface
-					isWideLayout={isWideLayout}
-					wideBodyHeight={wideBodyHeight}
-					contentWidth={contentWidth}
-					leftPaneWidth={leftPaneWidth}
-					rightPaneWidth={rightPaneWidth}
-					leftContentWidth={leftContentWidth}
-					fullscreenContentWidth={fullscreenContentWidth}
-					sectionPadding={sectionPadding}
-					narrowRepoListHeight={narrowRepoListHeight}
-					narrowRepoDetailHeight={narrowRepoDetailHeight}
-					repoListNeedsScroll={repoListNeedsScroll}
-					narrowRepoListNeedsScroll={narrowRepoListNeedsScroll}
-					repoListProps={repoListProps}
-					selectedRepositoryItem={selectedRepositoryItem}
-					selectedRepositoryDetails={selectedRepositoryDetails}
-					detailPreviewScrollRef={detailPreviewScrollRef}
-				/>
-			) : activeWorkspaceSurface === "issues" && !commentsViewActive && !diffFullView ? (
-				<IssueSurface
-					isWideLayout={isWideLayout}
-					wideBodyHeight={wideBodyHeight}
-					contentWidth={contentWidth}
-					leftPaneWidth={leftPaneWidth}
-					rightPaneWidth={rightPaneWidth}
-					leftContentWidth={leftContentWidth}
-					fullscreenContentWidth={fullscreenContentWidth}
-					sectionPadding={sectionPadding}
-					narrowIssueListHeight={narrowIssueListHeight}
-					narrowIssueDetailHeight={narrowIssueDetailHeight}
-					issueListNeedsScroll={issueListNeedsScroll}
-					narrowIssueListNeedsScroll={narrowIssueListNeedsScroll}
-					activeFilterLabel={issueActiveFilterLabel}
-					issueJunctions={issueJunctions}
-					issueListProps={issueListProps}
-					selectedIssue={selectedIssue}
-					issueListScrollRef={issueListScrollRef}
-					detailPreviewScrollRef={detailPreviewScrollRef}
-					detailFullView={detailFullView}
-					onLinkOpen={openInlineLink}
-				/>
-			) : (
-				<PullRequestSurface
-					isWideLayout={isWideLayout}
-					contentWidth={contentWidth}
-					leftPaneWidth={leftPaneWidth}
-					rightPaneWidth={rightPaneWidth}
-					leftContentWidth={leftContentWidth}
-					rightContentWidth={rightContentWidth}
-					fullscreenContentWidth={fullscreenContentWidth}
-					sectionPadding={sectionPadding}
-					wideBodyHeight={wideBodyHeight}
-					wideDetailHeaderHeight={wideDetailHeaderHeight}
-					wideDetailBodyScrollable={wideDetailBodyScrollable}
-					wideDetailLines={wideDetailLines}
-					fullscreenDetailHeaderHeight={fullscreenDetailHeaderHeight}
-					fullscreenDetailBodyScrollable={fullscreenDetailBodyScrollable}
-					fullscreenBodyLines={fullscreenBodyLines}
-					widePullRequestListHeight={widePullRequestListHeight}
-					widePullRequestListNeedsScroll={widePullRequestListNeedsScroll}
-					narrowPullRequestListHeight={narrowPullRequestListHeight}
-					narrowPullRequestRowsHeight={narrowPullRequestRowsHeight}
-					narrowPullRequestListNeedsScroll={narrowPullRequestListNeedsScroll}
-					narrowDetailsPaneHeight={narrowDetailsPaneHeight}
-					narrowPreviewBodyHeight={narrowPreviewBodyHeight}
-					narrowPreviewBodyScrollable={narrowPreviewBodyScrollable}
-					activeFilterLabel={pullRequestActiveFilterLabel}
-					detailJunctions={detailJunctions}
-					prListProps={prListProps}
-					selectedPullRequest={selectedPullRequest}
-					selectedComments={selectedComments}
-					selectedCommentsStatus={selectedCommentsStatus}
-					detailPlaceholderContent={detailPlaceholderContent}
-					isSelectedPullRequestDetailLoading={isSelectedPullRequestDetailLoading}
-					isSelectedPullRequestDetailError={isSelectedPullRequestDetailError}
-					selectedPullRequestDetailError={selectedPullRequestDetailError}
-					commentsViewActive={commentsViewActive}
-					commentsViewSelection={commentsViewSelection}
-					orderedComments={orderedComments}
-					commentSubject={selectedCommentSubject}
-					diffFullView={diffFullView}
-					displayedDiffState={displayedDiffState}
-					stackedDiffFiles={stackedDiffFiles}
-					diffScrollTop={diffScrollTop}
-					effectiveDiffRenderView={effectiveDiffRenderView}
-					diffWhitespaceMode={diffWhitespaceMode}
-					diffWrapMode={diffWrapMode}
-					selectedDiffCommentAnchor={selectedDiffCommentAnchor}
-					selectedDiffCommentLabel={selectedDiffCommentLabel}
-					selectedDiffCommentThread={selectedDiffCommentThread}
-					selectDiffCommentLine={selectDiffCommentLine}
-					setDiffRenderableRef={setDiffRenderableRef}
-					detailFullView={detailFullView}
-					loadingIndicator={loadingIndicator}
-					themeId={themeId}
-					systemThemeGeneration={systemThemeGeneration}
-					prListScrollRef={prListScrollRef}
-					detailScrollRef={detailScrollRef}
-					detailPreviewScrollRef={detailPreviewScrollRef}
-					diffScrollRef={diffScrollRef}
-					onLinkOpen={openInlineLink}
-				/>
-			)}
+			<WorkspaceContent
+				activeWorkspaceSurface={activeWorkspaceSurface}
+				commentsViewActive={commentsViewActive}
+				diffFullView={diffFullView}
+				detailFullView={detailFullView}
+				isWideLayout={isWideLayout}
+				wideBodyHeight={wideBodyHeight}
+				contentWidth={contentWidth}
+				leftPaneWidth={leftPaneWidth}
+				rightPaneWidth={rightPaneWidth}
+				leftContentWidth={leftContentWidth}
+				rightContentWidth={rightContentWidth}
+				fullscreenContentWidth={fullscreenContentWidth}
+				sectionPadding={sectionPadding}
+				wideDetailHeaderHeight={wideDetailHeaderHeight}
+				wideDetailBodyScrollable={wideDetailBodyScrollable}
+				wideDetailLines={wideDetailLines}
+				fullscreenDetailHeaderHeight={fullscreenDetailHeaderHeight}
+				fullscreenDetailBodyScrollable={fullscreenDetailBodyScrollable}
+				fullscreenBodyLines={fullscreenBodyLines}
+				widePullRequestListHeight={widePullRequestListHeight}
+				widePullRequestListNeedsScroll={widePullRequestListNeedsScroll}
+				narrowPullRequestListHeight={narrowPullRequestListHeight}
+				narrowPullRequestRowsHeight={narrowPullRequestRowsHeight}
+				narrowPullRequestListNeedsScroll={narrowPullRequestListNeedsScroll}
+				narrowDetailsPaneHeight={narrowDetailsPaneHeight}
+				narrowPreviewBodyHeight={narrowPreviewBodyHeight}
+				narrowPreviewBodyScrollable={narrowPreviewBodyScrollable}
+				narrowRepoListHeight={narrowRepoListHeight}
+				narrowRepoDetailHeight={narrowRepoDetailHeight}
+				narrowIssueListHeight={narrowIssueListHeight}
+				narrowIssueDetailHeight={narrowIssueDetailHeight}
+				repoListNeedsScroll={repoListNeedsScroll}
+				narrowRepoListNeedsScroll={narrowRepoListNeedsScroll}
+				repoListProps={repoListProps}
+				selectedRepositoryItem={selectedRepositoryItem}
+				selectedRepositoryDetails={selectedRepositoryDetails}
+				issueListNeedsScroll={issueListNeedsScroll}
+				narrowIssueListNeedsScroll={narrowIssueListNeedsScroll}
+				issueActiveFilterLabel={issueActiveFilterLabel}
+				issueJunctions={issueJunctions}
+				issueListProps={issueListProps}
+				selectedIssue={selectedIssue}
+				issueListScrollRef={issueListScrollRef}
+				pullRequestActiveFilterLabel={pullRequestActiveFilterLabel}
+				detailJunctions={detailJunctions}
+				prListProps={prListProps}
+				selectedPullRequest={selectedPullRequest}
+				selectedComments={selectedComments}
+				selectedCommentsStatus={selectedCommentsStatus}
+				detailPlaceholderContent={detailPlaceholderContent}
+				isSelectedPullRequestDetailLoading={isSelectedPullRequestDetailLoading}
+				isSelectedPullRequestDetailError={isSelectedPullRequestDetailError}
+				selectedPullRequestDetailError={selectedPullRequestDetailError}
+				commentsViewSelection={commentsViewSelection}
+				orderedComments={orderedComments}
+				selectedCommentSubject={selectedCommentSubject}
+				displayedDiffState={displayedDiffState}
+				stackedDiffFiles={stackedDiffFiles}
+				diffScrollTop={diffScrollTop}
+				effectiveDiffRenderView={effectiveDiffRenderView}
+				diffWhitespaceMode={diffWhitespaceMode}
+				diffWrapMode={diffWrapMode}
+				selectedDiffCommentAnchor={selectedDiffCommentAnchor}
+				selectedDiffCommentLabel={selectedDiffCommentLabel}
+				selectedDiffCommentThread={selectedDiffCommentThread}
+				selectDiffCommentLine={selectDiffCommentLine}
+				setDiffRenderableRef={setDiffRenderableRef}
+				loadingIndicator={loadingIndicator}
+				themeId={themeId}
+				systemThemeGeneration={systemThemeGeneration}
+				prListScrollRef={prListScrollRef}
+				detailScrollRef={detailScrollRef}
+				detailPreviewScrollRef={detailPreviewScrollRef}
+				diffScrollRef={diffScrollRef}
+				openInlineLink={openInlineLink}
+			/>
 
 			{showPaneSplit ? <Divider width={contentWidth} junctionAt={dividerJunctionAt} junctionChar="┴" /> : <Divider width={contentWidth} />}
 			<WorkspaceFooter

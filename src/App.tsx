@@ -86,6 +86,7 @@ import { useKeymapWiring } from "./hooks/useKeymapWiring.js"
 import { useModalStack } from "./hooks/useModalStack.js"
 import { usePullRequestMutations } from "./hooks/usePullRequestMutations.js"
 import { usePullRequestRefresh } from "./hooks/usePullRequestRefresh.js"
+import { useSelectionDerivations } from "./hooks/useSelectionDerivations.js"
 import { useStartupTasks } from "./hooks/useStartupTasks.js"
 import { usePasteRouter } from "./hooks/usePasteRouter.js"
 import { useWorkspaceNavigation } from "./hooks/useWorkspaceNavigation.js"
@@ -121,14 +122,13 @@ import { themeIdAtom } from "./ui/theme/atoms.js"
 import { useThemeModal } from "./ui/theme/useThemeModal.js"
 import { useMergeFlow } from "./ui/merge/useMergeFlow.js"
 import type { CommentEditorValue } from "./ui/commentEditor.js"
-import { minimizeWhitespaceDiffFiles, pullRequestDiffKey } from "./ui/diff.js"
-import { type DetailCommentsStatus, type DetailPlaceholderContent } from "./ui/DetailsPane.js"
+import { type DetailPlaceholderContent } from "./ui/DetailsPane.js"
 import { RetryProgress } from "./ui/FooterHints.js"
 import { LoadingLogoPane } from "./ui/LoadingLogo.js"
 import { Divider, fitCell, TextLine } from "./ui/primitives.js"
-import { filterChangedFiles, initialCommentModalState, submitReviewOptions } from "./ui/modals.js"
+import { initialCommentModalState, submitReviewOptions } from "./ui/modals.js"
 import { commentsViewRowCount, orderCommentsForDisplay } from "./ui/CommentsPane.js"
-import { buildPullRequestListRows, pullRequestListRowIndex } from "./ui/PullRequestList.js"
+import { buildPullRequestListRows } from "./ui/PullRequestList.js"
 import { type RepositoryListItem } from "./ui/RepoList.js"
 import { WorkspaceContent } from "./surfaces/WorkspaceContent.js"
 import { WorkspaceFooter } from "./surfaces/WorkspaceFooter.js"
@@ -453,33 +453,33 @@ export const App = ({ systemThemeGeneration = 0 }: AppProps) => {
 			}),
 		[visibleGroups, pullRequestStatus, pullRequestError, visibleFilterText, loadedPullRequestCount, visibleHasMorePullRequests, isLoadingMorePullRequests],
 	)
-	const selectedPullRequestRowIndex = pullRequestListRowIndex(pullRequestListRows, selectedPullRequest?.url ?? null)
 	const selectedDiffKey = useAtomValue(selectedDiffKeyAtom)
-	const selectedCommentSubject = activeWorkspaceSurface === "issues" ? selectedIssue : activeWorkspaceSurface === "pullRequests" ? selectedPullRequest : null
-	const selectedCommentKey =
-		activeWorkspaceSurface === "issues"
-			? selectedIssue
-				? `issue:${selectedIssue.repository}#${selectedIssue.number}`
-				: null
-			: activeWorkspaceSurface === "pullRequests" && selectedPullRequest
-				? pullRequestDiffKey(selectedPullRequest)
-				: null
-	const selectedItemLabels = selectedCommentSubject?.labels ?? []
-	// Stabilize the reference so the orderedComments memo only refires when the
-	// underlying comment array actually changes (not every App re-render).
-	const selectedComments = useMemo(() => (selectedCommentKey ? (pullRequestComments[selectedCommentKey] ?? []) : []), [selectedCommentKey, pullRequestComments])
-	const selectedCommentsStatus: DetailCommentsStatus = selectedCommentKey ? (pullRequestCommentsLoaded[selectedCommentKey] ?? "idle") : "idle"
-	const selectedCommentCount = activeWorkspaceSurface === "issues" ? Math.max(selectedIssue?.commentCount ?? 0, selectedComments.length) : selectedComments.length
 	const selectedDiffState = useAtomValue(selectedDiffStateAtom)
-	const effectiveDiffRenderView = contentWidth >= 100 ? diffRenderView : "unified"
-	const readyDiffFiles = useMemo(
-		() => (selectedDiffState?._tag === "Ready" ? (diffWhitespaceMode === "ignore" ? minimizeWhitespaceDiffFiles(selectedDiffState.files) : selectedDiffState.files) : []),
-		[selectedDiffState, diffWhitespaceMode],
-	)
-	const changedFileResults = useMemo(
-		() => (changedFilesModalActive ? filterChangedFiles(readyDiffFiles, changedFilesModal.query) : []),
-		[changedFilesModalActive, readyDiffFiles, changedFilesModal.query],
-	)
+	const {
+		selectedCommentSubject,
+		selectedCommentKey,
+		selectedItemLabels,
+		selectedComments,
+		selectedCommentsStatus,
+		selectedCommentCount,
+		effectiveDiffRenderView,
+		readyDiffFiles,
+		changedFileResults,
+		selectedPullRequestRowIndex,
+	} = useSelectionDerivations({
+		activeWorkspaceSurface,
+		selectedPullRequest,
+		selectedIssue,
+		pullRequestComments,
+		pullRequestCommentsLoaded,
+		selectedDiffState,
+		diffWhitespaceMode,
+		diffRenderView,
+		contentWidth,
+		changedFilesModalActive,
+		changedFilesQuery: changedFilesModal.query,
+		pullRequestListRows,
+	})
 	const {
 		displayedDiffState,
 		stackedDiffFiles,

@@ -133,9 +133,9 @@ import {
 	type StackedDiffCommentAnchor,
 } from "./ui/diff.js"
 import { type DetailCommentsStatus, type DetailPlaceholderContent } from "./ui/DetailsPane.js"
-import { FooterHints, RetryProgress } from "./ui/FooterHints.js"
+import { RetryProgress } from "./ui/FooterHints.js"
 import { LoadingLogoPane } from "./ui/LoadingLogo.js"
-import { Divider, fitCell, PlainLine, TextLine } from "./ui/primitives.js"
+import { Divider, fitCell, TextLine } from "./ui/primitives.js"
 import {
 	filterChangedFiles,
 	filterLabels,
@@ -175,6 +175,7 @@ import { type RepositoryListItem } from "./ui/RepoList.js"
 import { IssueSurface } from "./surfaces/IssueSurface.js"
 import { PullRequestSurface } from "./surfaces/PullRequestSurface.js"
 import { RepoSurface } from "./surfaces/RepoSurface.js"
+import { WorkspaceFooter } from "./surfaces/WorkspaceFooter.js"
 import { WorkspaceHeader } from "./surfaces/WorkspaceHeader.js"
 import { WorkspaceModals } from "./surfaces/WorkspaceModals.js"
 import { WorkspaceTabs } from "./ui/WorkspaceTabs.js"
@@ -2151,38 +2152,33 @@ export const App = ({ systemThemeGeneration = 0 }: AppProps) => {
 			)}
 
 			{showPaneSplit ? <Divider width={contentWidth} junctionAt={dividerJunctionAt} junctionChar="┴" /> : <Divider width={contentWidth} />}
-			<box paddingLeft={1} paddingRight={1} backgroundColor={colors.background}>
-				{footerNotice ? (
-					<PlainLine text={footerNotice} fg={colors.count} />
-				) : (
-					<FooterHints
-						filterEditing={filterMode}
-						filterText={visibleFilterText}
-						filterPlaceholder={filterPlaceholder}
-						showFilterClear={filterMode || filterQuery.length > 0}
-						detailFullView={detailFullView}
-						diffFullView={diffFullView}
-						diffRangeActive={diffCommentRangeActive}
-						commentsViewActive={commentsViewActive}
-						commentsViewOnRealComment={commentsViewActive && selectedCommentsStatus === "ready" && selectedOrderedComment !== null}
-						commentsViewCanEditSelected={canEditComment(selectedOrderedComment, username)}
-						commentsViewCount={selectedComments.length}
-						hasSelection={selectedCommentSubject !== null}
-						canOpenDetails={selectedCommentSubject !== null}
-						canOpenRepository={activeWorkspaceSurface === "repos" && selectedRepositoryItem !== null}
-						canAddRepository={activeWorkspaceSurface === "repos"}
-						canRemoveRepository={activeWorkspaceSurface === "repos" && selectedRepositoryItem !== null}
-						canCycleScopeFilter={selectedRepository !== null && (activeWorkspaceSurface === "pullRequests" || activeWorkspaceSurface === "issues")}
-						canOpenDiff={activeWorkspaceSurface === "pullRequests" && selectedPullRequest !== null}
-						canOpenComments={selectedCommentSubject !== null}
-						hasComments={selectedCommentCount > 0}
-						hasError={pullRequestStatus === "error"}
-						isLoading={isActiveSurfaceLoading || closeModal.running || pullRequestStateModal.running || mergeModal.running || submitReviewModal.running}
-						loadingIndicator={loadingIndicator}
-						retryProgress={retryProgress}
-					/>
-				)}
-			</box>
+			<WorkspaceFooter
+				footerNotice={footerNotice}
+				filterMode={filterMode}
+				visibleFilterText={visibleFilterText}
+				filterPlaceholder={filterPlaceholder}
+				showFilterClear={filterMode || filterQuery.length > 0}
+				detailFullView={detailFullView}
+				diffFullView={diffFullView}
+				diffRangeActive={diffCommentRangeActive}
+				commentsViewActive={commentsViewActive}
+				commentsViewOnRealComment={commentsViewActive && selectedCommentsStatus === "ready" && selectedOrderedComment !== null}
+				commentsViewCanEditSelected={canEditComment(selectedOrderedComment, username)}
+				commentsViewCount={selectedComments.length}
+				hasSelection={selectedCommentSubject !== null}
+				canOpenDetails={selectedCommentSubject !== null}
+				canOpenRepository={activeWorkspaceSurface === "repos" && selectedRepositoryItem !== null}
+				canAddRepository={activeWorkspaceSurface === "repos"}
+				canRemoveRepository={activeWorkspaceSurface === "repos" && selectedRepositoryItem !== null}
+				canCycleScopeFilter={selectedRepository !== null && (activeWorkspaceSurface === "pullRequests" || activeWorkspaceSurface === "issues")}
+				canOpenDiff={activeWorkspaceSurface === "pullRequests" && selectedPullRequest !== null}
+				canOpenComments={selectedCommentSubject !== null}
+				hasComments={selectedCommentCount > 0}
+				hasError={pullRequestStatus === "error"}
+				isLoading={isActiveSurfaceLoading || closeModal.running || pullRequestStateModal.running || mergeModal.running || submitReviewModal.running}
+				loadingIndicator={loadingIndicator}
+				retryProgress={retryProgress}
+			/>
 			<WorkspaceModals
 				activeModal={activeModal}
 				loadingIndicator={loadingIndicator}

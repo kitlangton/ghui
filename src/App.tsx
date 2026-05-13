@@ -106,14 +106,7 @@ import {
 	selectedDiffKeyAtom,
 	selectedDiffStateAtom,
 } from "./ui/diff/atoms.js"
-import {
-	diffCommentRangeContains,
-	diffCommentRangeLabel,
-	diffCommentRangeSelection,
-	diffCommentThreadMapKey,
-	groupDiffCommentThreads,
-	isLocalDiffComment,
-} from "./ui/diff/comments.js"
+import { diffCommentThreadMapKey, groupDiffCommentThreads, isLocalDiffComment } from "./ui/diff/comments.js"
 import { useDiffLineColors } from "./ui/diff/useDiffLineColors.js"
 import { useDiffLocationPreservation } from "./ui/diff/useDiffLocationPreservation.js"
 import { useDiffPrefetch } from "./ui/diff/useDiffPrefetch.js"
@@ -121,18 +114,7 @@ import { themeIdAtom } from "./ui/theme/atoms.js"
 import { useThemeModal } from "./ui/theme/useThemeModal.js"
 import { useMergeFlow } from "./ui/merge/useMergeFlow.js"
 import { insertText, type CommentEditorValue } from "./ui/commentEditor.js"
-import {
-	buildStackedDiffFiles,
-	diffCommentAnchorLabel,
-	diffCommentLocationKey,
-	getStackedDiffCommentAnchors,
-	minimizeWhitespaceDiffFiles,
-	PullRequestDiffState,
-	pullRequestDiffKey,
-	safeDiffFileIndex,
-	splitPatchFiles,
-	type StackedDiffCommentAnchor,
-} from "./ui/diff.js"
+import { minimizeWhitespaceDiffFiles, PullRequestDiffState, pullRequestDiffKey, safeDiffFileIndex, splitPatchFiles } from "./ui/diff.js"
 import { type DetailCommentsStatus, type DetailPlaceholderContent } from "./ui/DetailsPane.js"
 import { RetryProgress } from "./ui/FooterHints.js"
 import { LoadingLogoPane } from "./ui/LoadingLogo.js"
@@ -191,6 +173,7 @@ import { useScrollPersistence } from "./ui/useScrollPersistence.js"
 import { useSpinnerFrame } from "./ui/useSpinnerFrame.js"
 import { useTextInputDispatcher } from "./ui/useTextInputDispatcher.js"
 import { useCommandHandoffs } from "./hooks/useCommandHandoffs.js"
+import { useDiffCommentDerivations } from "./hooks/useDiffCommentDerivations.js"
 import { useDiffCommentNavigator } from "./hooks/useDiffCommentNavigator.js"
 import { usePullRequestModalActions } from "./hooks/usePullRequestModalActions.js"
 import { commandRuntimeAtom } from "./commands/runtimeAtom.js"
@@ -559,51 +542,33 @@ export const App = ({ systemThemeGeneration = 0 }: AppProps) => {
 		() => (changedFilesModalActive ? filterChangedFiles(readyDiffFiles, changedFilesModal.query) : []),
 		[changedFilesModalActive, readyDiffFiles, changedFilesModal.query],
 	)
-	const displayedDiffState = useMemo(
-		() =>
-			selectedDiffState?._tag === "Ready" ? PullRequestDiffState.Ready({ patch: readyDiffFiles.map((file) => file.patch).join("\n"), files: readyDiffFiles }) : selectedDiffState,
-		[selectedDiffState, readyDiffFiles],
-	)
-	const stackedDiffFiles = useMemo(
-		() => buildStackedDiffFiles(readyDiffFiles, effectiveDiffRenderView, diffWrapMode, contentWidth),
-		[readyDiffFiles, effectiveDiffRenderView, diffWrapMode, contentWidth],
-	)
-	const diffCommentAnchors = useMemo(
-		() => (diffFullView ? getStackedDiffCommentAnchors(stackedDiffFiles, effectiveDiffRenderView, diffWrapMode, contentWidth) : []),
-		[diffFullView, stackedDiffFiles, effectiveDiffRenderView, diffWrapMode, contentWidth],
-	)
-	const selectedDiffCommentAnchorIndex = Math.max(0, Math.min(diffCommentAnchorIndex, diffCommentAnchors.length - 1))
-	const selectedDiffCommentAnchor = diffCommentAnchors[selectedDiffCommentAnchorIndex] ?? null
-	const diffCommentRangeStartAnchor =
-		diffCommentRangeStartIndex === null ? null : (diffCommentAnchors[Math.max(0, Math.min(diffCommentRangeStartIndex, diffCommentAnchors.length - 1))] ?? null)
-	const selectedDiffCommentRange = useMemo(
-		() => diffCommentRangeSelection(diffCommentRangeStartAnchor, selectedDiffCommentAnchor),
-		[diffCommentRangeStartAnchor, selectedDiffCommentAnchor],
-	)
-	const selectedDiffCommentRangeAnchors = useMemo(
-		() => (selectedDiffCommentRange ? diffCommentAnchors.filter((anchor) => diffCommentRangeContains(selectedDiffCommentRange, anchor)) : []),
-		[diffCommentAnchors, selectedDiffCommentRange],
-	)
-	const diffCommentRangeActive = selectedDiffCommentRange !== null
-	const selectedDiffCommentLabel = selectedDiffCommentRange
-		? diffCommentRangeLabel(selectedDiffCommentRange)
-		: selectedDiffCommentAnchor
-			? diffCommentAnchorLabel(selectedDiffCommentAnchor)
-			: null
-	const selectedDiffCommentThreadKey = selectedDiffKey && selectedDiffCommentAnchor ? diffCommentThreadMapKey(selectedDiffKey, selectedDiffCommentAnchor) : null
-	const selectedDiffCommentThread = selectedDiffCommentThreadKey ? (diffCommentThreads[selectedDiffCommentThreadKey] ?? []) : []
-	const diffLineColorContextKey = selectedDiffKey ? `${selectedDiffKey}:${effectiveDiffRenderView}:${diffWrapMode}:${diffWhitespaceMode}` : null
-	const diffCommentThreadAnchors = useMemo(() => {
-		if (!selectedDiffKey) return [] as readonly StackedDiffCommentAnchor[]
-		const seen = new Set<string>()
-		return diffCommentAnchors.filter((anchor) => {
-			const key = diffCommentLocationKey(anchor)
-			if (seen.has(key)) return false
-			if ((diffCommentThreads[diffCommentThreadMapKey(selectedDiffKey, anchor)]?.length ?? 0) === 0) return false
-			seen.add(key)
-			return true
-		})
-	}, [diffCommentAnchors, diffCommentThreads, selectedDiffKey])
+	const {
+		displayedDiffState,
+		stackedDiffFiles,
+		diffCommentAnchors,
+		selectedDiffCommentAnchorIndex,
+		selectedDiffCommentAnchor,
+		diffCommentRangeStartAnchor,
+		selectedDiffCommentRange,
+		selectedDiffCommentRangeAnchors,
+		diffCommentRangeActive,
+		selectedDiffCommentLabel,
+		selectedDiffCommentThread,
+		diffLineColorContextKey,
+		diffCommentThreadAnchors,
+	} = useDiffCommentDerivations({
+		selectedDiffState,
+		readyDiffFiles,
+		effectiveDiffRenderView,
+		diffWrapMode,
+		diffWhitespaceMode,
+		contentWidth,
+		diffFullView,
+		diffCommentAnchorIndex,
+		diffCommentRangeStartIndex,
+		selectedDiffKey,
+		diffCommentThreads,
+	})
 	const groupStarts = useAtomValue(groupStartsAtom)
 	const getCurrentGroupIndex = (current: number) => {
 		if (groupStarts.length === 0) return 0

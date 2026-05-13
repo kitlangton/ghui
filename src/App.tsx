@@ -5,13 +5,14 @@ import { Cause } from "effect"
 import * as AsyncResult from "effect/unstable/reactivity/AsyncResult"
 import { useCallback, useContext, useEffect, useMemo, useRef, useState } from "react"
 import type { AppCommand } from "./commands.js"
-import { type IssueItem, type LoadStatus, type PullRequestItem, type SubmitPullRequestReviewInput } from "./domain.js"
+import { type IssueItem, type LoadStatus } from "./domain.js"
 import { errorMessage } from "./errors.js"
 import { parseRepositoryInput, viewCacheKey } from "./pullRequestViews.js"
 
 import { colors } from "./ui/colors.js"
 import { favoriteRepositoriesAtom, recentRepositoriesAtom, repoRollupAtom, selectedRepositoryIndexAtom, workspaceSurfaceAtom } from "./workspace/atoms.js"
 import { computeLayout } from "./workspace/layout.js"
+import { AUTO_REFRESH_JITTER_MS, FOCUS_RETURN_REFRESH_MIN_MS, FOCUSED_IDLE_REFRESH_MS, getDetailPlaceholderContent, reviewStatusAfterSubmit } from "./workspace/placeholders.js"
 import { computeModalLayouts } from "./workspace/modalLayouts.js"
 import { computeWorkspaceDerivations } from "./workspace/derivations.js"
 import { buildRepositoryItems } from "./workspace/repositoryItems.js"
@@ -85,8 +86,6 @@ import { themeIdAtom } from "./ui/theme/atoms.js"
 import { useThemeModal } from "./ui/theme/useThemeModal.js"
 import { useMergeFlow } from "./ui/merge/useMergeFlow.js"
 import type { CommentEditorValue } from "./ui/commentEditor.js"
-import { type DetailPlaceholderContent } from "./ui/DetailsPane.js"
-import { RetryProgress } from "./ui/FooterHints.js"
 import { LoadingLogoPane } from "./ui/LoadingLogo.js"
 import { Divider, fitCell, TextLine } from "./ui/primitives.js"
 import { initialCommentModalState, submitReviewOptions } from "./ui/modals.js"
@@ -108,61 +107,8 @@ import { usePullRequestModalActions } from "./hooks/usePullRequestModalActions.j
 import { repositoryWorkspaceSurfaces, userWorkspaceSurfaces, type WorkspaceSurface } from "./workspaceSurfaces.js"
 import { detectedRepository, mockRepositoryCatalog, mockWorkspacePreferencesPath } from "./services/runtime.js"
 
-interface DetailPlaceholderInput {
-	readonly status: LoadStatus
-	readonly retryProgress: RetryProgress
-	readonly loadingIndicator: string
-	readonly visibleCount: number
-	readonly filterText: string
-}
-
 interface AppProps {
 	readonly systemThemeGeneration?: number
-}
-
-const FOCUS_RETURN_REFRESH_MIN_MS = 60_000
-const FOCUSED_IDLE_REFRESH_MS = 5 * 60_000
-const AUTO_REFRESH_JITTER_MS = 10_000
-
-const reviewStatusAfterSubmit = {
-	COMMENT: null,
-	APPROVE: "approved",
-	REQUEST_CHANGES: "changes",
-} satisfies Record<SubmitPullRequestReviewInput["event"], PullRequestItem["reviewStatus"] | null>
-
-const getDetailPlaceholderContent = ({ status, retryProgress, loadingIndicator, visibleCount, filterText }: DetailPlaceholderInput): DetailPlaceholderContent => {
-	if (status === "loading") {
-		return {
-			title: `${loadingIndicator} Loading pull requests`,
-			hint: retryProgress._tag === "Retrying" ? `Retry ${retryProgress.attempt}/${retryProgress.max}` : "Fetching latest open PRs",
-		}
-	}
-
-	if (status === "error") {
-		return {
-			title: "Could not load pull requests",
-			hint: "Press r to retry",
-		}
-	}
-
-	if (visibleCount === 0 && filterText.length > 0) {
-		return {
-			title: "No matching pull requests",
-			hint: "Press esc to clear the filter",
-		}
-	}
-
-	if (visibleCount === 0) {
-		return {
-			title: "No open pull requests",
-			hint: "Press r to refresh",
-		}
-	}
-
-	return {
-		title: "Select a pull request",
-		hint: "Use up/down to move",
-	}
 }
 
 export const App = ({ systemThemeGeneration = 0 }: AppProps) => {

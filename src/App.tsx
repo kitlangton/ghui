@@ -82,6 +82,7 @@ import { useListSelectionStepping } from "./hooks/useListSelectionStepping.js"
 import { useModalSelectionMovers } from "./hooks/useModalSelectionMovers.js"
 import { useKeymapWiring } from "./hooks/useKeymapWiring.js"
 import { useModalStack } from "./hooks/useModalStack.js"
+import { usePullRequestMutations } from "./hooks/usePullRequestMutations.js"
 import { usePasteRouter } from "./hooks/usePasteRouter.js"
 import { useWorkspaceNavigation } from "./hooks/useWorkspaceNavigation.js"
 import { useDiffSelectionSync } from "./hooks/useDiffSelectionSync.js"
@@ -544,35 +545,13 @@ export const App = ({ systemThemeGeneration = 0 }: AppProps) => {
 			setQueueSelection((current) => ({ ...current, [currentQueueCacheKey]: index }))
 		}
 	}
-	const updatePullRequest = (url: string, transform: (pullRequest: PullRequestItem) => PullRequestItem) => {
-		const pullRequest = pullRequests.find((item) => item.url === url)
-		if (!pullRequest) return
-		setPullRequestOverrides((current) => ({ ...current, [url]: transform(pullRequest) }))
-	}
-	const updateIssue = (url: string, transform: (issue: IssueItem) => IssueItem) => {
-		const issue = issues.find((item) => item.url === url)
-		if (!issue) return
-		setIssueOverrides((current) => ({ ...current, [url]: transform(issue) }))
-	}
-	const markPullRequestCompleted = (pullRequest: PullRequestItem, state: "closed" | "merged") => {
-		setRecentlyCompletedPullRequests((current) => ({
-			...current,
-			[pullRequest.url]: {
-				...pullRequest,
-				state,
-				autoMergeEnabled: false,
-			},
-		}))
-	}
-	const restoreOptimisticPullRequest = (pullRequest: PullRequestItem) => {
-		setRecentlyCompletedPullRequests((current) => {
-			if (!(pullRequest.url in current)) return current
-			const next = { ...current }
-			delete next[pullRequest.url]
-			return next
-		})
-		updatePullRequest(pullRequest.url, () => pullRequest)
-	}
+	const { updatePullRequest, updateIssue, markPullRequestCompleted, restoreOptimisticPullRequest } = usePullRequestMutations({
+		pullRequests,
+		issues,
+		setPullRequestOverrides,
+		setIssueOverrides,
+		setRecentlyCompletedPullRequests,
+	})
 
 	const { detailHydrationState, resetHydration } = useDetailHydration({
 		selectedPullRequest,

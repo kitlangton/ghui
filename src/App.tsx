@@ -53,6 +53,7 @@ import {
 
 import { useFocusReturnRefresh } from "./hooks/useFocusReturnRefresh.js"
 import { useGitHubActions } from "./hooks/useGitHubActions.js"
+import { useImperativeActions } from "./hooks/useImperativeActions.js"
 import { useIssueListDerivations } from "./hooks/useIssueListDerivations.js"
 import { useCommentsLoader } from "./hooks/useCommentsLoader.js"
 import { useCommentsViewActions } from "./hooks/useCommentsViewActions.js"
@@ -86,7 +87,6 @@ import { useDiffPrefetch } from "./ui/diff/useDiffPrefetch.js"
 import { themeIdAtom } from "./ui/theme/atoms.js"
 import { useThemeModal } from "./ui/theme/useThemeModal.js"
 import { useMergeFlow } from "./ui/merge/useMergeFlow.js"
-import type { CommentEditorValue } from "./ui/commentEditor.js"
 import { LoadingLogoPane } from "./ui/LoadingLogo.js"
 import { Divider, TextLine } from "./ui/primitives.js"
 import { initialCommentModalState, submitReviewOptions } from "./ui/modals.js"
@@ -719,47 +719,34 @@ export const App = ({ systemThemeGeneration = 0 }: AppProps) => {
 		onPrefetch: (pr) => loadPullRequestDiff(pr),
 	})
 
-	const openDiffView = () => {
-		if (!selectedPullRequest) return
-		resetDiffLineColors()
-		setDiffFullView(true)
-		setDetailFullView(false)
-		setCommentsViewActive(false)
-		setDiffFileIndex(0)
-		setDiffScrollTop(0)
-		setDiffCommentAnchorIndex(0)
-		setDiffPreferredSide(null)
-		setDiffCommentRangeStartIndex(null)
-		setDiffRenderView(contentWidth >= 100 ? "split" : "unified")
-		diffScrollRef.current?.scrollTo({ x: 0, y: 0 })
-		loadPullRequestDiff(selectedPullRequest, { includeComments: true })
-	}
-
 	// j/k navigates the *visual* (threaded) order, not the raw load order — so
 	// the comment under the cursor is the one immediately below the previously
 	// highlighted row, regardless of where it lives in the flat array.
 	const orderedComments = useMemo(() => orderCommentsForDisplay(selectedComments), [selectedComments])
 	const selectedOrderedComment = orderedComments[commentsViewSelection]?.comment ?? null
 	const commentsRowCount = commentsViewRowCount(selectedComments.length)
-
-	const scrollDetailPreviewBy = (y: number) => {
-		detailPreviewScrollRef.current?.scrollBy({ x: 0, y })
-	}
-	const scrollDetailPreviewTo = (y: number) => {
-		detailPreviewScrollRef.current?.scrollTo({ x: 0, y })
-	}
-
-	const setCommentEditorValue = (body: string, cursor: number) => {
-		setCommentModal((current) => (current.body === body && current.cursor === cursor && current.error === null ? current : { ...current, body, cursor, error: null }))
-	}
-
-	const editSubmitReview = (transform: (state: CommentEditorValue) => CommentEditorValue) => {
-		setSubmitReviewModal((current) => {
-			const next = transform({ body: current.body, cursor: current.cursor })
-			if (next.body === current.body && next.cursor === current.cursor && current.error === null) return current
-			return { ...current, body: next.body, cursor: next.cursor, error: null }
+	const { scrollDetailPreviewBy, scrollDetailPreviewTo, scrollDetailFullViewBy, scrollDetailFullViewTo, setCommentEditorValue, editSubmitReview, openDiffView } =
+		useImperativeActions({
+			contentWidth,
+			detailScrollRef,
+			detailPreviewScrollRef,
+			diffScrollRef,
+			setDetailScrollOffset,
+			setCommentModal,
+			setSubmitReviewModal,
+			setDiffFullView,
+			setDetailFullView,
+			setCommentsViewActive,
+			setDiffFileIndex,
+			setDiffScrollTop,
+			setDiffCommentAnchorIndex,
+			setDiffPreferredSide,
+			setDiffCommentRangeStartIndex,
+			setDiffRenderView,
+			selectedPullRequest,
+			resetDiffLineColors,
+			loadPullRequestDiff,
 		})
-	}
 
 	const diffNav = useDiffCommentNavigator({
 		diffFullView,
@@ -1022,14 +1009,6 @@ export const App = ({ systemThemeGeneration = 0 }: AppProps) => {
 		})
 	const runCommandPaletteCommand = (command: AppCommand) => {
 		runCommand(command, { notifyDisabled: true, closePalette: true })
-	}
-	const scrollDetailFullViewBy = (delta: number) => {
-		detailScrollRef.current?.scrollBy({ x: 0, y: delta })
-		setDetailScrollOffset((current) => Math.max(0, current + delta))
-	}
-	const scrollDetailFullViewTo = (y: number) => {
-		detailScrollRef.current?.scrollTo({ x: 0, y })
-		setDetailScrollOffset(y)
 	}
 	const { stepSelected, stepSelectedDown, stepSelectedUp, stepSelectedDownWithLoadMore, stepSelectedUpWrap, moveSelectedToPreviousGroup, moveSelectedToNextGroup } =
 		useListSelectionStepping({

@@ -25,7 +25,7 @@ import {
 import { errorMessage } from "./errors.js"
 import { nextView, parseRepositoryInput, type PullRequestView, viewCacheKey, viewEquals } from "./pullRequestViews.js"
 
-import { ActiveFilterBar, ACTIVE_FILTER_BAR_HEIGHT } from "./ui/ActiveFilterBar.js"
+import { ACTIVE_FILTER_BAR_HEIGHT } from "./ui/ActiveFilterBar.js"
 import { colors, rowHoverBackground } from "./ui/colors.js"
 import {
 	favoriteRepositoriesAtom,
@@ -143,22 +143,10 @@ import {
 	type StackedDiffCommentAnchor,
 	verticalDiffAnchor,
 } from "./ui/diff.js"
-import {
-	DETAIL_BODY_SCROLL_LIMIT,
-	DetailBody,
-	DetailHeader,
-	DetailPlaceholder,
-	DetailsPane,
-	getDetailHeaderHeight,
-	getDetailJunctionRows,
-	getScrollableDetailBodyHeight,
-	type DetailCommentsStatus,
-	type DetailPlaceholderContent,
-} from "./ui/DetailsPane.js"
+import { getDetailHeaderHeight, getDetailJunctionRows, getScrollableDetailBodyHeight, type DetailCommentsStatus, type DetailPlaceholderContent } from "./ui/DetailsPane.js"
 import { FooterHints, RetryProgress } from "./ui/FooterHints.js"
 import { LoadingLogoPane } from "./ui/LoadingLogo.js"
-import { SplitPane } from "./ui/paneLayout.js"
-import { Divider, Filler, fitCell, PlainLine, TextLine } from "./ui/primitives.js"
+import { Divider, fitCell, PlainLine, TextLine } from "./ui/primitives.js"
 import {
 	filterChangedFiles,
 	filterLabels,
@@ -192,11 +180,11 @@ import {
 	type SubmitReviewModalState,
 	type ThemeModalState,
 } from "./ui/modals.js"
-import { CommentsPane, commentsViewRowCount, orderCommentsForDisplay } from "./ui/CommentsPane.js"
-import { PullRequestDiffPane } from "./ui/PullRequestDiffPane.js"
-import { buildPullRequestListRows, pullRequestListRowIndex, pullRequestListVisualLineCount, PullRequestList } from "./ui/PullRequestList.js"
+import { commentsViewRowCount, orderCommentsForDisplay } from "./ui/CommentsPane.js"
+import { buildPullRequestListRows, pullRequestListRowIndex, pullRequestListVisualLineCount } from "./ui/PullRequestList.js"
 import { type RepositoryListItem } from "./ui/RepoList.js"
 import { IssuesWorkspace } from "./surfaces/IssuesWorkspace.js"
+import { PullRequestSurface } from "./surfaces/PullRequestSurface.js"
 import { RepoWorkspace } from "./surfaces/RepoWorkspace.js"
 import { WorkspaceModals } from "./surfaces/WorkspaceModals.js"
 import { WorkspaceTabs, workspaceTabSeparatorColumns } from "./ui/WorkspaceTabs.js"
@@ -2252,32 +2240,6 @@ export const App = ({ systemThemeGeneration = 0 }: AppProps) => {
 		isFilterEditing: filterMode,
 		onSelectRepository: setSelectedRepositoryIndex,
 	} as const
-	const widePullRequestList = (
-		<box paddingLeft={sectionPadding} paddingRight={0}>
-			<PullRequestList key={`wide-${leftContentWidth}`} {...prListProps} contentWidth={leftContentWidth} />
-		</box>
-	)
-	const widePullRequestFilterBar = pullRequestActiveFilterLabel ? (
-		<box height={ACTIVE_FILTER_BAR_HEIGHT} flexDirection="column">
-			<box paddingLeft={sectionPadding}>
-				<ActiveFilterBar label={pullRequestActiveFilterLabel} width={leftContentWidth} />
-			</box>
-			<Divider width={leftPaneWidth} />
-		</box>
-	) : null
-	const narrowPullRequestList = (
-		<box paddingLeft={sectionPadding} paddingRight={sectionPadding}>
-			<PullRequestList key={`narrow-${fullscreenContentWidth}`} {...prListProps} contentWidth={fullscreenContentWidth} />
-		</box>
-	)
-	const narrowPullRequestFilterBar = pullRequestActiveFilterLabel ? (
-		<box height={ACTIVE_FILTER_BAR_HEIGHT} flexDirection="column">
-			<box paddingLeft={sectionPadding} paddingRight={sectionPadding}>
-				<ActiveFilterBar label={pullRequestActiveFilterLabel} width={fullscreenContentWidth} />
-			</box>
-			<Divider width={contentWidth} />
-		</box>
-	) : null
 	const showWideSplit = activeWorkspaceSurface === "pullRequests" && isWideLayout && !detailFullView && !diffFullView && !commentsViewActive
 	const showRepoSplit = activeWorkspaceSurface === "repos" && isWideLayout && !detailFullView && !diffFullView && !commentsViewActive
 	const showIssueSplit = activeWorkspaceSurface === "issues" && isWideLayout && !detailFullView && !diffFullView && !commentsViewActive
@@ -2434,303 +2396,69 @@ export const App = ({ systemThemeGeneration = 0 }: AppProps) => {
 					detailPreviewScrollRef={detailPreviewScrollRef}
 					onLinkOpen={openInlineLink}
 				/>
-			) : commentsViewActive && selectedCommentSubject ? (
-				<CommentsPane
-					item={selectedCommentSubject}
-					comments={selectedComments}
-					orderedComments={orderedComments}
-					status={selectedCommentsStatus}
-					selectedIndex={commentsViewSelection}
-					contentWidth={fullscreenContentWidth}
-					paneWidth={contentWidth}
-					height={wideBodyHeight}
-					loadingIndicator={loadingIndicator}
-					themeGeneration={systemThemeGeneration}
-				/>
-			) : diffFullView ? (
-				<PullRequestDiffPane
-					pullRequest={selectedPullRequest}
-					diffState={displayedDiffState}
-					stackedFiles={stackedDiffFiles}
-					scrollTop={diffScrollTop}
-					view={effectiveDiffRenderView}
-					whitespaceMode={diffWhitespaceMode}
-					wrapMode={diffWrapMode}
-					paneWidth={contentWidth}
-					height={wideBodyHeight}
-					loadingIndicator={loadingIndicator}
-					scrollRef={diffScrollRef}
-					setDiffRef={setDiffRenderableRef}
-					selectedCommentAnchor={selectedDiffCommentAnchor}
-					selectedCommentLabel={selectedDiffCommentLabel}
-					selectedCommentThread={selectedDiffCommentThread}
-					onSelectCommentLine={selectDiffCommentLine}
-					themeId={themeId}
-					themeGeneration={systemThemeGeneration}
-				/>
 			) : detailFullView && activeWorkspaceSurface === "issues" ? (
 				<IssueDetailPane issue={selectedIssue} width={contentWidth} height={wideBodyHeight} onLinkOpen={openInlineLink} />
-			) : detailFullView && isSelectedPullRequestDetailError && selectedPullRequest ? (
-				<box flexGrow={1} flexDirection="column">
-					<DetailHeader
-						pullRequest={selectedPullRequest}
-						contentWidth={fullscreenContentWidth}
-						paneWidth={contentWidth}
-						showChecks={false}
-						comments={selectedComments}
-						commentsStatus={selectedCommentsStatus}
-					/>
-					<PlainLine text="- Could not load pull request details." fg={colors.error} />
-					<PlainLine text={`- ${selectedPullRequestDetailError}`} fg={colors.muted} />
-					<Filler rows={Math.max(0, wideBodyHeight - fullscreenDetailHeaderHeight - 2)} prefix="detail-error-full" />
-				</box>
-			) : detailFullView && isSelectedPullRequestDetailLoading && selectedPullRequest ? (
-				<box flexGrow={1} flexDirection="column">
-					<DetailHeader
-						pullRequest={selectedPullRequest}
-						contentWidth={fullscreenContentWidth}
-						paneWidth={contentWidth}
-						showChecks={isWideLayout}
-						comments={selectedComments}
-						commentsStatus={selectedCommentsStatus}
-					/>
-					<Filler rows={Math.max(1, wideBodyHeight - fullscreenDetailHeaderHeight)} prefix="detail-loading-full" />
-				</box>
-			) : isWideLayout && detailFullView ? (
-				<box flexGrow={1} flexDirection="column">
-					{selectedPullRequest ? (
-						<>
-							<DetailHeader
-								pullRequest={selectedPullRequest}
-								contentWidth={fullscreenContentWidth}
-								paneWidth={contentWidth}
-								showChecks
-								comments={selectedComments}
-								commentsStatus={selectedCommentsStatus}
-							/>
-							<scrollbox ref={detailScrollRef} focusable={false} flexGrow={1} verticalScrollbarOptions={{ visible: fullscreenDetailBodyScrollable }}>
-								<DetailBody
-									pullRequest={selectedPullRequest}
-									contentWidth={fullscreenContentWidth}
-									bodyLines={fullscreenBodyLines}
-									bodyLineLimit={DETAIL_BODY_SCROLL_LIMIT}
-									loadingIndicator={loadingIndicator}
-									themeId={themeId}
-									themeGeneration={systemThemeGeneration}
-									onLinkOpen={openInlineLink}
-								/>
-							</scrollbox>
-						</>
-					) : (
-						<DetailsPane
-							pullRequest={null}
-							contentWidth={fullscreenContentWidth}
-							paneWidth={contentWidth}
-							placeholderContent={detailPlaceholderContent}
-							loadingIndicator={loadingIndicator}
-							themeId={themeId}
-							themeGeneration={systemThemeGeneration}
-							onLinkOpen={openInlineLink}
-						/>
-					)}
-				</box>
-			) : isWideLayout ? (
-				<SplitPane
-					height={wideBodyHeight}
-					leftWidth={leftPaneWidth}
-					rightWidth={rightPaneWidth}
-					junctionRows={detailJunctions}
-					left={
-						<box height={wideBodyHeight} flexDirection="column">
-							{widePullRequestFilterBar}
-							{widePullRequestListNeedsScroll ? (
-								<scrollbox ref={prListScrollRef} focusable={false} height={widePullRequestListHeight} flexGrow={0}>
-									{widePullRequestList}
-								</scrollbox>
-							) : (
-								<box height={widePullRequestListHeight} flexDirection="column">
-									{widePullRequestList}
-								</box>
-							)}
-						</box>
-					}
-					right={
-						isSelectedPullRequestDetailError && selectedPullRequest ? (
-							<>
-								<DetailHeader
-									pullRequest={selectedPullRequest}
-									contentWidth={rightContentWidth}
-									paneWidth={rightPaneWidth}
-									showChecks={false}
-									comments={selectedComments}
-									commentsStatus={selectedCommentsStatus}
-								/>
-								<PlainLine text="- Could not load pull request details." fg={colors.error} />
-								<PlainLine text={`- ${selectedPullRequestDetailError}`} fg={colors.muted} />
-								<Filler rows={Math.max(0, wideBodyHeight - wideDetailHeaderHeight - 2)} prefix="detail-error-preview" />
-							</>
-						) : isSelectedPullRequestDetailLoading && selectedPullRequest ? (
-							<>
-								<DetailHeader
-									pullRequest={selectedPullRequest}
-									contentWidth={rightContentWidth}
-									paneWidth={rightPaneWidth}
-									showChecks
-									comments={selectedComments}
-									commentsStatus={selectedCommentsStatus}
-								/>
-								<Filler rows={Math.max(1, wideBodyHeight - wideDetailHeaderHeight)} prefix="detail-loading-preview" />
-							</>
-						) : selectedPullRequest ? (
-							<>
-								<DetailHeader
-									pullRequest={selectedPullRequest}
-									contentWidth={rightContentWidth}
-									paneWidth={rightPaneWidth}
-									showChecks
-									comments={selectedComments}
-									commentsStatus={selectedCommentsStatus}
-								/>
-								<scrollbox ref={detailPreviewScrollRef} flexGrow={1} verticalScrollbarOptions={{ visible: wideDetailBodyScrollable }}>
-									<DetailBody
-										pullRequest={selectedPullRequest}
-										contentWidth={rightContentWidth}
-										bodyLines={wideDetailLines}
-										bodyLineLimit={DETAIL_BODY_SCROLL_LIMIT}
-										loadingIndicator={loadingIndicator}
-										themeId={themeId}
-										themeGeneration={systemThemeGeneration}
-										onLinkOpen={openInlineLink}
-									/>
-								</scrollbox>
-							</>
-						) : (
-							<DetailPlaceholder content={detailPlaceholderContent} paneWidth={rightPaneWidth} />
-						)
-					}
-				/>
-			) : detailFullView ? (
-				<box flexGrow={1} flexDirection="column">
-					{isSelectedPullRequestDetailError && selectedPullRequest ? (
-						<>
-							<DetailHeader
-								pullRequest={selectedPullRequest}
-								contentWidth={fullscreenContentWidth}
-								paneWidth={contentWidth}
-								showChecks={false}
-								comments={selectedComments}
-								commentsStatus={selectedCommentsStatus}
-							/>
-							<PlainLine text="- Could not load pull request details." fg={colors.error} />
-							<PlainLine text={`- ${selectedPullRequestDetailError}`} fg={colors.muted} />
-							<Filler rows={Math.max(0, wideBodyHeight - fullscreenDetailHeaderHeight - 2)} prefix="detail-error-full-narrow" />
-						</>
-					) : selectedPullRequest ? (
-						<>
-							<DetailHeader
-								pullRequest={selectedPullRequest}
-								contentWidth={fullscreenContentWidth}
-								paneWidth={contentWidth}
-								comments={selectedComments}
-								commentsStatus={selectedCommentsStatus}
-							/>
-							<scrollbox ref={detailScrollRef} focusable={false} flexGrow={1} verticalScrollbarOptions={{ visible: fullscreenDetailBodyScrollable }}>
-								<DetailBody
-									pullRequest={selectedPullRequest}
-									contentWidth={fullscreenContentWidth}
-									bodyLines={fullscreenBodyLines}
-									bodyLineLimit={DETAIL_BODY_SCROLL_LIMIT}
-									loadingIndicator={loadingIndicator}
-									themeId={themeId}
-									themeGeneration={systemThemeGeneration}
-									onLinkOpen={openInlineLink}
-								/>
-							</scrollbox>
-						</>
-					) : (
-						<DetailsPane
-							pullRequest={null}
-							contentWidth={fullscreenContentWidth}
-							paneWidth={contentWidth}
-							placeholderContent={detailPlaceholderContent}
-							loadingIndicator={loadingIndicator}
-							themeId={themeId}
-							themeGeneration={systemThemeGeneration}
-							onLinkOpen={openInlineLink}
-						/>
-					)}
-				</box>
 			) : (
-				<box key="narrow-main" height={wideBodyHeight} flexDirection="column">
-					<box height={narrowPullRequestListHeight} flexDirection="column">
-						{narrowPullRequestFilterBar}
-						{narrowPullRequestListNeedsScroll ? (
-							<scrollbox ref={prListScrollRef} focusable={false} height={narrowPullRequestRowsHeight} flexGrow={0}>
-								{narrowPullRequestList}
-							</scrollbox>
-						) : (
-							<box height={narrowPullRequestRowsHeight} flexDirection="column">
-								{narrowPullRequestList}
-							</box>
-						)}
-					</box>
-					<Divider width={contentWidth} />
-					<box height={narrowDetailsPaneHeight} flexDirection="column">
-						{isSelectedPullRequestDetailError && selectedPullRequest ? (
-							<box flexDirection="column">
-								<DetailHeader
-									pullRequest={selectedPullRequest}
-									contentWidth={fullscreenContentWidth}
-									paneWidth={contentWidth}
-									showChecks={false}
-									comments={selectedComments}
-									commentsStatus={selectedCommentsStatus}
-								/>
-								<PlainLine text="- Could not load pull request details." fg={colors.error} />
-								<PlainLine text={`- ${selectedPullRequestDetailError}`} fg={colors.muted} />
-							</box>
-						) : selectedPullRequest ? (
-							<>
-								<DetailHeader
-									pullRequest={selectedPullRequest}
-									contentWidth={fullscreenContentWidth}
-									paneWidth={contentWidth}
-									comments={selectedComments}
-									commentsStatus={selectedCommentsStatus}
-								/>
-								<scrollbox
-									ref={detailPreviewScrollRef}
-									focusable={false}
-									height={narrowPreviewBodyHeight}
-									flexGrow={0}
-									verticalScrollbarOptions={{ visible: narrowPreviewBodyScrollable }}
-								>
-									<DetailBody
-										pullRequest={selectedPullRequest}
-										contentWidth={fullscreenContentWidth}
-										bodyLines={narrowPreviewBodyHeight}
-										bodyLineLimit={DETAIL_BODY_SCROLL_LIMIT}
-										loadingIndicator={loadingIndicator}
-										themeId={themeId}
-										themeGeneration={systemThemeGeneration}
-										onLinkOpen={openInlineLink}
-									/>
-								</scrollbox>
-							</>
-						) : (
-							<DetailsPane
-								pullRequest={null}
-								contentWidth={fullscreenContentWidth}
-								paneWidth={contentWidth}
-								placeholderContent={detailPlaceholderContent}
-								loadingIndicator={loadingIndicator}
-								themeId={themeId}
-								themeGeneration={systemThemeGeneration}
-								onLinkOpen={openInlineLink}
-							/>
-						)}
-					</box>
-				</box>
+				<PullRequestSurface
+					isWideLayout={isWideLayout}
+					contentWidth={contentWidth}
+					leftPaneWidth={leftPaneWidth}
+					rightPaneWidth={rightPaneWidth}
+					leftContentWidth={leftContentWidth}
+					rightContentWidth={rightContentWidth}
+					fullscreenContentWidth={fullscreenContentWidth}
+					sectionPadding={sectionPadding}
+					wideBodyHeight={wideBodyHeight}
+					wideDetailHeaderHeight={wideDetailHeaderHeight}
+					wideDetailBodyScrollable={wideDetailBodyScrollable}
+					wideDetailLines={wideDetailLines}
+					fullscreenDetailHeaderHeight={fullscreenDetailHeaderHeight}
+					fullscreenDetailBodyScrollable={fullscreenDetailBodyScrollable}
+					fullscreenBodyLines={fullscreenBodyLines}
+					widePullRequestListHeight={widePullRequestListHeight}
+					widePullRequestListNeedsScroll={widePullRequestListNeedsScroll}
+					narrowPullRequestListHeight={narrowPullRequestListHeight}
+					narrowPullRequestRowsHeight={narrowPullRequestRowsHeight}
+					narrowPullRequestListNeedsScroll={narrowPullRequestListNeedsScroll}
+					narrowDetailsPaneHeight={narrowDetailsPaneHeight}
+					narrowPreviewBodyHeight={narrowPreviewBodyHeight}
+					narrowPreviewBodyScrollable={narrowPreviewBodyScrollable}
+					activeFilterLabel={pullRequestActiveFilterLabel}
+					detailJunctions={detailJunctions}
+					prListProps={prListProps}
+					selectedPullRequest={selectedPullRequest}
+					selectedComments={selectedComments}
+					selectedCommentsStatus={selectedCommentsStatus}
+					detailPlaceholderContent={detailPlaceholderContent}
+					isSelectedPullRequestDetailLoading={isSelectedPullRequestDetailLoading}
+					isSelectedPullRequestDetailError={isSelectedPullRequestDetailError}
+					selectedPullRequestDetailError={selectedPullRequestDetailError}
+					commentsViewActive={commentsViewActive}
+					commentsViewSelection={commentsViewSelection}
+					orderedComments={orderedComments}
+					commentSubject={selectedCommentSubject}
+					diffFullView={diffFullView}
+					displayedDiffState={displayedDiffState}
+					stackedDiffFiles={stackedDiffFiles}
+					diffScrollTop={diffScrollTop}
+					effectiveDiffRenderView={effectiveDiffRenderView}
+					diffWhitespaceMode={diffWhitespaceMode}
+					diffWrapMode={diffWrapMode}
+					selectedDiffCommentAnchor={selectedDiffCommentAnchor}
+					selectedDiffCommentLabel={selectedDiffCommentLabel}
+					selectedDiffCommentThread={selectedDiffCommentThread}
+					selectDiffCommentLine={selectDiffCommentLine}
+					setDiffRenderableRef={setDiffRenderableRef}
+					detailFullView={detailFullView}
+					loadingIndicator={loadingIndicator}
+					themeId={themeId}
+					systemThemeGeneration={systemThemeGeneration}
+					prListScrollRef={prListScrollRef}
+					detailScrollRef={detailScrollRef}
+					detailPreviewScrollRef={detailPreviewScrollRef}
+					diffScrollRef={diffScrollRef}
+					onLinkOpen={openInlineLink}
+				/>
 			)}
 
 			{showPaneSplit ? <Divider width={contentWidth} junctionAt={dividerJunctionAt} junctionChar="┴" /> : <Divider width={contentWidth} />}

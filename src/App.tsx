@@ -199,7 +199,7 @@ import { useScrollFollowSelected } from "./ui/useScrollFollowSelected.js"
 import { useScrollPersistence } from "./ui/useScrollPersistence.js"
 import { useSpinnerFrame } from "./ui/useSpinnerFrame.js"
 import { useTextInputDispatcher } from "./ui/useTextInputDispatcher.js"
-import { registerHandoff } from "./commands/handoffs.js"
+import { useCommandHandoffs } from "./hooks/useCommandHandoffs.js"
 import { commandRuntimeAtom } from "./commands/runtimeAtom.js"
 import { issueViewForPullRequestView } from "./viewSync.js"
 import { nextWorkspaceSurface, repositoryWorkspaceSurfaces, userWorkspaceSurfaces, type WorkspaceSurface } from "./workspaceSurfaces.js"
@@ -273,9 +273,6 @@ export const App = ({ systemThemeGeneration = 0 }: AppProps) => {
 	const { width, height } = useTerminalDimensions()
 	const registry = useContext(RegistryContext)
 
-	// Hand the renderer's destroy() to the new command registry so the
-	// `app.quit` command can fire without going through buildAppCommands.
-	useEffect(() => registerHandoff("quit", () => renderer.destroy()), [renderer])
 	const pullRequestResult = useAtomValue(pullRequestsAtom)
 	const refreshPullRequestsAtomRaw = useAtomRefresh(pullRequestsAtom)
 	const refreshPullRequestsAtom = useCallback(() => {
@@ -1771,43 +1768,29 @@ export const App = ({ systemThemeGeneration = 0 }: AppProps) => {
 		[commandSnapshots, dispatchCommand],
 	)
 
-	// Hand hook-bound imperative actions to the new command registry. Each
-	// entry registers a no-arg fn closing over current state; the new-style
-	// commands invoke them via Effect.sync(() => invokeHandoff(key)).
-	useEffect(() => registerHandoff("refreshPullRequests", () => refreshPullRequests("Refreshed", { resetTransientState: true })), [refreshPullRequests])
-	useEffect(() => registerHandoff("loadMorePullRequests", () => void loadMorePullRequests()), [loadMorePullRequests])
-	useEffect(() => registerHandoff("openThemeModal", openThemeModal), [openThemeModal])
-	useEffect(() => registerHandoff("openMergeModal", openMergeModal), [openMergeModal])
-	useEffect(() => registerHandoff("openCommentsView", openCommentsView), [openCommentsView])
-	useEffect(() => registerHandoff("openDiffView", openDiffView), [openDiffView])
-	useEffect(
-		() =>
-			registerHandoff("reloadDiff", () => {
-				if (!selectedPullRequest) return
-				loadPullRequestDiff(selectedPullRequest, { force: true, includeComments: true })
-				flashNotice(`Refreshing diff for #${selectedPullRequest.number}`)
-			}),
-		[selectedPullRequest, loadPullRequestDiff, flashNotice],
-	)
-	useEffect(() => registerHandoff("openChangedFilesModal", openChangedFilesModal), [openChangedFilesModal])
-	useEffect(() => registerHandoff("jumpDiffFileNext", () => jumpDiffFile(1)), [jumpDiffFile])
-	useEffect(() => registerHandoff("jumpDiffFilePrevious", () => jumpDiffFile(-1)), [jumpDiffFile])
-	useEffect(() => registerHandoff("moveDiffCommentThreadNext", () => moveDiffCommentThread(1)), [moveDiffCommentThread])
-	useEffect(() => registerHandoff("moveDiffCommentThreadPrevious", () => moveDiffCommentThread(-1)), [moveDiffCommentThread])
-	useEffect(() => registerHandoff("openSelectedDiffComment", openSelectedDiffComment), [openSelectedDiffComment])
-	useEffect(() => registerHandoff("toggleDiffCommentRange", toggleDiffCommentRange), [toggleDiffCommentRange])
-	useEffect(() => registerHandoff("openDiffCommentModal", openDiffCommentModal), [openDiffCommentModal])
-	useEffect(() => registerHandoff("openReplyToSelectedComment", openReplyToSelectedComment), [openReplyToSelectedComment])
-	useEffect(() => registerHandoff("openEditSelectedComment", openEditSelectedComment), [openEditSelectedComment])
-	useEffect(() => registerHandoff("openDeleteSelectedComment", openDeleteSelectedComment), [openDeleteSelectedComment])
-	useEffect(
-		() => registerHandoff("viewRepository", () => selectedRepository !== null && switchViewTo({ _tag: "Repository", repository: selectedRepository })),
-		[selectedRepository, switchViewTo],
-	)
-	useEffect(() => registerHandoff("viewAuthored", () => switchViewTo({ _tag: "Queue", mode: "authored", repository: selectedRepository })), [selectedRepository, switchViewTo])
-	useEffect(() => registerHandoff("viewReview", () => switchViewTo({ _tag: "Queue", mode: "review", repository: selectedRepository })), [selectedRepository, switchViewTo])
-	useEffect(() => registerHandoff("viewAssigned", () => switchViewTo({ _tag: "Queue", mode: "assigned", repository: selectedRepository })), [selectedRepository, switchViewTo])
-	useEffect(() => registerHandoff("viewMentioned", () => switchViewTo({ _tag: "Queue", mode: "mentioned", repository: selectedRepository })), [selectedRepository, switchViewTo])
+	useCommandHandoffs({
+		renderer,
+		selectedPullRequest,
+		selectedRepository,
+		refreshPullRequests,
+		loadMorePullRequests,
+		loadPullRequestDiff,
+		flashNotice,
+		switchViewTo,
+		openThemeModal,
+		openMergeModal,
+		openCommentsView,
+		openDiffView,
+		openChangedFilesModal,
+		jumpDiffFile,
+		moveDiffCommentThread,
+		openSelectedDiffComment,
+		toggleDiffCommentRange,
+		openDiffCommentModal,
+		openReplyToSelectedComment,
+		openEditSelectedComment,
+		openDeleteSelectedComment,
+	})
 
 	// Snapshot per-render computed values into commandRuntimeAtom so command
 	// derivation atoms (selectedDiffLineReasonAtom, etc.) can read them.

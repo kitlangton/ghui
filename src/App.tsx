@@ -37,6 +37,7 @@ import {
 	workspaceSurfaceAtom,
 	writeWorkspacePreferencesAtom,
 } from "./workspace/atoms.js"
+import { computeLayout } from "./workspace/layout.js"
 import { useWorkspacePreferencesPersistence } from "./workspace/useWorkspacePreferencesPersistence.js"
 import {
 	commentsViewActiveAtom,
@@ -87,7 +88,7 @@ import {
 	visiblePullRequestsAtom,
 } from "./ui/pullRequests/atoms.js"
 
-import { useIdleRefresh } from "./ui/pullRequests/useIdleRefresh.js"
+import { useFocusReturnRefresh } from "./hooks/useFocusReturnRefresh.js"
 import { useLoadMore } from "./ui/pullRequests/useLoadMore.js"
 import { useFilterModal } from "./ui/filter/useFilterModal.js"
 import { useRefreshCompletionToast } from "./ui/pullRequests/useRefreshCompletionToast.js"
@@ -197,7 +198,6 @@ import { usePasteHandler } from "./ui/usePasteHandler.js"
 import { useScrollFollowSelected } from "./ui/useScrollFollowSelected.js"
 import { useScrollPersistence } from "./ui/useScrollPersistence.js"
 import { useSpinnerFrame } from "./ui/useSpinnerFrame.js"
-import { useTerminalFocus } from "./ui/useTerminalFocus.js"
 import { useTextInputDispatcher } from "./ui/useTextInputDispatcher.js"
 import { registerHandoff } from "./commands/handoffs.js"
 import { commandRuntimeAtom } from "./commands/runtimeAtom.js"
@@ -387,18 +387,22 @@ export const App = ({ systemThemeGeneration = 0 }: AppProps) => {
 	const openUrl = useAtomSet(openUrlAtom, { mode: "promise" })
 	const terminalWidth = width ?? 100
 	const terminalHeight = height ?? 24
-	const contentWidth = Math.max(1, terminalWidth)
-	const isWideLayout = terminalWidth >= 100
-	const splitGap = 1
-	const sectionPadding = 1
-	const leftPaneWidth = isWideLayout ? Math.max(44, Math.floor((contentWidth - splitGap) * 0.56)) : contentWidth
-	const rightPaneWidth = isWideLayout ? Math.max(28, contentWidth - leftPaneWidth - splitGap) : contentWidth
-	const dividerJunctionAt = Math.max(1, leftPaneWidth)
-	const leftContentWidth = isWideLayout ? Math.max(24, leftPaneWidth - 2) : Math.max(24, contentWidth - sectionPadding * 2)
-	const rightContentWidth = isWideLayout ? Math.max(24, rightPaneWidth - sectionPadding * 2) : Math.max(24, contentWidth - sectionPadding * 2)
-	const wideDetailLines = Math.max(8, terminalHeight - 10)
 	const showWorkspaceTabs = !detailFullView && !diffFullView && !commentsViewActive
-	const wideBodyHeight = Math.max(8, terminalHeight - (showWorkspaceTabs ? 6 : 4))
+	const {
+		contentWidth,
+		isWideLayout,
+		sectionPadding,
+		leftPaneWidth,
+		rightPaneWidth,
+		leftContentWidth,
+		rightContentWidth,
+		dividerJunctionAt,
+		wideBodyHeight,
+		wideDetailLines,
+		headerFooterWidth,
+		fullscreenContentWidth,
+		fullscreenBodyLines,
+	} = computeLayout({ terminalWidth, terminalHeight, showWorkspaceTabs })
 	const refreshGenerationRef = useRef(0)
 	const lastPullRequestRefreshAtRef = useRef(0)
 	const pullRequestStatusRef = useRef<LoadStatus>("loading")
@@ -415,7 +419,6 @@ export const App = ({ systemThemeGeneration = 0 }: AppProps) => {
 	const prListScrollPersistedRef = useRef(0)
 	const issueListScrollPersistedRef = useRef(0)
 	const suppressNextDiffCommentScrollRef = useRef(false)
-	const headerFooterWidth = Math.max(24, contentWidth - 2)
 
 	const flashNotice = useFlashNotice()
 
@@ -937,18 +940,14 @@ export const App = ({ systemThemeGeneration = 0 }: AppProps) => {
 		void pruneCache().catch(() => {})
 	}, [pruneCache])
 
-	const { terminalFocused, terminalFocusedRef } = useTerminalFocus({
+	const { terminalFocusedRef } = useFocusReturnRefresh({
 		renderer,
-		onFocusReturn: () => maybeRefreshPullRequestsRef.current(FOCUS_RETURN_REFRESH_MIN_MS),
-	})
-
-	useIdleRefresh({
-		enabled: terminalFocused,
 		lastRefreshAtRef: lastPullRequestRefreshAtRef,
+		refreshGeneration: pullRequestLoad?.fetchedAt?.getTime(),
+		focusReturnMinMs: FOCUS_RETURN_REFRESH_MIN_MS,
 		idleAfterMs: FOCUSED_IDLE_REFRESH_MS,
 		jitterMs: AUTO_REFRESH_JITTER_MS,
 		onRefresh: (ms) => maybeRefreshPullRequestsRef.current(ms),
-		refreshGeneration: pullRequestLoad?.fetchedAt?.getTime(),
 	})
 
 	useClampedIndex(visiblePullRequests.length, setSelectedIndex)
@@ -2172,8 +2171,6 @@ export const App = ({ systemThemeGeneration = 0 }: AppProps) => {
 		)
 	}
 
-	const fullscreenContentWidth = Math.max(24, contentWidth - 2)
-	const fullscreenBodyLines = Math.max(8, terminalHeight - 8)
 	const fullscreenDetailHeaderHeight = getDetailHeaderHeight(selectedPullRequest, contentWidth, isWideLayout, selectedComments, selectedCommentsStatus)
 	const fullscreenDetailBodyViewportHeight = Math.max(1, wideBodyHeight - fullscreenDetailHeaderHeight)
 	const fullscreenDetailBodyHeight = getScrollableDetailBodyHeight(selectedPullRequest, fullscreenContentWidth)

@@ -7,10 +7,12 @@ import { colors } from "../ui/colors.js"
 import { ActiveFilterBar, ACTIVE_FILTER_BAR_HEIGHT } from "../ui/ActiveFilterBar.js"
 import { CommentsPane, type OrderedComment } from "../ui/CommentsPane.js"
 import { DETAIL_BODY_SCROLL_LIMIT, DetailBody, DetailHeader, DetailPlaceholder, DetailsPane, type DetailCommentsStatus, type DetailPlaceholderContent } from "../ui/DetailsPane.js"
+import { DiffFilePanel } from "../ui/diff/DiffFilePanel.js"
 import { SplitPane } from "../ui/paneLayout.js"
 import { Divider, Filler, PlainLine } from "../ui/primitives.js"
 import { PullRequestDiffPane } from "../ui/PullRequestDiffPane.js"
 import { PullRequestList } from "../ui/PullRequestList.js"
+import type { DiffFilePanelBundle } from "./WorkspaceContent.js"
 
 export interface PullRequestSurfaceProps {
 	readonly isWideLayout: boolean
@@ -71,6 +73,7 @@ export interface PullRequestSurfaceProps {
 	readonly detailPreviewScrollRef: MutableRefObject<ScrollBoxRenderable | null>
 	readonly diffScrollRef: MutableRefObject<ScrollBoxRenderable | null>
 	readonly onLinkOpen?: (url: string) => void
+	readonly diffFilePanel: DiffFilePanelBundle
 }
 
 export const PullRequestSurface = (props: PullRequestSurfaceProps) => {
@@ -153,7 +156,9 @@ export const PullRequestSurface = (props: PullRequestSurfaceProps) => {
 	}
 
 	if (diffFullView) {
-		return (
+		const panel = props.diffFilePanel
+		const diffPaneWidth = panel.visible ? panel.diffPaneWidth : contentWidth
+		const diffPane = (
 			<PullRequestDiffPane
 				pullRequest={selectedPullRequest}
 				diffState={displayedDiffState}
@@ -162,7 +167,7 @@ export const PullRequestSurface = (props: PullRequestSurfaceProps) => {
 				view={effectiveDiffRenderView}
 				whitespaceMode={diffWhitespaceMode}
 				wrapMode={diffWrapMode}
-				paneWidth={contentWidth}
+				paneWidth={diffPaneWidth}
 				height={wideBodyHeight}
 				loadingIndicator={loadingIndicator}
 				scrollRef={diffScrollRef}
@@ -174,6 +179,27 @@ export const PullRequestSurface = (props: PullRequestSurfaceProps) => {
 				themeId={themeId}
 				themeGeneration={systemThemeGeneration}
 			/>
+		)
+		if (!panel.visible) return diffPane
+		return (
+			<box flexDirection="row" height={wideBodyHeight} width={contentWidth}>
+				<DiffFilePanel
+					files={panel.files}
+					currentFileIndex={panel.currentFileIndex}
+					width={panel.width}
+					height={wideBodyHeight}
+					pickerActive={panel.pickerActive}
+					pickerQuery={panel.pickerQuery}
+					pickerSelectedIndex={panel.pickerSelectedIndex}
+					pickerResults={panel.pickerResults}
+				/>
+				<box width={1} height={wideBodyHeight} flexDirection="column">
+					{Array.from({ length: wideBodyHeight }, (_, index) => (
+						<PlainLine key={`diff-file-panel-sep-${index}`} text="│" fg={colors.separator} />
+					))}
+				</box>
+				{diffPane}
+			</box>
 		)
 	}
 

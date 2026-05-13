@@ -8,6 +8,8 @@ export interface LayoutInput {
 	readonly terminalWidth: number
 	readonly terminalHeight: number
 	readonly showWorkspaceTabs: boolean
+	readonly showDiffFilePanel: boolean
+	readonly diffFilePanelWidth: number
 }
 
 export interface WorkspaceLayout {
@@ -25,11 +27,17 @@ export interface WorkspaceLayout {
 	readonly headerFooterWidth: number
 	readonly fullscreenContentWidth: number
 	readonly fullscreenBodyLines: number
+	// Width of the docked diff-file panel (0 when hidden).
+	readonly diffFilePanelEffectiveWidth: number
+	// Outer width allocated to the diff pane itself. With the panel hidden
+	// this is the whole content width; with it shown, panel + 1-col divider
+	// are subtracted.
+	readonly diffPaneWidth: number
 }
 
 const WIDE_BREAKPOINT = 100
 
-export const computeLayout = ({ terminalWidth, terminalHeight, showWorkspaceTabs }: LayoutInput): WorkspaceLayout => {
+export const computeLayout = ({ terminalWidth, terminalHeight, showWorkspaceTabs, showDiffFilePanel, diffFilePanelWidth }: LayoutInput): WorkspaceLayout => {
 	const contentWidth = Math.max(1, terminalWidth)
 	const isWideLayout = terminalWidth >= WIDE_BREAKPOINT
 	const splitGap = 1
@@ -44,6 +52,12 @@ export const computeLayout = ({ terminalWidth, terminalHeight, showWorkspaceTabs
 	const headerFooterWidth = Math.max(24, contentWidth - 2)
 	const fullscreenContentWidth = Math.max(24, contentWidth - 2)
 	const fullscreenBodyLines = Math.max(8, terminalHeight - 8)
+	// The docked file panel eats into the diff's outer width. We clamp so the
+	// diff retains at least 60 cols of *outer* width even at edge cases — past
+	// that point the auto-visibility threshold is the real guard.
+	const diffFilePanelDividerWidth = showDiffFilePanel ? 1 : 0
+	const diffFilePanelEffectiveWidth = showDiffFilePanel ? Math.min(diffFilePanelWidth, Math.max(0, contentWidth - diffFilePanelDividerWidth - 60)) : 0
+	const diffPaneWidth = Math.max(24, contentWidth - diffFilePanelEffectiveWidth - diffFilePanelDividerWidth)
 	return {
 		contentWidth,
 		isWideLayout,
@@ -59,5 +73,7 @@ export const computeLayout = ({ terminalWidth, terminalHeight, showWorkspaceTabs
 		headerFooterWidth,
 		fullscreenContentWidth,
 		fullscreenBodyLines,
+		diffFilePanelEffectiveWidth,
+		diffPaneWidth,
 	}
 }

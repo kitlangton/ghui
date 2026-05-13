@@ -91,7 +91,7 @@ import { useLoadMore } from "../ui/pullRequests/useLoadMore.js"
 import { useFilterModal } from "../ui/filter/useFilterModal.js"
 import { useRefreshCompletionToast } from "../ui/pullRequests/useRefreshCompletionToast.js"
 import { useRepositoryDetails } from "../ui/pullRequests/useRepositoryDetails.js"
-import { selectedDiffKeyAtom, selectedDiffStateAtom } from "../ui/diff/atoms.js"
+import { DIFF_FILE_PANEL_AUTO_THRESHOLD, DIFF_FILE_PANEL_WIDTH, diffFilePanelOverrideAtom, selectedDiffKeyAtom, selectedDiffStateAtom } from "../ui/diff/atoms.js"
 import { diffCommentThreadMapKey } from "../ui/diff/comments.js"
 import { useDiffLineColors } from "../ui/diff/useDiffLineColors.js"
 import { useDiffLocationPreservation } from "../ui/diff/useDiffLocationPreservation.js"
@@ -241,8 +241,33 @@ export const useAppShell = ({ systemThemeGeneration }: UseAppShellInput) => {
 	const terminalWidth = width ?? 100
 	const terminalHeight = height ?? 24
 	const showWorkspaceTabs = !detailFullView && !diffFullView && !commentsViewActive
-	const layout = computeLayout({ terminalWidth, terminalHeight, showWorkspaceTabs })
-	const { contentWidth, isWideLayout, leftPaneWidth, rightPaneWidth, rightContentWidth, dividerJunctionAt, wideBodyHeight, headerFooterWidth, fullscreenContentWidth } = layout
+	const diffFilePanelOverride = useAtomValue(diffFilePanelOverrideAtom)
+	const setDiffFilePanelOverride = useAtomSet(diffFilePanelOverrideAtom)
+	// Effective panel visibility: the override (true/false) wins if set, else
+	// auto-show whenever the terminal has room. Either way it only matters in
+	// diffFullView — the panel doesn't exist outside of the diff surface.
+	const diffFilePanelAutoVisible = terminalWidth >= DIFF_FILE_PANEL_AUTO_THRESHOLD
+	const diffFilePanelVisible = diffFullView && (diffFilePanelOverride ?? diffFilePanelAutoVisible)
+	const layout = computeLayout({
+		terminalWidth,
+		terminalHeight,
+		showWorkspaceTabs,
+		showDiffFilePanel: diffFilePanelVisible,
+		diffFilePanelWidth: DIFF_FILE_PANEL_WIDTH,
+	})
+	const {
+		contentWidth,
+		isWideLayout,
+		leftPaneWidth,
+		rightPaneWidth,
+		rightContentWidth,
+		dividerJunctionAt,
+		wideBodyHeight,
+		headerFooterWidth,
+		fullscreenContentWidth,
+		diffFilePanelEffectiveWidth,
+		diffPaneWidth,
+	} = layout
 	const refreshGenerationRef = useRef(0)
 	const lastPullRequestRefreshAtRef = useRef(0)
 	const pullRequestStatusRef = useRef<LoadStatus>("loading")
@@ -987,6 +1012,12 @@ export const useAppShell = ({ systemThemeGeneration }: UseAppShellInput) => {
 		openCommentsView,
 		openDiffView,
 		openChangedFilesModal,
+		toggleDiffFilePanel: () => {
+			// Flip whatever the user currently sees: if it's auto-on, set
+			// explicit-off (and vice versa). Sticky from there.
+			const currentlyVisible = diffFilePanelOverride ?? diffFilePanelAutoVisible
+			setDiffFilePanelOverride(!currentlyVisible)
+		},
 		jumpDiffFile,
 		moveDiffCommentThread,
 		openSelectedDiffComment,
@@ -1326,6 +1357,17 @@ export const useAppShell = ({ systemThemeGeneration }: UseAppShellInput) => {
 			systemThemeGeneration,
 			scrollRefs: { prListScrollRef, detailScrollRef, detailPreviewScrollRef, diffScrollRef, issueListScrollRef },
 			openInlineLink,
+			diffFilePanel: {
+				visible: diffFilePanelVisible,
+				width: diffFilePanelEffectiveWidth,
+				diffPaneWidth,
+				files: readyDiffFiles,
+				currentFileIndex: diffFileIndex,
+				pickerActive: changedFilesModalActive,
+				pickerQuery: changedFilesModal.query,
+				pickerSelectedIndex: changedFilesModal.selectedIndex,
+				pickerResults: changedFileResults,
+			},
 		},
 		footerProps,
 		modalsProps: {
@@ -1343,6 +1385,9 @@ export const useAppShell = ({ systemThemeGeneration }: UseAppShellInput) => {
 			onCommentChange: setCommentEditorValue,
 			onCommentSubmit: submitCommentModal,
 			layouts: modalLayouts,
+			// Picker takes over the docked panel when visible; suppressing the
+			// modal here keeps both presentations from rendering at once.
+			suppressChangedFilesModal: diffFilePanelVisible,
 		},
 	}
 }

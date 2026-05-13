@@ -17,6 +17,7 @@ export interface UseCommandHandoffsInput {
 	readonly openCommentsView: () => void
 	readonly openDiffView: () => void
 	readonly openChangedFilesModal: () => void
+	readonly toggleDiffFilePanel: () => void
 	readonly jumpDiffFile: (direction: 1 | -1) => void
 	readonly moveDiffCommentThread: (direction: 1 | -1) => void
 	readonly openSelectedDiffComment: () => void
@@ -49,6 +50,7 @@ export const useCommandHandoffs = ({
 	openCommentsView,
 	openDiffView,
 	openChangedFilesModal,
+	toggleDiffFilePanel,
 	jumpDiffFile,
 	moveDiffCommentThread,
 	openSelectedDiffComment,
@@ -75,6 +77,7 @@ export const useCommandHandoffs = ({
 		[selectedPullRequest, loadPullRequestDiff, flashNotice],
 	)
 	useEffect(() => registerHandoff("openChangedFilesModal", openChangedFilesModal), [openChangedFilesModal])
+	useEffect(() => registerHandoff("toggleDiffFilePanel", toggleDiffFilePanel), [toggleDiffFilePanel])
 	useEffect(() => registerHandoff("jumpDiffFileNext", () => jumpDiffFile(1)), [jumpDiffFile])
 	useEffect(() => registerHandoff("jumpDiffFilePrevious", () => jumpDiffFile(-1)), [jumpDiffFile])
 	useEffect(() => registerHandoff("moveDiffCommentThreadNext", () => moveDiffCommentThread(1)), [moveDiffCommentThread])

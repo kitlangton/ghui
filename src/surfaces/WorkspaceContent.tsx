@@ -3,7 +3,8 @@ import type { MutableRefObject } from "react"
 import type { DiffCommentSide, IssueItem, PullRequestComment, PullRequestItem, PullRequestReviewComment, RepositoryDetails } from "../domain.js"
 import type { ThemeId } from "../ui/colors.js"
 import type { DetailCommentsStatus, DetailPlaceholderContent } from "../ui/DetailsPane.js"
-import type { DiffView, DiffWhitespaceMode, DiffWrapMode, PullRequestDiffState, StackedDiffCommentAnchor, StackedDiffFilePatch } from "../ui/diff.js"
+import type { DiffFilePatch, DiffView, DiffWhitespaceMode, DiffWrapMode, PullRequestDiffState, StackedDiffCommentAnchor, StackedDiffFilePatch } from "../ui/diff.js"
+import type { ChangedFileSearchResult } from "../ui/modals/shared.js"
 import type { OrderedComment } from "../ui/CommentsPane.js"
 import type { RepositoryListItem } from "../ui/RepoList.js"
 import type { WorkspaceSurface } from "../workspaceSurfaces.js"
@@ -57,6 +58,19 @@ export interface WorkspaceContentProps {
 		readonly issueListScrollRef: MutableRefObject<ScrollBoxRenderable | null>
 	}
 	readonly openInlineLink: (url: string) => void
+	readonly diffFilePanel: DiffFilePanelBundle
+}
+
+export interface DiffFilePanelBundle {
+	readonly visible: boolean
+	readonly width: number
+	readonly diffPaneWidth: number
+	readonly files: readonly DiffFilePatch[]
+	readonly currentFileIndex: number
+	readonly pickerActive: boolean
+	readonly pickerQuery: string
+	readonly pickerSelectedIndex: number
+	readonly pickerResults: readonly ChangedFileSearchResult[]
 }
 
 export const WorkspaceContent = (props: WorkspaceContentProps) => {
@@ -169,6 +183,7 @@ export const WorkspaceContent = (props: WorkspaceContentProps) => {
 			detailPreviewScrollRef={props.scrollRefs.detailPreviewScrollRef}
 			diffScrollRef={props.scrollRefs.diffScrollRef}
 			onLinkOpen={props.openInlineLink}
+			diffFilePanel={props.diffFilePanel}
 		/>
 	)
 }

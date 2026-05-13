@@ -30,6 +30,7 @@ type Handoff =
 	| "openDiffView"
 	| "reloadDiff"
 	| "openChangedFilesModal"
+	| "toggleDiffFilePanel"
 	| "jumpDiffFileNext"
 	| "jumpDiffFilePrevious"
 	| "moveDiffCommentThreadNext"

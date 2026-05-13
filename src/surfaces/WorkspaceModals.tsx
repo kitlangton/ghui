@@ -44,6 +44,9 @@ export interface WorkspaceModalsProps {
 	readonly onRunCommand: (command: AppCommand) => void
 	readonly onCommentChange: (body: string, cursor: number) => void
 	readonly onCommentSubmit: () => void
+	// When the docked diff-file panel is rendering the picker inline, the
+	// modal must stand down so both presentations don't fight for the screen.
+	readonly suppressChangedFilesModal: boolean
 }
 
 const layoutToProps = (layout: ModalLayout) => ({
@@ -73,9 +76,10 @@ export const WorkspaceModals = (props: WorkspaceModalsProps) =>
 		CommentThread: (state) => (
 			<CommentThreadModal state={state} anchorLabel={props.commentAnchorLabel} comments={props.selectedDiffCommentThread} {...layoutToProps(props.layouts.CommentThread)} />
 		),
-		ChangedFiles: (state) => (
-			<ChangedFilesModal state={state} results={props.changedFileResults} totalCount={props.readyDiffFileCount} {...layoutToProps(props.layouts.ChangedFiles)} />
-		),
+		ChangedFiles: (state) =>
+			props.suppressChangedFilesModal ? null : (
+				<ChangedFilesModal state={state} results={props.changedFileResults} totalCount={props.readyDiffFileCount} {...layoutToProps(props.layouts.ChangedFiles)} />
+			),
 		Filter: (state) => <FilterModal state={state} {...layoutToProps(props.layouts.Filter)} />,
 		SubmitReview: (state) => <SubmitReviewModal state={state} {...layoutToProps(props.layouts.SubmitReview)} />,
 		Theme: (state) => <ThemeModal state={state} {...layoutToProps(props.layouts.Theme)} />,

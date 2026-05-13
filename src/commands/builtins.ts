@@ -581,6 +581,14 @@ export const globalCommands: readonly CommandDefinition[] = [
 		run: Effect.sync(() => invokeHandoff("openChangedFilesModal")),
 	}),
 	defineCommand({
+		id: "diff.toggle-file-panel",
+		title: "Toggle file panel",
+		scope: "Diff",
+		shortcut: "shift+f",
+		keywords: ["files", "panel", "sidebar", "toggle"],
+		run: Effect.sync(() => invokeHandoff("toggleDiffFilePanel")),
+	}),
+	defineCommand({
 		id: "diff.next-file",
 		title: "Next diff file",
 		scope: "Diff",

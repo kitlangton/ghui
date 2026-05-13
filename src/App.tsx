@@ -83,6 +83,7 @@ import {
 } from "./ui/pullRequests/atoms.js"
 
 import { useFocusReturnRefresh } from "./hooks/useFocusReturnRefresh.js"
+import { useLoadMoreOnScroll } from "./hooks/useLoadMoreOnScroll.js"
 import { useLoadMore } from "./ui/pullRequests/useLoadMore.js"
 import { useFilterModal } from "./ui/filter/useFilterModal.js"
 import { useRefreshCompletionToast } from "./ui/pullRequests/useRefreshCompletionToast.js"
@@ -196,8 +197,6 @@ interface AppProps {
 const FOCUS_RETURN_REFRESH_MIN_MS = 60_000
 const FOCUSED_IDLE_REFRESH_MS = 5 * 60_000
 const AUTO_REFRESH_JITTER_MS = 10_000
-const LOAD_MORE_SELECTION_THRESHOLD = 8
-const LOAD_MORE_SCROLL_THRESHOLD = 3
 const wrapIndex = (index: number, length: number) => (length === 0 ? 0 : ((index % length) + length) % length)
 
 const reviewStatusAfterSubmit = {
@@ -885,25 +884,18 @@ export const App = ({ systemThemeGeneration = 0 }: AppProps) => {
 		setQueueSelection((current) => (current[currentQueueCacheKey] === selectedIndex ? current : { ...current, [currentQueueCacheKey]: selectedIndex }))
 	}, [currentQueueCacheKey, selectedIndex])
 
-	useEffect(() => {
-		if (pullRequestListFilterActive || visiblePullRequests.length === 0) return
-		const thresholdIndex = Math.max(0, visiblePullRequests.length - LOAD_MORE_SELECTION_THRESHOLD)
-		if (selectedIndex >= thresholdIndex) loadMorePullRequests()
-	}, [selectedIndex, visiblePullRequests.length, pullRequestListFilterActive, hasMorePullRequests, isLoadingMorePullRequests, currentQueueCacheKey])
-
-	useEffect(() => {
-		if (pullRequestListFilterActive || visiblePullRequests.length === 0 || detailFullView || diffFullView) return
-		if (!hasMorePullRequests || isLoadingMorePullRequests) return
-		const checkScroll = () => {
-			const scroll = prListScrollRef.current
-			if (!scroll || scroll.viewport.height <= 0) return
-			const bottom = scroll.scrollTop + scroll.viewport.height
-			if (bottom >= scroll.scrollHeight - LOAD_MORE_SCROLL_THRESHOLD) loadMorePullRequests()
-		}
-		checkScroll()
-		const interval = globalThis.setInterval(checkScroll, 120)
-		return () => globalThis.clearInterval(interval)
-	}, [visiblePullRequests.length, pullRequestListFilterActive, detailFullView, diffFullView, hasMorePullRequests, isLoadingMorePullRequests, currentQueueCacheKey])
+	useLoadMoreOnScroll({
+		prListScrollRef,
+		visiblePullRequestsLength: visiblePullRequests.length,
+		pullRequestListFilterActive,
+		selectedIndex,
+		hasMorePullRequests,
+		isLoadingMorePullRequests,
+		detailFullView,
+		diffFullView,
+		currentQueueCacheKey,
+		loadMorePullRequests,
+	})
 
 	useScrollFollowSelected(prListScrollRef, selectedPullRequestRowIndex)
 	useScrollFollowSelected(issueListScrollRef, issues.length === 0 ? null : selectedIssueRowIndex)

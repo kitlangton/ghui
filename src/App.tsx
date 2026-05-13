@@ -13,15 +13,7 @@ import type { AppCommand } from "./commands.js"
 import { clampCommandIndex, type CommandScope, commandEnabled, defineCommand, filterCommands, sortCommandsByActiveScope } from "./commands.js"
 import { commandSnapshotsAtom } from "./commands/atoms.js"
 import { dispatchCommandAtom } from "./commands/dispatch.js"
-import {
-	type DiffCommentSide,
-	type IssueItem,
-	type LoadStatus,
-	type PullRequestItem,
-	type PullRequestLabel,
-	type PullRequestReviewComment,
-	type SubmitPullRequestReviewInput,
-} from "./domain.js"
+import { type IssueItem, type LoadStatus, type PullRequestItem, type PullRequestLabel, type PullRequestReviewComment, type SubmitPullRequestReviewInput } from "./domain.js"
 import { errorMessage } from "./errors.js"
 import { nextView, parseRepositoryInput, type PullRequestView, viewCacheKey, viewEquals } from "./pullRequestViews.js"
 
@@ -120,7 +112,6 @@ import {
 	diffCommentThreadMapKey,
 	groupDiffCommentThreads,
 	isLocalDiffComment,
-	sameDiffCommentTarget,
 } from "./ui/diff/comments.js"
 import { useDiffLineColors } from "./ui/diff/useDiffLineColors.js"
 import { useDiffLocationPreservation } from "./ui/diff/useDiffLocationPreservation.js"
@@ -131,7 +122,6 @@ import { useMergeFlow } from "./ui/merge/useMergeFlow.js"
 import { insertText, type CommentEditorValue } from "./ui/commentEditor.js"
 import {
 	buildStackedDiffFiles,
-	diffAnchorOnSide,
 	diffCommentAnchorLabel,
 	diffCommentLocationKey,
 	getStackedDiffCommentAnchors,
@@ -139,11 +129,8 @@ import {
 	PullRequestDiffState,
 	pullRequestDiffKey,
 	safeDiffFileIndex,
-	scrollTopForVisibleLine,
 	splitPatchFiles,
-	stackedDiffFileIndexAtLine,
 	type StackedDiffCommentAnchor,
-	verticalDiffAnchor,
 } from "./ui/diff.js"
 import { getDetailHeaderHeight, getDetailJunctionRows, getScrollableDetailBodyHeight, type DetailCommentsStatus, type DetailPlaceholderContent } from "./ui/DetailsPane.js"
 import { FooterHints, RetryProgress } from "./ui/FooterHints.js"
@@ -202,6 +189,7 @@ import { useScrollPersistence } from "./ui/useScrollPersistence.js"
 import { useSpinnerFrame } from "./ui/useSpinnerFrame.js"
 import { useTextInputDispatcher } from "./ui/useTextInputDispatcher.js"
 import { useCommandHandoffs } from "./hooks/useCommandHandoffs.js"
+import { useDiffCommentNavigator } from "./hooks/useDiffCommentNavigator.js"
 import { commandRuntimeAtom } from "./commands/runtimeAtom.js"
 import { issueViewForPullRequestView } from "./viewSync.js"
 import { nextWorkspaceSurface, repositoryWorkspaceSurfaces, userWorkspaceSurfaces, type WorkspaceSurface } from "./workspaceSurfaces.js"
@@ -222,7 +210,6 @@ interface AppProps {
 const FOCUS_RETURN_REFRESH_MIN_MS = 60_000
 const FOCUSED_IDLE_REFRESH_MS = 5 * 60_000
 const AUTO_REFRESH_JITTER_MS = 10_000
-const DIFF_STICKY_HEADER_LINES = 2
 const LOAD_MORE_SELECTION_THRESHOLD = 8
 const LOAD_MORE_SCROLL_THRESHOLD = 3
 const wrapIndex = (index: number, length: number) => (length === 0 ? 0 : ((index % length) + length) % length)
@@ -1274,150 +1261,11 @@ export const App = ({ systemThemeGeneration = 0 }: AppProps) => {
 		}
 	}
 
-	const scrollToDiffFile = (index: number) => {
-		const stackedFile = stackedDiffFiles[index]
-		diffScrollRef.current?.scrollTo({ x: 0, y: stackedFile?.headerLine ?? 0 })
-		syncDiffScrollState()
-	}
-
-	const syncDiffScrollState = () => {
-		const scrollTop = diffScrollRef.current?.scrollTop
-		if (scrollTop === undefined || stackedDiffFiles.length === 0) return
-		setDiffScrollTop((current) => (current === scrollTop ? current : scrollTop))
-		const nextIndex = Math.max(0, stackedDiffFileIndexAtLine(stackedDiffFiles, scrollTop))
-		setDiffFileIndex((current) => (current === nextIndex ? current : nextIndex))
-	}
-
 	const scrollDetailPreviewBy = (y: number) => {
 		detailPreviewScrollRef.current?.scrollBy({ x: 0, y })
 	}
 	const scrollDetailPreviewTo = (y: number) => {
 		detailPreviewScrollRef.current?.scrollTo({ x: 0, y })
-	}
-
-	const ensureDiffLineVisible = (line: number) => {
-		const scroll = diffScrollRef.current
-		if (!scroll) return
-		const viewportHeight = Math.max(1, wideBodyHeight - (selectedDiffCommentThread.length > 0 ? 6 : 3))
-		const nextTop = scrollTopForVisibleLine(scroll.scrollTop, viewportHeight, line, DIFF_STICKY_HEADER_LINES)
-		if (nextTop !== scroll.scrollTop) {
-			scroll.scrollTo({ x: 0, y: nextTop })
-			syncDiffScrollState()
-		}
-	}
-
-	useEffect(() => {
-		if (!diffFullView) return
-		const interval = globalThis.setInterval(syncDiffScrollState, 80)
-		return () => globalThis.clearInterval(interval)
-	}, [diffFullView, stackedDiffFiles])
-
-	const selectDiffFile = (index: number) => {
-		if (readyDiffFiles.length === 0) return
-		const nextIndex = safeDiffFileIndex(readyDiffFiles, index)
-		setDiffFileIndex(nextIndex)
-		setDiffCommentRangeStartIndex(null)
-		const targetSide = diffPreferredSide ?? selectedDiffCommentAnchor?.side
-		const nextAnchor =
-			diffCommentAnchors.find((anchor) => anchor.fileIndex === nextIndex && anchor.side === targetSide) ?? diffCommentAnchors.find((anchor) => anchor.fileIndex === nextIndex)
-		if (nextAnchor) setDiffCommentAnchorIndex(diffCommentAnchors.indexOf(nextAnchor))
-		scrollToDiffFile(nextIndex)
-	}
-
-	const jumpDiffFile = (delta: 1 | -1) => {
-		selectDiffFile(diffFileIndex + delta)
-	}
-
-	const openChangedFilesModal = () => {
-		if (readyDiffFiles.length === 0) return
-		setChangedFilesModal({
-			query: "",
-			selectedIndex: safeDiffFileIndex(readyDiffFiles, diffFileIndex),
-		})
-	}
-
-	const selectChangedFile = () => {
-		const selectedIndex = changedFileResults.length === 0 ? 0 : Math.max(0, Math.min(changedFilesModal.selectedIndex, changedFileResults.length - 1))
-		const entry = changedFileResults[selectedIndex]
-		if (!entry) return
-		closeActiveModal()
-		selectDiffFile(entry.index)
-	}
-
-	const navigableDiffCommentAnchors = () =>
-		diffCommentRangeStartAnchor ? diffCommentAnchors.filter((anchor) => sameDiffCommentTarget(anchor, diffCommentRangeStartAnchor)) : diffCommentAnchors
-
-	const moveDiffCommentAnchor = (delta: number, options: { readonly preserveViewportRow?: boolean } = {}) => {
-		const anchors = navigableDiffCommentAnchors()
-		if (anchors.length === 0) return
-		const currentAnchor = selectedDiffCommentAnchor && anchors.includes(selectedDiffCommentAnchor) ? selectedDiffCommentAnchor : anchors[0]
-		const nextAnchor = verticalDiffAnchor(anchors, currentAnchor ?? null, delta, diffPreferredSide)
-		if (!nextAnchor) return
-		if (options.preserveViewportRow) {
-			const scroll = diffScrollRef.current
-			if (scroll && currentAnchor) {
-				const maxScreenOffset = Math.max(DIFF_STICKY_HEADER_LINES, scroll.viewport.height - 2)
-				const screenOffset = Math.max(DIFF_STICKY_HEADER_LINES, Math.min(maxScreenOffset, currentAnchor.renderLine - scroll.scrollTop))
-				const maxScrollTop = Math.max(0, scroll.scrollHeight - scroll.viewport.height)
-				const nextTop = Math.max(0, Math.min(maxScrollTop, nextAnchor.renderLine - screenOffset))
-				suppressNextDiffCommentScrollRef.current = true
-				scroll.scrollTo({ x: 0, y: nextTop })
-				syncDiffScrollState()
-			}
-		}
-		setDiffCommentAnchorIndex(diffCommentAnchors.indexOf(nextAnchor))
-	}
-
-	const moveDiffCommentToBoundary = (boundary: "first" | "last") => {
-		const anchors = navigableDiffCommentAnchors()
-		const nextAnchor = boundary === "first" ? anchors[0] : anchors[anchors.length - 1]
-		if (!nextAnchor) return
-		setDiffCommentAnchorIndex(diffCommentAnchors.indexOf(nextAnchor))
-		setDiffFileIndex(nextAnchor.fileIndex)
-	}
-
-	const alignSelectedDiffCommentAnchor = (position: "top" | "center" | "bottom") => {
-		if (!selectedDiffCommentAnchor) return
-		const scroll = diffScrollRef.current
-		if (!scroll) return
-		const viewportHeight = Math.max(1, scroll.viewport.height)
-		const offset =
-			position === "top"
-				? DIFF_STICKY_HEADER_LINES
-				: position === "center"
-					? Math.max(DIFF_STICKY_HEADER_LINES, Math.floor(viewportHeight / 2))
-					: Math.max(DIFF_STICKY_HEADER_LINES, viewportHeight - 2)
-		const maxScrollTop = Math.max(0, scroll.scrollHeight - viewportHeight)
-		const nextTop = Math.max(0, Math.min(maxScrollTop, selectedDiffCommentAnchor.renderLine - offset))
-		scroll.scrollTo({ x: 0, y: nextTop })
-		syncDiffScrollState()
-	}
-
-	const selectDiffCommentSide = (side: DiffCommentSide) => {
-		setDiffPreferredSide(side)
-		if (!selectedDiffCommentAnchor) return
-		const nextAnchor = diffAnchorOnSide(diffCommentAnchors, selectedDiffCommentAnchor, side)
-		if (!nextAnchor) return
-		setDiffCommentRangeStartIndex(null)
-		setDiffCommentAnchorIndex(diffCommentAnchors.indexOf(nextAnchor))
-	}
-
-	const selectDiffCommentLine = (renderLine: number, side: DiffCommentSide | null) => {
-		const fileIndex = stackedDiffFileIndexAtLine(stackedDiffFiles, renderLine)
-		const stackedFile = stackedDiffFiles[fileIndex]
-		if (!stackedFile || renderLine < stackedFile.diffStartLine || renderLine >= stackedFile.diffStartLine + stackedFile.diffHeight) return
-		const fileAnchors = diffCommentAnchors.filter((anchor) => anchor.fileIndex === fileIndex)
-		const lineAnchors = fileAnchors.filter((anchor) => anchor.renderLine === renderLine)
-		const nextAnchor =
-			(side ? lineAnchors.find((anchor) => anchor.side === side) : undefined) ?? lineAnchors[0] ?? [...fileAnchors].reverse().find((anchor) => anchor.renderLine <= renderLine)
-		if (!nextAnchor) return
-		suppressNextDiffCommentScrollRef.current = true
-		setDiffPreferredSide(side ?? nextAnchor.side)
-		if (diffCommentRangeStartAnchor && !sameDiffCommentTarget(diffCommentRangeStartAnchor, nextAnchor)) {
-			setDiffCommentRangeStartIndex(null)
-		}
-		setDiffCommentAnchorIndex(diffCommentAnchors.indexOf(nextAnchor))
-		setDiffFileIndex(nextAnchor.fileIndex)
 	}
 
 	const setCommentEditorValue = (body: string, cursor: number) => {
@@ -1432,50 +1280,54 @@ export const App = ({ systemThemeGeneration = 0 }: AppProps) => {
 		})
 	}
 
-	const openDiffCommentModal = () => {
-		if (!selectedDiffCommentAnchor || !selectedPullRequest) return
-		setCommentModal(initialCommentModalState)
-	}
-
-	const openDiffCommentThreadModal = () => {
-		if (!selectedDiffCommentAnchor || selectedDiffCommentThread.length === 0) return
-		setCommentThreadModal({ scrollOffset: 0 })
-	}
-
-	const openSelectedDiffComment = () => {
-		if (diffCommentRangeActive) {
-			openDiffCommentModal()
-			return
-		}
-		if (selectedDiffCommentThread.length > 0) openDiffCommentThreadModal()
-		else openDiffCommentModal()
-	}
-
-	const toggleDiffCommentRange = () => {
-		if (!selectedDiffCommentAnchor) return
-		setDiffCommentRangeStartIndex((current) => (current === null ? selectedDiffCommentAnchorIndex : null))
-	}
-
-	const moveDiffCommentThread = (delta: 1 | -1) => {
-		if (diffCommentThreadAnchors.length === 0) {
-			flashNotice("No diff comments")
-			return
-		}
-		const currentIndex = selectedDiffCommentAnchor
-			? diffCommentThreadAnchors.findIndex((anchor) => diffCommentLocationKey(anchor) === diffCommentLocationKey(selectedDiffCommentAnchor))
-			: -1
-		const nextAnchor =
-			currentIndex >= 0
-				? diffCommentThreadAnchors[(currentIndex + delta + diffCommentThreadAnchors.length) % diffCommentThreadAnchors.length]
-				: delta > 0
-					? (diffCommentThreadAnchors.find((anchor) => !selectedDiffCommentAnchor || anchor.renderLine > selectedDiffCommentAnchor.renderLine) ?? diffCommentThreadAnchors[0])
-					: ([...diffCommentThreadAnchors].reverse().find((anchor) => !selectedDiffCommentAnchor || anchor.renderLine < selectedDiffCommentAnchor.renderLine) ??
-						diffCommentThreadAnchors[diffCommentThreadAnchors.length - 1])
-		if (!nextAnchor) return
-		setDiffCommentRangeStartIndex(null)
-		setDiffCommentAnchorIndex(diffCommentAnchors.indexOf(nextAnchor))
-		setDiffFileIndex(nextAnchor.fileIndex)
-	}
+	const diffNav = useDiffCommentNavigator({
+		diffFullView,
+		diffFileIndex,
+		setDiffFileIndex,
+		setDiffScrollTop,
+		diffCommentAnchorIndex,
+		setDiffCommentAnchorIndex,
+		diffPreferredSide,
+		setDiffPreferredSide,
+		diffCommentRangeStartAnchor,
+		setDiffCommentRangeStartIndex,
+		diffCommentAnchors,
+		diffCommentThreadAnchors,
+		selectedDiffCommentAnchor,
+		selectedDiffCommentAnchorIndex,
+		selectedDiffCommentThread,
+		diffCommentRangeActive,
+		stackedDiffFiles,
+		readyDiffFiles,
+		wideBodyHeight,
+		diffScrollRef,
+		suppressNextDiffCommentScrollRef,
+		selectedPullRequest,
+		changedFilesModal,
+		changedFileResults,
+		closeActiveModal,
+		setChangedFilesModal,
+		setCommentModal,
+		setCommentThreadModal,
+		initialCommentModalState,
+		flashNotice,
+	})
+	const {
+		syncDiffScrollState,
+		ensureDiffLineVisible,
+		jumpDiffFile,
+		openChangedFilesModal,
+		selectChangedFile,
+		moveDiffCommentAnchor,
+		moveDiffCommentToBoundary,
+		alignSelectedDiffCommentAnchor,
+		selectDiffCommentSide,
+		selectDiffCommentLine,
+		openDiffCommentModal,
+		openSelectedDiffComment,
+		toggleDiffCommentRange,
+		moveDiffCommentThread,
+	} = diffNav
 
 	const { submitCommentModal, openNewIssueCommentModal, openReplyToSelectedComment, openEditSelectedComment, openDeleteSelectedComment, confirmDeleteComment } =
 		useCommentMutations({

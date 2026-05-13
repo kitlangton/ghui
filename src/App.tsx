@@ -83,6 +83,7 @@ import {
 } from "./ui/pullRequests/atoms.js"
 
 import { useFocusReturnRefresh } from "./hooks/useFocusReturnRefresh.js"
+import { useCommentsLoader } from "./hooks/useCommentsLoader.js"
 import { useDiffSelectionSync } from "./hooks/useDiffSelectionSync.js"
 import { useLoadMoreOnScroll } from "./hooks/useLoadMoreOnScroll.js"
 import { useLoadMore } from "./ui/pullRequests/useLoadMore.js"
@@ -752,52 +753,15 @@ export const App = ({ systemThemeGeneration = 0 }: AppProps) => {
 		setActiveIssueView,
 		closeActiveModal,
 	})
-	const loadPullRequestComments = (pullRequest: PullRequestItem, force = false) => {
-		const key = pullRequestDiffKey(pullRequest)
-		const previousLoadState = registry.get(pullRequestCommentsLoadedAtom)[key]
-		if (!force && previousLoadState) return
-		const generation = refreshGenerationRef.current
-		setPullRequestCommentsLoaded((current) => ({ ...current, [key]: "loading" }))
-		void listPullRequestComments({ repository: pullRequest.repository, number: pullRequest.number })
-			.then((items) => {
-				if (generation !== refreshGenerationRef.current) return
-				setPullRequestComments((current) => ({ ...current, [key]: items }))
-				setPullRequestCommentsLoaded((current) => ({ ...current, [key]: "ready" }))
-			})
-			.catch((error) => {
-				if (generation !== refreshGenerationRef.current) return
-				setPullRequestCommentsLoaded((current) => {
-					if (previousLoadState === "ready") return { ...current, [key]: previousLoadState }
-					const next = { ...current }
-					delete next[key]
-					return next
-				})
-				flashNotice(errorMessage(error))
-			})
-	}
-	const loadIssueComments = (issue: IssueItem, force = false) => {
-		const key = `issue:${issue.repository}#${issue.number}`
-		const previousLoadState = registry.get(pullRequestCommentsLoadedAtom)[key]
-		if (!force && previousLoadState) return
-		const generation = refreshGenerationRef.current
-		setPullRequestCommentsLoaded((current) => ({ ...current, [key]: "loading" }))
-		void listIssueComments({ repository: issue.repository, number: issue.number })
-			.then((items) => {
-				if (generation !== refreshGenerationRef.current) return
-				setPullRequestComments((current) => ({ ...current, [key]: items }))
-				setPullRequestCommentsLoaded((current) => ({ ...current, [key]: "ready" }))
-			})
-			.catch((error) => {
-				if (generation !== refreshGenerationRef.current) return
-				setPullRequestCommentsLoaded((current) => {
-					if (previousLoadState === "ready") return { ...current, [key]: previousLoadState }
-					const next = { ...current }
-					delete next[key]
-					return next
-				})
-				flashNotice(errorMessage(error))
-			})
-	}
+	const { loadPullRequestComments, loadIssueComments } = useCommentsLoader({
+		refreshGenerationRef,
+		readCommentsLoadState: () => registry.get(pullRequestCommentsLoadedAtom),
+		setPullRequestComments,
+		setPullRequestCommentsLoaded,
+		listPullRequestComments,
+		listIssueComments,
+		flashNotice,
+	})
 	maybeRefreshPullRequestsRef.current = (minimumAgeMs) => {
 		if (!terminalFocusedRef.current || pullRequestStatusRef.current === "loading" || pullRequestFetchInFlight) return
 		const lastRefreshAt = lastPullRequestRefreshAtRef.current

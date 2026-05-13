@@ -38,6 +38,7 @@ import {
 	writeWorkspacePreferencesAtom,
 } from "./workspace/atoms.js"
 import { computeLayout } from "./workspace/layout.js"
+import { computeModalLayouts } from "./workspace/modalLayouts.js"
 import { useWorkspacePreferencesPersistence } from "./workspace/useWorkspacePreferencesPersistence.js"
 import {
 	commentsViewActiveAtom,
@@ -224,8 +225,6 @@ const DIFF_STICKY_HEADER_LINES = 2
 const LOAD_MORE_SELECTION_THRESHOLD = 8
 const LOAD_MORE_SCROLL_THRESHOLD = 3
 const wrapIndex = (index: number, length: number) => (length === 0 ? 0 : ((index % length) + length) % length)
-
-const centeredOffset = (outer: number, inner: number) => Math.floor((outer - inner) / 2)
 
 const reviewStatusAfterSubmit = {
 	COMMENT: null,
@@ -2245,34 +2244,13 @@ export const App = ({ systemThemeGeneration = 0 }: AppProps) => {
 		? [...workspaceTabJunctions.map((at) => ({ at, char: "┴" })), ...(showPaneSplit ? [{ at: dividerJunctionAt, char: "┬" }] : [])]
 		: []
 
-	const longestLabelName = labelModal.availableLabels.reduce((max, label) => Math.max(max, label.name.length), 0)
-	const longestDiffFileName = changedFilesModalActive ? readyDiffFiles.reduce((max, file) => Math.max(max, file.name.length), 0) : 0
-	const sizedModal = (minW: number, maxW: number, padX: number, maxH: number) => {
-		const w = Math.min(maxW, Math.max(minW, contentWidth - padX))
-		const h = Math.min(maxH, terminalHeight - 4)
-		return { width: w, height: h, left: centeredOffset(contentWidth, w), top: centeredOffset(terminalHeight, h) }
-	}
-	const labelLayout = (() => {
-		const width = Math.min(Math.max(42, longestLabelName + 16), 56, contentWidth - 4)
-		const height = Math.min(20, terminalHeight - 4)
-		return { width, height, left: centeredOffset(contentWidth, width), top: centeredOffset(terminalHeight, height) }
-	})()
-	const changedFilesLayout = (() => {
-		const width = changedFilesModalActive ? Math.min(Math.max(46, longestDiffFileName + 16), 88, contentWidth - 4) : 46
-		const height = Math.min(22, terminalHeight - 4)
-		return { width, height, left: centeredOffset(contentWidth, width), top: centeredOffset(terminalHeight, height) }
-	})()
-	const closeLayout = sizedModal(46, 68, 12, 12)
-	const deleteCommentLayout = sizedModal(46, 68, 12, 12)
-	const pullRequestStateLayout = sizedModal(46, 68, 12, 9)
-	const commentLayout = sizedModal(46, 76, 8, 16)
-	const commentThreadLayout = sizedModal(50, 86, 8, 22)
-	const filterLayout = sizedModal(58, 76, 10, 12)
-	const submitReviewLayout = sizedModal(54, 84, 8, 18)
-	const mergeLayout = sizedModal(46, 68, 14, 20)
-	const themeLayout = sizedModal(38, 58, 12, 16)
-	const openRepositoryLayout = sizedModal(46, 76, 8, 8)
-	const commandPaletteLayout = sizedModal(50, 88, 8, 24)
+	const modalLayouts = computeModalLayouts({
+		contentWidth,
+		terminalHeight,
+		longestLabelName: labelModal.availableLabels.reduce((max, label) => Math.max(max, label.name.length), 0),
+		longestDiffFileName: changedFilesModalActive ? readyDiffFiles.reduce((max, file) => Math.max(max, file.name.length), 0) : 0,
+		changedFilesModalActive,
+	})
 	const commentAnchorLabel = ((): string => {
 		if (commentModalActive) {
 			if (commentModal.target.kind === "issue") return selectedCommentSubject ? `New comment on #${selectedCommentSubject.number}` : "New comment"
@@ -2488,19 +2466,19 @@ export const App = ({ systemThemeGeneration = 0 }: AppProps) => {
 				onCommentChange={setCommentEditorValue}
 				onCommentSubmit={submitCommentModal}
 				layouts={{
-					Label: labelLayout,
-					Close: closeLayout,
-					PullRequestState: pullRequestStateLayout,
-					Comment: commentLayout,
-					DeleteComment: deleteCommentLayout,
-					CommentThread: commentThreadLayout,
-					ChangedFiles: changedFilesLayout,
-					Filter: filterLayout,
-					SubmitReview: submitReviewLayout,
-					Merge: mergeLayout,
-					Theme: themeLayout,
-					OpenRepository: openRepositoryLayout,
-					CommandPalette: commandPaletteLayout,
+					Label: modalLayouts.label,
+					Close: modalLayouts.close,
+					PullRequestState: modalLayouts.pullRequestState,
+					Comment: modalLayouts.comment,
+					DeleteComment: modalLayouts.deleteComment,
+					CommentThread: modalLayouts.commentThread,
+					ChangedFiles: modalLayouts.changedFiles,
+					Filter: modalLayouts.filter,
+					SubmitReview: modalLayouts.submitReview,
+					Merge: modalLayouts.merge,
+					Theme: modalLayouts.theme,
+					OpenRepository: modalLayouts.openRepository,
+					CommandPalette: modalLayouts.commandPalette,
 				}}
 			/>
 		</box>

@@ -236,21 +236,8 @@ export const App = ({ systemThemeGeneration = 0 }: AppProps) => {
 	const terminalWidth = width ?? 100
 	const terminalHeight = height ?? 24
 	const showWorkspaceTabs = !detailFullView && !diffFullView && !commentsViewActive
-	const {
-		contentWidth,
-		isWideLayout,
-		sectionPadding,
-		leftPaneWidth,
-		rightPaneWidth,
-		leftContentWidth,
-		rightContentWidth,
-		dividerJunctionAt,
-		wideBodyHeight,
-		wideDetailLines,
-		headerFooterWidth,
-		fullscreenContentWidth,
-		fullscreenBodyLines,
-	} = computeLayout({ terminalWidth, terminalHeight, showWorkspaceTabs })
+	const layout = computeLayout({ terminalWidth, terminalHeight, showWorkspaceTabs })
+	const { contentWidth, isWideLayout, leftPaneWidth, rightPaneWidth, rightContentWidth, dividerJunctionAt, wideBodyHeight, headerFooterWidth, fullscreenContentWidth } = layout
 	const refreshGenerationRef = useRef(0)
 	const lastPullRequestRefreshAtRef = useRef(0)
 	const pullRequestStatusRef = useRef<LoadStatus>("loading")
@@ -1279,38 +1266,7 @@ export const App = ({ systemThemeGeneration = 0 }: AppProps) => {
 		setSelectedIssueIndex,
 		setSelectedRepositoryIndex,
 	})
-	const {
-		fullscreenDetailHeaderHeight,
-		fullscreenDetailBodyScrollable,
-		wideDetailHeaderHeight,
-		wideDetailBodyScrollable,
-		narrowPullRequestListHeight,
-		narrowDetailsPaneHeight,
-		narrowRepoListHeight,
-		narrowRepoDetailHeight,
-		narrowIssueListHeight,
-		narrowIssueDetailHeight,
-		narrowPreviewBodyHeight,
-		narrowPreviewBodyScrollable,
-		widePullRequestListHeight,
-		narrowPullRequestRowsHeight,
-		widePullRequestListNeedsScroll,
-		narrowPullRequestListNeedsScroll,
-		detailJunctions,
-		prListProps,
-		issueListProps,
-		repoListProps,
-		showPaneSplit,
-		issueJunctions,
-		issueListNeedsScroll,
-		narrowIssueListNeedsScroll,
-		repoListNeedsScroll,
-		narrowRepoListNeedsScroll,
-		workspaceTabCounts,
-		filterPlaceholder,
-		workspaceTopDividerJunctions,
-		workspaceBottomDividerJunctions,
-	} = derivations
+	const { showPaneSplit, workspaceTabCounts, filterPlaceholder, workspaceTopDividerJunctions, workspaceBottomDividerJunctions } = derivations
 
 	const modalLayouts = computeModalLayouts({
 		contentWidth,
@@ -1368,48 +1324,14 @@ export const App = ({ systemThemeGeneration = 0 }: AppProps) => {
 				commentsViewActive={commentsViewActive}
 				diffFullView={diffFullView}
 				detailFullView={detailFullView}
-				isWideLayout={isWideLayout}
-				wideBodyHeight={wideBodyHeight}
-				contentWidth={contentWidth}
-				leftPaneWidth={leftPaneWidth}
-				rightPaneWidth={rightPaneWidth}
-				leftContentWidth={leftContentWidth}
-				rightContentWidth={rightContentWidth}
-				fullscreenContentWidth={fullscreenContentWidth}
-				sectionPadding={sectionPadding}
-				wideDetailHeaderHeight={wideDetailHeaderHeight}
-				wideDetailBodyScrollable={wideDetailBodyScrollable}
-				wideDetailLines={wideDetailLines}
-				fullscreenDetailHeaderHeight={fullscreenDetailHeaderHeight}
-				fullscreenDetailBodyScrollable={fullscreenDetailBodyScrollable}
-				fullscreenBodyLines={fullscreenBodyLines}
-				widePullRequestListHeight={widePullRequestListHeight}
-				widePullRequestListNeedsScroll={widePullRequestListNeedsScroll}
-				narrowPullRequestListHeight={narrowPullRequestListHeight}
-				narrowPullRequestRowsHeight={narrowPullRequestRowsHeight}
-				narrowPullRequestListNeedsScroll={narrowPullRequestListNeedsScroll}
-				narrowDetailsPaneHeight={narrowDetailsPaneHeight}
-				narrowPreviewBodyHeight={narrowPreviewBodyHeight}
-				narrowPreviewBodyScrollable={narrowPreviewBodyScrollable}
-				narrowRepoListHeight={narrowRepoListHeight}
-				narrowRepoDetailHeight={narrowRepoDetailHeight}
-				narrowIssueListHeight={narrowIssueListHeight}
-				narrowIssueDetailHeight={narrowIssueDetailHeight}
-				repoListNeedsScroll={repoListNeedsScroll}
-				narrowRepoListNeedsScroll={narrowRepoListNeedsScroll}
-				repoListProps={repoListProps}
+				layout={layout}
+				derivations={derivations}
+				issueActiveFilterLabel={issueActiveFilterLabel}
+				pullRequestActiveFilterLabel={pullRequestActiveFilterLabel}
 				selectedRepositoryItem={selectedRepositoryItem}
 				selectedRepositoryDetails={selectedRepositoryDetails}
-				issueListNeedsScroll={issueListNeedsScroll}
-				narrowIssueListNeedsScroll={narrowIssueListNeedsScroll}
-				issueActiveFilterLabel={issueActiveFilterLabel}
-				issueJunctions={issueJunctions}
-				issueListProps={issueListProps}
 				selectedIssue={selectedIssue}
 				issueListScrollRef={issueListScrollRef}
-				pullRequestActiveFilterLabel={pullRequestActiveFilterLabel}
-				detailJunctions={detailJunctions}
-				prListProps={prListProps}
 				selectedPullRequest={selectedPullRequest}
 				selectedComments={selectedComments}
 				selectedCommentsStatus={selectedCommentsStatus}

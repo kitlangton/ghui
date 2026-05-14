@@ -30,10 +30,9 @@ export const diffWhitespaceModeAtom = Atom.make<DiffWhitespaceMode>(initialDiffW
 // resize so the user gets the layout they asked for.
 export const diffFilePanelOverrideAtom = Atom.make<boolean | null>(null).pipe(Atom.keepAlive)
 // Auto-visibility threshold in cols. Picked so the diff still gets ~100 cols
-// of usable width once the ~30-col panel is subtracted, which is roughly the
-// floor for the split view to remain readable.
+// of usable width once the (min-sized) panel is subtracted. The width
+// calculation itself lives in `workspace/layout.ts` (side-effect-free).
 export const DIFF_FILE_PANEL_AUTO_THRESHOLD = 130
-export const DIFF_FILE_PANEL_WIDTH = 30
 export const diffCommentAnchorIndexAtom = Atom.make(0)
 export const diffPreferredSideAtom = Atom.make<DiffCommentSide | null>(null)
 export const diffCommentRangeStartIndexAtom = Atom.make<number | null>(null)

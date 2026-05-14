@@ -37,6 +37,12 @@ export interface WorkspaceLayout {
 
 const WIDE_BREAKPOINT = 100
 
+// Panel width scales with the terminal so it gets a fair share on wide
+// terminals (more room for long paths) without overwhelming the diff. The
+// floor/ceiling keep the column readable; the 0.22 factor lands a 200-col
+// terminal at ~44 cols, leaving the diff ~155 cols.
+export const diffFilePanelWidthFor = (terminalWidth: number): number => Math.min(60, Math.max(28, Math.floor(terminalWidth * 0.22)))
+
 export const computeLayout = ({ terminalWidth, terminalHeight, showWorkspaceTabs, showDiffFilePanel, diffFilePanelWidth }: LayoutInput): WorkspaceLayout => {
 	const contentWidth = Math.max(1, terminalWidth)
 	const isWideLayout = terminalWidth >= WIDE_BREAKPOINT

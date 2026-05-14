@@ -16,6 +16,11 @@ interface DiffFilePanelProps {
 	readonly onSelectFile: (index: number) => void
 }
 
+// Row indices (within the panel's own box) where the panel paints a
+// horizontal divider. Exported so the parent surface can junction the
+// vertical rail (`┤`) at those rows.
+export const diffFilePanelDividerRows = (pickerActive: boolean): readonly number[] => (pickerActive ? [1, 3] : [1])
+
 // Path truncation that preserves the basename and as many trailing segments
 // as fit. `fitCell` head-truncates, which is wrong for paths — we'd see
 // "packages/opencode/src…" and lose the actual filename. Instead, walk

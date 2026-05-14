@@ -11,7 +11,7 @@ import { parseRepositoryInput, viewCacheKey } from "../pullRequestViews.js"
 
 import { colors } from "../ui/colors.js"
 import { favoriteRepositoriesAtom, recentRepositoriesAtom, repoRollupAtom, selectedRepositoryIndexAtom, workspaceSurfaceAtom } from "../workspace/atoms.js"
-import { computeLayout } from "../workspace/layout.js"
+import { computeLayout, diffFilePanelWidthFor } from "../workspace/layout.js"
 import { AUTO_REFRESH_JITTER_MS, FOCUS_RETURN_REFRESH_MIN_MS, FOCUSED_IDLE_REFRESH_MS, getDetailPlaceholderContent, reviewStatusAfterSubmit } from "../workspace/placeholders.js"
 import { computeModalLayouts } from "../workspace/modalLayouts.js"
 import { computeWorkspaceDerivations } from "../workspace/derivations.js"
@@ -91,7 +91,7 @@ import { useLoadMore } from "../ui/pullRequests/useLoadMore.js"
 import { useFilterModal } from "../ui/filter/useFilterModal.js"
 import { useRefreshCompletionToast } from "../ui/pullRequests/useRefreshCompletionToast.js"
 import { useRepositoryDetails } from "../ui/pullRequests/useRepositoryDetails.js"
-import { DIFF_FILE_PANEL_AUTO_THRESHOLD, DIFF_FILE_PANEL_WIDTH, diffFilePanelOverrideAtom, selectedDiffKeyAtom, selectedDiffStateAtom } from "../ui/diff/atoms.js"
+import { DIFF_FILE_PANEL_AUTO_THRESHOLD, diffFilePanelOverrideAtom, selectedDiffKeyAtom, selectedDiffStateAtom } from "../ui/diff/atoms.js"
 import { diffCommentThreadMapKey } from "../ui/diff/comments.js"
 import { useDiffLineColors } from "../ui/diff/useDiffLineColors.js"
 import { useDiffLocationPreservation } from "../ui/diff/useDiffLocationPreservation.js"
@@ -253,7 +253,7 @@ export const useAppShell = ({ systemThemeGeneration }: UseAppShellInput) => {
 		terminalHeight,
 		showWorkspaceTabs,
 		showDiffFilePanel: diffFilePanelVisible,
-		diffFilePanelWidth: DIFF_FILE_PANEL_WIDTH,
+		diffFilePanelWidth: diffFilePanelWidthFor(terminalWidth),
 	})
 	const {
 		contentWidth,

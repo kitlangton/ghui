@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest"
-import { computeLayout } from "../src/workspace/layout.js"
+import { computeLayout, diffFilePanelWidthFor } from "../src/workspace/layout.js"
 
 const noPanel = { showDiffFilePanel: false, diffFilePanelWidth: 0 } as const
 
@@ -54,5 +54,23 @@ describe("computeLayout", () => {
 		const tight = computeLayout({ terminalWidth: 80, terminalHeight: 40, showWorkspaceTabs: false, showDiffFilePanel: true, diffFilePanelWidth: 40 })
 		expect(tight.diffPaneWidth).toBeGreaterThanOrEqual(60)
 		expect(tight.diffFilePanelEffectiveWidth + 1 + tight.diffPaneWidth).toBeLessThanOrEqual(tight.contentWidth)
+	})
+})
+
+describe("diffFilePanelWidthFor", () => {
+	it("clamps below the lower bound", () => {
+		expect(diffFilePanelWidthFor(80)).toBe(28)
+		expect(diffFilePanelWidthFor(120)).toBe(28)
+	})
+
+	it("scales linearly between the bounds", () => {
+		expect(diffFilePanelWidthFor(150)).toBe(33)
+		expect(diffFilePanelWidthFor(200)).toBe(44)
+		expect(diffFilePanelWidthFor(250)).toBe(55)
+	})
+
+	it("clamps above the upper bound", () => {
+		expect(diffFilePanelWidthFor(300)).toBe(60)
+		expect(diffFilePanelWidthFor(500)).toBe(60)
 	})
 })

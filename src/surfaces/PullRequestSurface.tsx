@@ -7,7 +7,7 @@ import { colors } from "../ui/colors.js"
 import { ActiveFilterBar, ACTIVE_FILTER_BAR_HEIGHT } from "../ui/ActiveFilterBar.js"
 import { CommentsPane, type OrderedComment } from "../ui/CommentsPane.js"
 import { DETAIL_BODY_SCROLL_LIMIT, DetailBody, DetailHeader, DetailPlaceholder, DetailsPane, type DetailCommentsStatus, type DetailPlaceholderContent } from "../ui/DetailsPane.js"
-import { DiffFilePanel } from "../ui/diff/DiffFilePanel.js"
+import { DiffFilePanel, diffFilePanelDividerRows } from "../ui/diff/DiffFilePanel.js"
 import { SplitPane } from "../ui/paneLayout.js"
 import { Divider, Filler, PlainLine, SeparatorColumn } from "../ui/primitives.js"
 import { PullRequestDiffPane } from "../ui/PullRequestDiffPane.js"
@@ -181,6 +181,19 @@ export const PullRequestSurface = (props: PullRequestSurfaceProps) => {
 			/>
 		)
 		if (!panel.visible) return diffPane
+		// Both the panel and the diff pane render their own header + horizontal
+		// divider at row 1 of their respective inner heights. Where those
+		// dividers meet the vertical rail, we want `┼` (both sides) or `┤` /
+		// `├` (only one side). The picker mode adds a second panel divider
+		// at row 3 (after the query input) which the diff doesn't share.
+		const panelRows = diffFilePanelDividerRows(panel.pickerActive)
+		const diffRows: readonly number[] = [1]
+		const railJunctionRows = new Set([...panelRows, ...diffRows])
+		const railJunctions = Array.from(railJunctionRows).map((row) => {
+			const fromPanel = panelRows.includes(row)
+			const fromDiff = diffRows.includes(row)
+			return { row, char: fromPanel && fromDiff ? "┼" : fromPanel ? "┤" : "├" }
+		})
 		return (
 			<box flexDirection="row" height={wideBodyHeight} width={contentWidth}>
 				<DiffFilePanel
@@ -194,7 +207,7 @@ export const PullRequestSurface = (props: PullRequestSurfaceProps) => {
 					pickerResults={panel.pickerResults}
 					onSelectFile={panel.onSelectFile}
 				/>
-				<SeparatorColumn height={wideBodyHeight} />
+				<SeparatorColumn height={wideBodyHeight} junctions={railJunctions} />
 				{diffPane}
 			</box>
 		)

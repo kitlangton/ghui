@@ -181,18 +181,35 @@ export const PullRequestSurface = (props: PullRequestSurfaceProps) => {
 			/>
 		)
 		if (!panel.visible) return diffPane
-		// Both the panel and the diff pane render their own header + horizontal
-		// divider at row 1 of their respective inner heights. Where those
-		// dividers meet the vertical rail, we want `┼` (both sides) or `┤` /
-		// `├` (only one side). The picker mode adds a second panel divider
-		// at row 3 (after the query input) which the diff doesn't share.
+		// The vertical rail's junctions come from three sources: the panel's
+		// internal dividers (rows 1 and, in picker mode, 3), the diff pane's
+		// chrome divider (row 1, below its header), and the dynamic file-
+		// separator dividers inside the diff's scrollbox (which scroll with
+		// the user's position). At each row we combine: `┼` for both sides,
+		// `┤` panel-only, `├` diff-only.
 		const panelRows = diffFilePanelDividerRows(panel.pickerActive)
-		const diffRows: readonly number[] = [1]
-		const railJunctionRows = new Set([...panelRows, ...diffRows])
-		const railJunctions = Array.from(railJunctionRows).map((row) => {
+		const diffChromeRows = [1] as const
+		// Two chrome rows above the scrollbox: header + divider. Content line 0
+		// of the scrollbox sits at viewport row 2.
+		const diffChromeOffset = 2
+		const scrollLine = Math.floor(diffScrollTop)
+		const fileDividerRailRows: number[] = []
+		for (const file of stackedDiffFiles) {
+			// Separator above the file header (only for files after the first).
+			if (file.index > 0) {
+				const railRow = diffChromeOffset + (file.headerLine - 1) - scrollLine
+				if (railRow >= diffChromeOffset && railRow < wideBodyHeight) fileDividerRailRows.push(railRow)
+			}
+			// Divider below the file header (always rendered, just before the diff body).
+			const railRowBelow = diffChromeOffset + (file.headerLine + 1) - scrollLine
+			if (railRowBelow >= diffChromeOffset && railRowBelow < wideBodyHeight) fileDividerRailRows.push(railRowBelow)
+		}
+		const rightSideRows = new Set<number>([...diffChromeRows, ...fileDividerRailRows])
+		const allRailRows = new Set<number>([...panelRows, ...rightSideRows])
+		const railJunctions = Array.from(allRailRows).map((row) => {
 			const fromPanel = panelRows.includes(row)
-			const fromDiff = diffRows.includes(row)
-			return { row, char: fromPanel && fromDiff ? "┼" : fromPanel ? "┤" : "├" }
+			const fromRight = rightSideRows.has(row)
+			return { row, char: fromPanel && fromRight ? "┼" : fromPanel ? "┤" : "├" }
 		})
 		return (
 			<box flexDirection="row" height={wideBodyHeight} width={contentWidth}>

@@ -11,6 +11,7 @@ const DETAIL_PREFETCH_BEHIND = 1
 const DETAIL_PREFETCH_AHEAD = 3
 const DETAIL_PREFETCH_CONCURRENCY = 3
 const DETAIL_PREFETCH_DELAY_MS = 120
+const PR_DETAIL_FETCH_TIMEOUT_MS = 30_000
 
 export type DetailHydrationState = { readonly _tag: "Loading" } | { readonly _tag: "Error"; readonly message: string }
 
@@ -125,7 +126,19 @@ export const useDetailHydration = ({
 		}
 		const atom = pullRequestDetailsAtom(pullRequestRevisionAtomKey(pullRequest))
 		if (forceRefresh) registry.refresh(atom)
-		void Effect.runPromise(AtomRegistry.getResult(registry, atom, { suspendOnWaiting: true }))
+		// Same wedged-Loading risk as the diff loader: a getResult that
+		// suspends on Waiting can dangle if the family-created atom is
+		// interrupted / GC'd before settling. Race against a timeout so the
+		// hydration state always transitions out of "loading".
+		const fetchPromise = Effect.runPromise(AtomRegistry.getResult(registry, atom, { suspendOnWaiting: true }))
+		let timeoutId: ReturnType<typeof globalThis.setTimeout> | null = null
+		const timeoutPromise = new Promise<never>((_, reject) => {
+			timeoutId = globalThis.setTimeout(
+				() => reject(new Error(`Pull request detail load timed out after ${PR_DETAIL_FETCH_TIMEOUT_MS / 1000}s — press r to retry`)),
+				PR_DETAIL_FETCH_TIMEOUT_MS,
+			)
+		})
+		void Promise.race([fetchPromise, timeoutPromise])
 			.then((detail) => {
 				if (generation === refreshGenerationRef.current && detailHydrationRef.current.get(detailKey) === entry) {
 					cachedDetailKeysRef.current.delete(detailKey)
@@ -149,6 +162,7 @@ export const useDetailHydration = ({
 				}
 			})
 			.finally(() => {
+				if (timeoutId !== null) globalThis.clearTimeout(timeoutId)
 				if (detailHydrationRef.current.get(detailKey) === entry) detailHydrationRef.current.delete(detailKey)
 			})
 		return true

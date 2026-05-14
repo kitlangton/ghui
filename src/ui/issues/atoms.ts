@@ -56,16 +56,23 @@ export const issuesAtom = githubRuntime
 			}
 			const page = yield* github.listIssuePage(issueQueryToListInput(issueViewToQuery(view), null, pullRequestPageSize))
 			const load = yield* Atom.modify(issueQueueLoadCacheAtom, (cache) => {
+				const existing = cache[cacheKey]
+				// Same guard as pullRequestsAtom: don't overwrite a non-empty
+				// cache entry with an empty fetch, since gh can transiently
+				// return [] for a repo that actually has issues.
+				const looksLikeBogusEmpty = page.items.length === 0 && (existing?.data.length ?? 0) > 0
 				const next: IssueLoad = {
 					view,
-					data: page.items,
+					data: looksLikeBogusEmpty ? existing!.data : page.items,
 					fetchedAt: new Date(),
-					endCursor: page.endCursor,
-					hasNextPage: page.hasNextPage,
+					endCursor: looksLikeBogusEmpty ? (existing?.endCursor ?? page.endCursor) : page.endCursor,
+					hasNextPage: looksLikeBogusEmpty ? (existing?.hasNextPage ?? false) : page.hasNextPage,
 				}
 				return [next, { ...cache, [cacheKey]: next }]
 			})
-			if (cacheViewer) yield* cacheService.writeIssueQueue(cacheViewer, load)
+			// Same SQLite-write guard as pullRequestsAtom — don't persist an
+			// empty queue or it'll come back authoritative next session.
+			if (cacheViewer && load.data.length > 0) yield* cacheService.writeIssueQueue(cacheViewer, load)
 			return load
 		}),
 	)

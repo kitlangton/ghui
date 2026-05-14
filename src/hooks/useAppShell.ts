@@ -452,7 +452,10 @@ export const useAppShell = ({ systemThemeGeneration }: UseAppShellInput) => {
 		effectiveDiffRenderView,
 		diffWrapMode,
 		diffWhitespaceMode,
-		contentWidth,
+		// When the docked file panel takes a slice, the diff renders at
+		// `diffPaneWidth` — pass that so the split-view's OLD/NEW columns are
+		// halved on the actual diff width, not the full terminal width.
+		diffPaneWidth: diffFilePanelVisible ? diffPaneWidth : contentWidth,
 		diffFullView,
 		diffCommentAnchorIndex,
 		diffCommentRangeStartIndex,

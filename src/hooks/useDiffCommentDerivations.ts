@@ -22,7 +22,12 @@ export interface UseDiffCommentDerivationsInput {
 	readonly effectiveDiffRenderView: DiffView
 	readonly diffWrapMode: DiffWrapMode
 	readonly diffWhitespaceMode: DiffWhitespaceMode
-	readonly contentWidth: number
+	// The outer width the diff pane actually renders at. When the docked file
+	// panel is hidden this matches contentWidth, but with the panel docked the
+	// diff lives in a narrower slice. buildStackedDiffFiles splits this in
+	// half for the split view, so passing the full contentWidth here causes
+	// the OLD/NEW columns to be unequal.
+	readonly diffPaneWidth: number
 	readonly diffFullView: boolean
 	readonly diffCommentAnchorIndex: number
 	readonly diffCommentRangeStartIndex: number | null
@@ -53,7 +58,7 @@ export const useDiffCommentDerivations = (input: UseDiffCommentDerivationsInput)
 		effectiveDiffRenderView,
 		diffWrapMode,
 		diffWhitespaceMode,
-		contentWidth,
+		diffPaneWidth,
 		diffFullView,
 		diffCommentAnchorIndex,
 		diffCommentRangeStartIndex,
@@ -67,12 +72,12 @@ export const useDiffCommentDerivations = (input: UseDiffCommentDerivationsInput)
 		[selectedDiffState, readyDiffFiles],
 	)
 	const stackedDiffFiles = useMemo(
-		() => buildStackedDiffFiles(readyDiffFiles, effectiveDiffRenderView, diffWrapMode, contentWidth),
-		[readyDiffFiles, effectiveDiffRenderView, diffWrapMode, contentWidth],
+		() => buildStackedDiffFiles(readyDiffFiles, effectiveDiffRenderView, diffWrapMode, diffPaneWidth),
+		[readyDiffFiles, effectiveDiffRenderView, diffWrapMode, diffPaneWidth],
 	)
 	const diffCommentAnchors = useMemo(
-		() => (diffFullView ? getStackedDiffCommentAnchors(stackedDiffFiles, effectiveDiffRenderView, diffWrapMode, contentWidth) : []),
-		[diffFullView, stackedDiffFiles, effectiveDiffRenderView, diffWrapMode, contentWidth],
+		() => (diffFullView ? getStackedDiffCommentAnchors(stackedDiffFiles, effectiveDiffRenderView, diffWrapMode, diffPaneWidth) : []),
+		[diffFullView, stackedDiffFiles, effectiveDiffRenderView, diffWrapMode, diffPaneWidth],
 	)
 	const selectedDiffCommentAnchorIndex = Math.max(0, Math.min(diffCommentAnchorIndex, diffCommentAnchors.length - 1))
 	const selectedDiffCommentAnchor = diffCommentAnchors[selectedDiffCommentAnchorIndex] ?? null

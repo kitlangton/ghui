@@ -205,10 +205,15 @@ export const repositoryDetailsAtom = Atom.family((repository: string) =>
 	),
 )
 
-export const pullRequestDetailsAtom = Atom.family((key: string) => {
-	const { repository, number } = parsePullRequestRevisionAtomKey(key, "detail")
-	return githubRuntime.atom(GitHubService.use((github) => github.getPullRequestDetails(repository, number)))
-})
+// One-shot detail fetch. Triggered imperatively by `useDetailHydration`,
+// which mirrors the result into `queueLoadCacheAtom` + the SQLite-backed
+// `readCachedPullRequestAtom`. Same reasoning as `pullRequestDiffAtom` —
+// `runtime.fn` yields a clean Promise from `useAtomSet({ mode: "promise" })`
+// instead of the dangling-AsyncResult hazard of family-of-runtime.atom +
+// `Effect.runPromise(AtomRegistry.getResult(...))`.
+export const pullRequestDetailsAtom = githubRuntime.fn<{ readonly repository: string; readonly number: number }>()((input) =>
+	GitHubService.use((github) => github.getPullRequestDetails(input.repository, input.number)),
+)
 
 export const readCachedPullRequestAtom = githubRuntime.fn<PullRequestCacheKey>()((key) => CacheService.use((cache) => cache.readPullRequest(key)))
 export const writeCachedPullRequestAtom = githubRuntime.fn<PullRequestItem>()((pullRequest) => CacheService.use((cache) => cache.upsertPullRequest(pullRequest)))

@@ -1,24 +1,12 @@
-import * as AtomRegistry from "effect/unstable/reactivity/AtomRegistry"
+import { useAtomSet } from "@effect/atom-react"
 import type * as Atom from "effect/unstable/reactivity/Atom"
-import * as Effect from "effect/Effect"
 import type { PullRequestItem, PullRequestReviewComment } from "../domain.js"
 import { errorMessage } from "../errors.js"
 import { diffCommentsLoadedAtom, pullRequestDiffAtom, pullRequestDiffCacheAtom } from "../ui/diff/atoms.js"
 import { PullRequestDiffState, pullRequestDiffKey, splitPatchFiles, type PullRequestDiffState as PullRequestDiffStateType } from "../ui/diff.js"
-import { pullRequestRevisionAtomKey } from "../ui/pullRequests/atoms.js"
 import { groupDiffCommentThreads, isLocalDiffComment } from "../ui/diff/comments.js"
 
 type LoadStatus = "loading" | "ready"
-
-// Upper bound for the diff fetch round-trip. Without this, an
-// AtomRegistry.getResult call that suspends on a Waiting AsyncResult
-// can dangle indefinitely if the family-created atom is interrupted /
-// GC'd before settling — leaving `pullRequestDiffCacheAtom` stuck in
-// `Loading` forever and the "Loading diff" pane wedged. The early-
-// return on `existing._tag === "Loading"` then blocks recovery without
-// a manual reload. Racing against a setTimeout guarantees we always
-// transition out of Loading.
-const DIFF_FETCH_TIMEOUT_MS = 30_000
 
 interface AtomRegistryShape {
 	get<T>(atom: Atom.Atom<T>): T
@@ -40,11 +28,12 @@ export interface DiffLoader {
 }
 
 /**
- * Loads the patch text for a PR (via `pullRequestDiffAtom`) and its
- * review-comment threads. Threads are merged so optimistic local
- * comments survive a server refresh; the local-comment heuristic is
- * `isLocalDiffComment(comment)`. Both loaders dedupe — cached
- * Loading/Ready is reused unless `force` is set.
+ * Loads the patch text for a PR (via `pullRequestDiffAtom`, a
+ * `runtime.fn`) and its review-comment threads. Threads are merged so
+ * optimistic local comments survive a server refresh; the local-comment
+ * heuristic is `isLocalDiffComment(comment)`. Both loaders dedupe via
+ * the cache state — cached Loading/Ready is reused unless `force` is
+ * set.
  */
 export const useDiffLoader = ({
 	registry,
@@ -54,6 +43,7 @@ export const useDiffLoader = ({
 	listPullRequestReviewComments,
 	flashNotice,
 }: UseDiffLoaderInput): DiffLoader => {
+	const fetchDiff = useAtomSet(pullRequestDiffAtom, { mode: "promise" })
 	const loadPullRequestReviewComments = (pullRequest: PullRequestItem, force = false) => {
 		const key = pullRequestDiffKey(pullRequest)
 		const previousLoadState = registry.get(diffCommentsLoadedAtom)[key]
@@ -99,14 +89,7 @@ export const useDiffLoader = ({
 		if (!force && existing && (existing._tag === "Ready" || existing._tag === "Loading")) return
 
 		setPullRequestDiffCache((current) => ({ ...current, [key]: PullRequestDiffState.Loading() }))
-		const atom = pullRequestDiffAtom(pullRequestRevisionAtomKey(pullRequest))
-		if (force) registry.refresh(atom)
-		const fetchPromise = Effect.runPromise(AtomRegistry.getResult(registry as never, atom, { suspendOnWaiting: true }))
-		let timeoutId: ReturnType<typeof globalThis.setTimeout> | null = null
-		const timeoutPromise = new Promise<never>((_, reject) => {
-			timeoutId = globalThis.setTimeout(() => reject(new Error(`Diff load timed out after ${DIFF_FETCH_TIMEOUT_MS / 1000}s — press r to retry`)), DIFF_FETCH_TIMEOUT_MS)
-		})
-		void Promise.race([fetchPromise, timeoutPromise])
+		void fetchDiff({ repository: pullRequest.repository, number: pullRequest.number })
 			.then((patch) => {
 				setPullRequestDiffCache((current) => ({
 					...current,
@@ -119,9 +102,6 @@ export const useDiffLoader = ({
 					[key]: PullRequestDiffState.Error({ error: errorMessage(error) }),
 				}))
 				flashNotice(errorMessage(error))
-			})
-			.finally(() => {
-				if (timeoutId !== null) globalThis.clearTimeout(timeoutId)
 			})
 	}
 

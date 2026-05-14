@@ -1,17 +1,14 @@
-import { RegistryContext, useAtomSet } from "@effect/atom-react"
-import { Effect } from "effect"
-import * as AtomRegistry from "effect/unstable/reactivity/AtomRegistry"
-import { type MutableRefObject, useContext, useEffect, useRef, useState } from "react"
+import { useAtomSet } from "@effect/atom-react"
+import { type MutableRefObject, useEffect, useRef, useState } from "react"
 import type { LoadStatus, PullRequestItem } from "../../domain.js"
 import { errorMessage } from "../../errors.js"
 import type { PullRequestLoad } from "../../pullRequestLoad.js"
-import { pullRequestDetailKey, pullRequestDetailsAtom, pullRequestRevisionAtomKey, readCachedPullRequestAtom, writeCachedPullRequestAtom } from "./atoms.js"
+import { pullRequestDetailKey, pullRequestDetailsAtom, readCachedPullRequestAtom, writeCachedPullRequestAtom } from "./atoms.js"
 
 const DETAIL_PREFETCH_BEHIND = 1
 const DETAIL_PREFETCH_AHEAD = 3
 const DETAIL_PREFETCH_CONCURRENCY = 3
 const DETAIL_PREFETCH_DELAY_MS = 120
-const PR_DETAIL_FETCH_TIMEOUT_MS = 30_000
 
 export type DetailHydrationState = { readonly _tag: "Loading" } | { readonly _tag: "Error"; readonly message: string }
 
@@ -65,9 +62,9 @@ export const useDetailHydration = ({
 	flashNotice,
 	setQueueLoadCache,
 }: UseDetailHydrationInput): UseDetailHydrationResult => {
-	const registry = useContext(RegistryContext)
 	const readCachedPullRequest = useAtomSet(readCachedPullRequestAtom, { mode: "promise" })
 	const writeCachedPullRequest = useAtomSet(writeCachedPullRequestAtom, { mode: "promise" })
+	const fetchPullRequestDetails = useAtomSet(pullRequestDetailsAtom, { mode: "promise" })
 
 	const [detailHydrationState, setDetailHydrationState] = useState<Record<string, DetailHydrationState>>({})
 	const detailHydrationRef = useRef(new Map<string, DetailHydration>())
@@ -124,21 +121,10 @@ export const useDetailHydration = ({
 				})
 				.catch(() => {})
 		}
-		const atom = pullRequestDetailsAtom(pullRequestRevisionAtomKey(pullRequest))
-		if (forceRefresh) registry.refresh(atom)
-		// Same wedged-Loading risk as the diff loader: a getResult that
-		// suspends on Waiting can dangle if the family-created atom is
-		// interrupted / GC'd before settling. Race against a timeout so the
-		// hydration state always transitions out of "loading".
-		const fetchPromise = Effect.runPromise(AtomRegistry.getResult(registry, atom, { suspendOnWaiting: true }))
-		let timeoutId: ReturnType<typeof globalThis.setTimeout> | null = null
-		const timeoutPromise = new Promise<never>((_, reject) => {
-			timeoutId = globalThis.setTimeout(
-				() => reject(new Error(`Pull request detail load timed out after ${PR_DETAIL_FETCH_TIMEOUT_MS / 1000}s — press r to retry`)),
-				PR_DETAIL_FETCH_TIMEOUT_MS,
-			)
-		})
-		void Promise.race([fetchPromise, timeoutPromise])
+		// `pullRequestDetailsAtom` is now a `runtime.fn`, so we just call it
+		// for a clean Promise. `forceRefresh` is implicit — fn invocations
+		// always run the effect, there's no result-caching layer to bypass.
+		void fetchPullRequestDetails({ repository: pullRequest.repository, number: pullRequest.number })
 			.then((detail) => {
 				if (generation === refreshGenerationRef.current && detailHydrationRef.current.get(detailKey) === entry) {
 					cachedDetailKeysRef.current.delete(detailKey)
@@ -162,7 +148,6 @@ export const useDetailHydration = ({
 				}
 			})
 			.finally(() => {
-				if (timeoutId !== null) globalThis.clearTimeout(timeoutId)
 				if (detailHydrationRef.current.get(detailKey) === entry) detailHydrationRef.current.delete(detailKey)
 			})
 		return true

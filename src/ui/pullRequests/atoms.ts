@@ -191,20 +191,6 @@ export const prewarmRepositoryDetailsAtom = githubRuntime.fn<readonly string[]>(
 	),
 )
 
-export const repositoryDetailsAtom = Atom.family((repository: string) =>
-	githubRuntime.atom(
-		Effect.gen(function* () {
-			if (repository === "") return null
-			const cache = yield* CacheService
-			const cached = yield* cache.readRepositoryDetails(repository).pipe(Effect.catch(() => Effect.succeed(null)))
-			return yield* GitHubService.use((github) => github.getRepositoryDetails(repository)).pipe(
-				Effect.tap((details) => cache.writeRepositoryDetails(details).pipe(Effect.catch(() => Effect.void))),
-				Effect.catch((error) => (cached ? Effect.succeed(cached) : Effect.fail(error))),
-			)
-		}),
-	),
-)
-
 // One-shot detail fetch. Triggered imperatively by `useDetailHydration`,
 // which mirrors the result into `queueLoadCacheAtom` + the SQLite-backed
 // `readCachedPullRequestAtom`. Same reasoning as `pullRequestDiffAtom` —

@@ -1,18 +1,16 @@
-import { RegistryContext, useAtom, useAtomRefresh, useAtomSet, useAtomValue } from "@effect/atom-react"
+import { RegistryContext, useAtom, useAtomSet, useAtomValue } from "@effect/atom-react"
 import { useRenderer, useTerminalDimensions } from "@opentui/react"
-import { Cause } from "effect"
 import * as AsyncResult from "effect/unstable/reactivity/AsyncResult"
-import { useCallback, useContext, useEffect, useMemo, useRef, useState } from "react"
+import { useContext, useEffect, useRef, useState } from "react"
 import type { AppCommand } from "../commands.js"
-import { type LoadStatus } from "../domain.js"
-import { errorMessage } from "../errors.js"
-import { parseRepositoryInput, viewCacheKey } from "../pullRequestViews.js"
+import { parseRepositoryInput } from "../pullRequestViews.js"
 
 import { colors } from "../ui/colors.js"
 import { workspaceSurfaceAtom } from "../workspace/atoms.js"
 import { useRepoSurface } from "../surfaces/repo/useRepoSurface.js"
+import { usePullRequestSurface } from "../surfaces/pullRequest/usePullRequestSurface.js"
 import { computeLayout, diffFilePanelWidthFor } from "../workspace/layout.js"
-import { AUTO_REFRESH_JITTER_MS, FOCUS_RETURN_REFRESH_MIN_MS, FOCUSED_IDLE_REFRESH_MS, getDetailPlaceholderContent, reviewStatusAfterSubmit } from "../workspace/placeholders.js"
+import { getDetailPlaceholderContent, reviewStatusAfterSubmit } from "../workspace/placeholders.js"
 import { computeModalLayouts } from "../workspace/modalLayouts.js"
 import { computeWorkspaceDerivations } from "../workspace/derivations.js"
 import { computeFooterProps } from "../workspace/footerProps.js"
@@ -25,32 +23,8 @@ import { selectedIndexAtom } from "../ui/listSelection/atoms.js"
 import { noticeAtom } from "../ui/notice/atoms.js"
 import { useFlashNotice } from "../ui/notice/useFlashNotice.js"
 import { useCommentMutations } from "../ui/comments/useCommentMutations.js"
-import { useDetailHydration } from "../ui/pullRequests/useDetailHydration.js"
-import {
-	activeViewAtom,
-	activeViewsAtom,
-	displayedPullRequestsAtom,
-	groupStartsAtom,
-	hasMorePullRequestsAtom,
-	loadMoreRowSelectedAtom,
-	loadedPullRequestCountAtom,
-	pullRequestDetailKey,
-	pullRequestLoadAtom,
-	pullRequestOverridesAtom,
-	pullRequestsAtom,
-	pullRequestStatusAtom,
-	queueLoadCacheAtom,
-	queueSelectionAtom,
-	recentlyCompletedPullRequestsAtom,
-	retryProgressAtom,
-	selectedPullRequestAtom,
-	selectedRepositoryAtom,
-	usernameAtom,
-	visibleGroupsAtom,
-	visiblePullRequestsAtom,
-} from "../ui/pullRequests/atoms.js"
+import { pullRequestDetailKey, queueSelectionAtom, usernameAtom } from "../ui/pullRequests/atoms.js"
 
-import { useFocusReturnRefresh } from "./useFocusReturnRefresh.js"
 import { useGitHubActions } from "./useGitHubActions.js"
 import { useImperativeActions } from "./useImperativeActions.js"
 import { useScrollRefs } from "./useScrollRefs.js"
@@ -65,7 +39,6 @@ import { useModalSelectionMovers } from "./useModalSelectionMovers.js"
 import { useAppKeymap } from "./useAppKeymap.js"
 import { useModalStack } from "./useModalStack.js"
 import { useItemMutations } from "../item/useItemMutations.js"
-import { usePullRequestRefresh } from "./usePullRequestRefresh.js"
 import { useSelectionDerivations } from "./useSelectionDerivations.js"
 import { useStartupTasks } from "./useStartupTasks.js"
 import { usePasteRouter } from "./usePasteRouter.js"
@@ -73,9 +46,7 @@ import { useWorkspaceNavigation } from "./useWorkspaceNavigation.js"
 import { useDiffSelectionSync } from "./useDiffSelectionSync.js"
 import { useDiffViewState } from "./useDiffViewState.js"
 import { useViewModeState } from "./useViewModeState.js"
-import { useLoadMore } from "../ui/pullRequests/useLoadMore.js"
 import { useFilterModal } from "../ui/filter/useFilterModal.js"
-import { useRefreshCompletionToast } from "../ui/pullRequests/useRefreshCompletionToast.js"
 import { DIFF_FILE_PANEL_AUTO_THRESHOLD, diffFilePanelOverrideAtom, selectedDiffKeyAtom, selectedDiffStateAtom } from "../ui/diff/atoms.js"
 import { diffCommentThreadMapKey } from "../ui/diff/comments.js"
 import { useDiffLineColors } from "../ui/diff/useDiffLineColors.js"
@@ -85,10 +56,7 @@ import { themeIdAtom } from "../ui/theme/atoms.js"
 import { useThemeModal } from "../ui/theme/useThemeModal.js"
 import { useMergeFlow } from "../ui/merge/useMergeFlow.js"
 import { initialCommentModalState, submitReviewOptions } from "../ui/modals.js"
-import { buildPullRequestListRows } from "../ui/PullRequestList.js"
 import { useClampedIndex } from "../ui/useClampedIndex.js"
-import { useScrollFollowSelected } from "../ui/useScrollFollowSelected.js"
-import { useScrollPersistence } from "../ui/useScrollPersistence.js"
 import { useCommandHandoffs } from "./useCommandHandoffs.js"
 import { useDiffCommentDerivations } from "./useDiffCommentDerivations.js"
 import { useDiffCommentNavigator } from "./useDiffCommentNavigator.js"
@@ -105,14 +73,6 @@ export const useAppShell = ({ systemThemeGeneration }: UseAppShellInput) => {
 	const { width, height } = useTerminalDimensions()
 	const registry = useContext(RegistryContext)
 
-	const pullRequestResult = useAtomValue(pullRequestsAtom)
-	const refreshPullRequestsAtomRaw = useAtomRefresh(pullRequestsAtom)
-	const refreshPullRequestsAtom = useCallback(() => {
-		if (registry.get(pullRequestsAtom).waiting) return
-		refreshPullRequestsAtomRaw()
-	}, [refreshPullRequestsAtomRaw, registry])
-	const [activeView, setActiveView] = useAtom(activeViewAtom)
-	const setQueueLoadCache = useAtomSet(queueLoadCacheAtom)
 	const setQueueSelection = useAtomSet(queueSelectionAtom)
 	const [selectedIndex, setSelectedIndex] = useAtom(selectedIndexAtom)
 	const [notice, setNotice] = useAtom(noticeAtom)
@@ -194,9 +154,6 @@ export const useAppShell = ({ systemThemeGeneration }: UseAppShellInput) => {
 		setCommandPalette,
 		setOpenRepositoryModal,
 	} = useModalStack()
-	const setPullRequestOverrides = useAtomSet(pullRequestOverridesAtom)
-	const setRecentlyCompletedPullRequests = useAtomSet(recentlyCompletedPullRequestsAtom)
-	const retryProgress = useAtomValue(retryProgressAtom)
 	const [startupLoadComplete, setStartupLoadComplete] = useState(false)
 	const [homeCrumbHovered, setHomeCrumbHovered] = useState(false)
 	const usernameResult = useAtomValue(usernameAtom)
@@ -251,10 +208,6 @@ export const useAppShell = ({ systemThemeGeneration }: UseAppShellInput) => {
 		diffPaneWidth,
 	} = layout
 	const refreshGenerationRef = useRef(0)
-	const lastPullRequestRefreshAtRef = useRef(0)
-	const pullRequestStatusRef = useRef<LoadStatus>("loading")
-	const refreshPullRequestsRef = useRef<(message?: string, options?: { readonly resetTransientState?: boolean }) => void>(() => {})
-	const maybeRefreshPullRequestsRef = useRef<(minimumAgeMs: number) => void>(() => {})
 	const {
 		detailScrollRef,
 		detailPreviewScrollRef,
@@ -281,18 +234,63 @@ export const useAppShell = ({ systemThemeGeneration }: UseAppShellInput) => {
 		[],
 	)
 
-	const pullRequestLoad = useAtomValue(pullRequestLoadAtom)
 	const [activeWorkspaceSurface, setActiveWorkspaceSurface] = useAtom(workspaceSurfaceAtom)
-	const pullRequests = useAtomValue(displayedPullRequestsAtom)
-	const pullRequestStatus = useAtomValue(pullRequestStatusAtom)
-	const pullRequestFetchInFlight = pullRequestResult.waiting
-	const selectedRepository = useAtomValue(selectedRepositoryAtom)
-	const pullRequestAuthorFilterActive = selectedRepository !== null && activeView._tag === "Queue" && activeView.mode === "authored"
-	const pullRequestActiveFilterLabel = pullRequestAuthorFilterActive ? "author:@me" : null
-	const isInitialLoading = !startupLoadComplete && pullRequestStatus === "loading" && pullRequests.length === 0
-	const pullRequestError = AsyncResult.isFailure(pullRequestResult) ? errorMessage(Cause.squash(pullRequestResult.cause)) : null
 	const visibleFilterText = filterMode ? filterDraft : filterQuery
 	const username = AsyncResult.isSuccess(usernameResult) ? usernameResult.value : null
+
+	const prSurface = usePullRequestSurface({
+		renderer,
+		refreshGenerationRef,
+		username,
+		selectedIndex,
+		setSelectedIndex,
+		setQueueSelection,
+		filterMode,
+		filterQuery,
+		visibleFilterText,
+		activeWorkspaceSurface,
+		detailFullView,
+		diffFullView,
+		commentsViewActive,
+		flashNotice,
+		prListScrollRef,
+		prListScrollPersistedRef,
+	})
+	const {
+		pullRequestResult,
+		pullRequestStatus,
+		pullRequestError,
+		activeView,
+		setActiveView,
+		activeViews,
+		currentQueueCacheKey,
+		pullRequestLoad,
+		hasMorePullRequests,
+		loadedPullRequestCount,
+		loadMoreRowSelected,
+		visibleHasMorePullRequests,
+		loadMoreSlotAvailable,
+		pullRequests,
+		visiblePullRequests,
+		visibleGroups,
+		groupStarts,
+		selectedPullRequest,
+		selectedRepository,
+		pullRequestActiveFilterLabel,
+		pullRequestListRows,
+		setPullRequestOverrides,
+		setRecentlyCompletedPullRequests,
+		retryProgress,
+		loadMorePullRequests,
+		isLoadingMorePullRequests,
+		resetLoadingMore,
+		cancelRefreshToast,
+		refreshPullRequests,
+		detailHydrationState,
+		resetHydration,
+		selectPullRequestByUrl,
+	} = prSurface
+	const isInitialLoading = !startupLoadComplete && pullRequestStatus === "loading" && pullRequests.length === 0
 
 	const issueSurface = useIssueSurface({
 		selectedRepository,
@@ -328,11 +326,7 @@ export const useAppShell = ({ systemThemeGeneration }: UseAppShellInput) => {
 		loadMoreIssues,
 		isLoadingMoreIssues,
 	} = issueSurface
-	pullRequestStatusRef.current = pullRequestStatus
 
-	const visibleGroups = useAtomValue(visibleGroupsAtom)
-	const visiblePullRequests = useAtomValue(visiblePullRequestsAtom)
-	const selectedPullRequest = useAtomValue(selectedPullRequestAtom)
 	const workspaceTabSurfaces: readonly WorkspaceSurface[] = selectedRepository ? repositoryWorkspaceSurfaces : userWorkspaceSurfaces
 	const repo = useRepoSurface({
 		pullRequests,
@@ -357,36 +351,6 @@ export const useAppShell = ({ systemThemeGeneration }: UseAppShellInput) => {
 	} = repo
 	const { toggleFavoriteRepository, removeSelectedRepository } = repo.actions
 	const pullRequestComments = useAtomValue(pullRequestCommentsAtom)
-	const activeViews = useAtomValue(activeViewsAtom)
-	const currentQueueCacheKey = viewCacheKey(activeView)
-	const loadedPullRequestCount = useAtomValue(loadedPullRequestCountAtom)
-	const hasMorePullRequests = useAtomValue(hasMorePullRequestsAtom)
-	const loadMoreRowSelected = useAtomValue(loadMoreRowSelectedAtom)
-	const pullRequestListFilterActive = filterMode || filterQuery.length > 0
-	const visibleHasMorePullRequests = !pullRequestListFilterActive && hasMorePullRequests
-	const { loadMorePullRequests, isLoadingMorePullRequests, resetLoadingMore } = useLoadMore({
-		activeView,
-		currentQueueCacheKey,
-		pullRequestLoad,
-		hasMorePullRequests,
-		username,
-		refreshGenerationRef,
-		flashNotice,
-		setQueueLoadCache,
-	})
-	const pullRequestListRows = useMemo(
-		() =>
-			buildPullRequestListRows({
-				groups: visibleGroups,
-				status: pullRequestStatus,
-				error: pullRequestError,
-				filterText: visibleFilterText,
-				loadedCount: loadedPullRequestCount,
-				hasMore: visibleHasMorePullRequests,
-				isLoadingMore: isLoadingMorePullRequests,
-			}),
-		[visibleGroups, pullRequestStatus, pullRequestError, visibleFilterText, loadedPullRequestCount, visibleHasMorePullRequests, isLoadingMorePullRequests],
-	)
 	const selectedDiffKey = useAtomValue(selectedDiffKeyAtom)
 	const selectedDiffState = useAtomValue(selectedDiffStateAtom)
 	const {
@@ -399,7 +363,6 @@ export const useAppShell = ({ systemThemeGeneration }: UseAppShellInput) => {
 		effectiveDiffRenderView,
 		readyDiffFiles,
 		changedFileResults,
-		selectedPullRequestRowIndex,
 	} = useSelectionDerivations({
 		diffRenderView,
 		contentWidth,
@@ -438,7 +401,6 @@ export const useAppShell = ({ systemThemeGeneration }: UseAppShellInput) => {
 		selectedDiffKey,
 		diffCommentThreads,
 	})
-	const groupStarts = useAtomValue(groupStartsAtom)
 	const getCurrentGroupIndex = (current: number) => groupIndexAt(groupStarts, current)
 	const { headerRight, headerLeftWidth, footerNotice, homeCrumb, breadcrumbSeparatorText, headerRepoWidth } = computeHeaderDerivations({
 		username,
@@ -446,72 +408,12 @@ export const useAppShell = ({ systemThemeGeneration }: UseAppShellInput) => {
 		headerFooterWidth,
 		selectedRepository,
 	})
-	const selectPullRequestByUrl = (url: string) => {
-		const index = visiblePullRequests.findIndex((pullRequest) => pullRequest.url === url)
-		if (index >= 0) {
-			setSelectedIndex(index)
-			setQueueSelection((current) => ({ ...current, [currentQueueCacheKey]: index }))
-		}
-	}
 	const { updatePullRequest, updateIssue, markPullRequestCompleted, restoreOptimisticPullRequest } = useItemMutations({
 		pullRequests,
 		issues,
 		setPullRequestOverrides,
 		setIssueOverrides,
 		setRecentlyCompletedPullRequests,
-	})
-
-	const { detailHydrationState, resetHydration } = useDetailHydration({
-		selectedPullRequest,
-		pullRequestStatus,
-		visiblePullRequests,
-		selectedIndex,
-		currentQueueCacheKey,
-		refreshGenerationRef,
-		queueFetchedAtMs: pullRequestLoad?.fetchedAt?.getTime() ?? null,
-		flashNotice,
-		setQueueLoadCache,
-	})
-
-	const { terminalFocusedRef } = useFocusReturnRefresh({
-		renderer,
-		lastRefreshAtRef: lastPullRequestRefreshAtRef,
-		refreshGeneration: pullRequestLoad?.fetchedAt?.getTime(),
-		focusReturnMinMs: FOCUS_RETURN_REFRESH_MIN_MS,
-		idleAfterMs: FOCUSED_IDLE_REFRESH_MS,
-		jitterMs: AUTO_REFRESH_JITTER_MS,
-		onRefresh: (ms) => maybeRefreshPullRequestsRef.current(ms),
-	})
-
-	const { armRefreshToast, cancelRefreshToast } = useRefreshCompletionToast({
-		pullRequestStatus,
-		pullRequestError,
-		fetchedAt: pullRequestLoad?.fetchedAt?.getTime(),
-		pullRequestLoad,
-		selectedPullRequest,
-		lastPullRequestRefreshAtRef,
-		flashNotice,
-		pullRequests,
-	})
-
-	const { refreshPullRequests } = usePullRequestRefresh({
-		pullRequestLoad,
-		pullRequestFetchInFlight,
-		refreshGenerationRef,
-		lastPullRequestRefreshAtRef,
-		pullRequestStatusRef,
-		terminalFocusedRef,
-		maybeRefreshPullRequestsRef,
-		refreshPullRequestsRef,
-		resetHydration,
-		resetLoadingMore,
-		setPullRequestOverrides,
-		setRecentlyCompletedPullRequests,
-		setPullRequestComments,
-		setPullRequestCommentsLoaded,
-		setNotice,
-		armRefreshToast,
-		refreshPullRequestsAtom,
 	})
 
 	const { switchViewTo, switchQueueMode, switchWorkspaceSurface, cycleWorkspaceSurface, goUpWorkspaceScope } = useWorkspaceNavigation({
@@ -572,7 +474,6 @@ export const useAppShell = ({ systemThemeGeneration }: UseAppShellInput) => {
 	// cache first, so the user sees the previous list instantly while the new
 	// view's fetch lands.
 
-	const loadMoreSlotAvailable = visibleHasMorePullRequests && visiblePullRequests.length > 0
 	useClampedIndex(visiblePullRequests.length + (loadMoreSlotAvailable ? 1 : 0), setSelectedIndex)
 
 	useWorkspacePreferencesPersistence({
@@ -604,13 +505,10 @@ export const useAppShell = ({ systemThemeGeneration }: UseAppShellInput) => {
 		pullRequests,
 	})
 
-	useScrollFollowSelected(prListScrollRef, selectedPullRequestRowIndex)
-
 	// Keep list scroll position when toggling between surfaces. Each list's
 	// scrollbox remounts on surface switch; without persistence it starts at
 	// scrollTop=0 and useScrollFollowSelected snaps it back to the selected
 	// row — reads as a jump.
-	useScrollPersistence(prListScrollRef, prListScrollPersistedRef, activeWorkspaceSurface === "pullRequests" && !detailFullView && !diffFullView && !commentsViewActive)
 
 	useDiffSelectionSync({
 		selectedIndex,

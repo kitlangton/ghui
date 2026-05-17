@@ -325,6 +325,7 @@ export const useAppShell = ({ systemThemeGeneration }: UseAppShellInput) => {
 		showIssueRepositoryGroups,
 		loadMoreIssues,
 		isLoadingMoreIssues,
+		resetLoadingMoreIssues,
 	} = issueSurface
 
 	const workspaceTabSurfaces: readonly WorkspaceSurface[] = selectedRepository ? repositoryWorkspaceSurfaces : userWorkspaceSurfaces
@@ -459,6 +460,11 @@ export const useAppShell = ({ systemThemeGeneration }: UseAppShellInput) => {
 		switchViewTo,
 		setActiveIssueView,
 		closeActiveModal,
+		setSelectedIssueIndex,
+		resetLoadingMoreIssues,
+		bumpRefreshGeneration: () => {
+			refreshGenerationRef.current += 1
+		},
 	})
 	const { loadPullRequestComments, loadIssueComments } = useCommentsLoader({
 		refreshGenerationRef,

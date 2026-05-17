@@ -96,11 +96,6 @@ export const resolveIssueLoad = (view: IssueView, cache: Partial<Record<string, 
 	return null
 }
 
-// Legacy `issueLoadAtom` — kept for backwards compatibility with hooks
-// that consume it via `useAtomValue`. New derived atoms should inline
-// `resolveIssueLoad` instead.
-export const issueLoadAtom = Atom.make((get) => resolveIssueLoad(get(activeIssueViewAtom), get(issueQueueLoadCacheAtom), get(issuesAtom)))
-
 export const isLoadingIssueViewAtom = Atom.make((get) => {
 	const cacheKey = issueViewCacheKey(get(activeIssueViewAtom))
 	const resolved = AsyncResult.getOrElse(get(issuesAtom), () => null)

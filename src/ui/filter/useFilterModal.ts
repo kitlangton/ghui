@@ -1,7 +1,7 @@
 import { devLog } from "../../devLog.js"
+import { type IssueView, issueViewEquals } from "../../issueViews.js"
 import type { PullRequestView } from "../../pullRequestViews.js"
 import type { WorkspaceSurface } from "../../workspaceSurfaces.js"
-import type { IssueView } from "../issues/atoms.js"
 import { filterOptions } from "../modals/FilterModal.js"
 import type { FilterModalState } from "../modals/types.js"
 
@@ -19,6 +19,12 @@ export interface UseFilterModalInput {
 	readonly switchViewTo: (view: PullRequestView) => void
 	readonly setActiveIssueView: (view: IssueView) => void
 	readonly closeActiveModal: () => void
+	// Issue-side counterparts to the resets `switchViewTo` performs on the
+	// PR side. Without these, applying the issue filter modal leaves stale
+	// selection and load-more state behind.
+	readonly setSelectedIssueIndex: (next: number) => void
+	readonly resetLoadingMoreIssues: () => void
+	readonly bumpRefreshGeneration: () => void
 }
 
 export interface UseFilterModalResult {
@@ -46,6 +52,9 @@ export const useFilterModal = ({
 	switchViewTo,
 	setActiveIssueView,
 	closeActiveModal,
+	setSelectedIssueIndex,
+	resetLoadingMoreIssues,
+	bumpRefreshGeneration,
 }: UseFilterModalInput): UseFilterModalResult => {
 	const openFilterModal = () => {
 		if (!selectedRepository || (activeWorkspaceSurface !== "pullRequests" && activeWorkspaceSurface !== "issues")) return
@@ -73,7 +82,18 @@ export const useFilterModal = ({
 		if (filterModal.surface === "pullRequests" && selectedRepository) {
 			switchViewTo(option.value === "mine" ? { _tag: "Queue", mode: "authored", repository: selectedRepository } : { _tag: "Repository", repository: selectedRepository })
 		} else if (filterModal.surface === "issues" && selectedRepository) {
-			setActiveIssueView(option.value === "mine" ? { _tag: "Queue", mode: "authored", repository: selectedRepository } : { _tag: "Repository", repository: selectedRepository })
+			const nextView: IssueView =
+				option.value === "mine" ? { _tag: "Queue", mode: "authored", repository: selectedRepository } : { _tag: "Repository", repository: selectedRepository }
+			if (!issueViewEquals(nextView, activeIssueView)) {
+				// Mirror the resets `switchViewTo` does for PR-side filter
+				// changes. Without these, the previous queue's load-more
+				// state can land on the new view and stale selection sticks
+				// past the visible row count.
+				bumpRefreshGeneration()
+				setSelectedIssueIndex(0)
+				resetLoadingMoreIssues()
+			}
+			setActiveIssueView(nextView)
 		}
 		closeActiveModal()
 	}

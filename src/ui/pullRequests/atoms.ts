@@ -294,31 +294,16 @@ export const resolveLoad = (
 	return null
 }
 
-// Legacy `pullRequestLoadAtom` — kept for backwards compatibility with
-// hooks that consume it via `useAtomValue`, but new derived atoms should
-// inline `resolveLoad` instead.
-export const pullRequestLoadAtom = Atom.make((get) => {
-	const view = get(activeViewAtom)
-	const cacheKey = viewCacheKey(view)
-	const cache = get(queueLoadCacheAtom)
-	const result = get(pullRequestsAtom)
-	const resolved = AsyncResult.getOrElse(result, () => null)
-	const cached = cache[cacheKey] ?? null
-	const resolvedMatch = resolved && viewCacheKey(resolved.view) === cacheKey ? resolved : null
-	const out = cached ?? resolvedMatch ?? null
-	devLog("pullRequestLoadAtom", {
-		cacheKey,
-		cacheKeys: Object.keys(cache),
-		cachedHit: cached !== null,
-		cachedCount: cached?.data.length ?? 0,
-		cachedSampleAuthors: cached?.data.slice(0, 5).map((pr) => pr.author),
-		resolvedCacheKey: resolved ? viewCacheKey(resolved.view) : null,
-		resolvedCount: resolved?.data.length ?? 0,
-		decision: cached ? "cache" : resolvedMatch ? "resolved" : "null",
-		outDataLen: out?.data.length ?? 0,
-	})
-	return out
-})
+// Convenience accessor for `useAtomValue(pullRequestLoadAtom)` consumers.
+// IMPORTANT: even though every body in this module inlines `resolveLoad`
+// instead of reading this atom, deleting it regresses the original
+// "filter doesn't update the list" bug — its mere presence in the dep
+// graph appears to keep `displayedPullRequestsAtom`'s invalidation
+// propagating cleanly after view switches. Removing it caused the same
+// stale-load symptom to come back in headless and live tests. Keep this
+// atom alive (and `keepAlive`d, so it stays subscribed) until the
+// underlying effect-atom propagation issue is properly understood.
+export const pullRequestLoadAtom = Atom.make((get) => resolveLoad(get(activeViewAtom), get(queueLoadCacheAtom), get(pullRequestsAtom))).pipe(Atom.keepAlive)
 
 export const isLoadingQueueModeAtom = Atom.make((get) => {
 	const cacheKey = viewCacheKey(get(activeViewAtom))

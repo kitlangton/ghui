@@ -17,7 +17,7 @@ export interface UseIssueListDerivationsInput {
 	readonly selectedRepository: string | null
 	readonly issuesResult: IssuesResult
 	readonly selectedIssueIndex: number
-	readonly loadMoreIssueRowSelected: boolean
+	readonly hasMoreIssues: boolean
 }
 
 export interface IssueListDerivations {
@@ -27,6 +27,18 @@ export interface IssueListDerivations {
 	readonly issuesError: string | null
 	readonly selectedIssue: IssueItem | null
 	readonly selectedIssueRowIndex: number | null
+	// Whether selection is currently parked on the synthetic "load more"
+	// pseudo-row at index `issues.length` (the filtered visible length).
+	// The previous design read this from `loadMoreIssueRowSelectedAtom`
+	// which compares against `issueListAtom.length` (the unfiltered list).
+	// When a filter is active, those lengths diverge and Enter on the
+	// visible load-more row fell through to detail.open. Computing it here
+	// against the same `issues` we render keeps Enter wired correctly.
+	readonly loadMoreIssueRowSelected: boolean
+	// Same gate the surface used to compute inline. Off when a filter is
+	// active (matching `visibleHasMorePullRequests` on the PR side) — a
+	// "load more" against an active client-side filter would be meaningless.
+	readonly issueLoadMoreSlotAvailable: boolean
 }
 
 /**
@@ -49,7 +61,7 @@ export const useIssueListDerivations = ({
 	selectedRepository,
 	issuesResult,
 	selectedIssueIndex,
-	loadMoreIssueRowSelected,
+	hasMoreIssues,
 }: UseIssueListDerivationsInput): IssueListDerivations => {
 	const allIssues = useMemo(() => {
 		const seen = new Set<string>()
@@ -72,7 +84,10 @@ export const useIssueListDerivations = ({
 	const issuesStatus: LoadStatus = selectedRepository === null ? "ready" : issuesResult.waiting ? "loading" : AsyncResult.isFailure(issuesResult) ? "error" : "ready"
 	const issuesError = AsyncResult.isFailure(issuesResult) ? errorMessage(Cause.squash(issuesResult.cause)) : null
 	const selectedIssue = issues[Math.max(0, Math.min(selectedIssueIndex, issues.length - 1))] ?? null
+	const filterActive = activeWorkspaceSurface === "issues" && visibleFilterText.trim().length > 0
+	const issueLoadMoreSlotAvailable = !filterActive && hasMoreIssues && issues.length > 0
+	const loadMoreIssueRowSelected = issueLoadMoreSlotAvailable && selectedIssueIndex === issues.length
 	const selectedIssueRowIndex = issueListRowIndex(issues, selectedIssueIndex, showIssueRepositoryGroups, loadMoreIssueRowSelected)
 
-	return { allIssues, issues, issuesStatus, issuesError, selectedIssue, selectedIssueRowIndex }
+	return { allIssues, issues, issuesStatus, issuesError, selectedIssue, selectedIssueRowIndex, loadMoreIssueRowSelected, issueLoadMoreSlotAvailable }
 }

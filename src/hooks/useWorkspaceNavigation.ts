@@ -123,7 +123,6 @@ export const useWorkspaceNavigation = (input: UseWorkspaceNavigationInput): Work
 		if (!workspaceTabSurfaces.includes(surface)) return
 		if (surface === activeWorkspaceSurface) return
 		setActiveWorkspaceSurface(surface)
-		setSelectedIssueIndex(0)
 		setDetailFullView(false)
 		setDiffFullView(false)
 		setCommentsViewActive(false)
@@ -131,7 +130,17 @@ export const useWorkspaceNavigation = (input: UseWorkspaceNavigationInput): Work
 		setFilterMode(false)
 		setFilterDraft(filterQuery)
 		setNotice(null)
-		setActiveIssueView(issueViewForPullRequestView(activeView))
+		// Previously this unconditionally synced the issue view to whatever
+		// the current PR view projects to — but a tab toggle should not
+		// clobber a filter the user explicitly applied to the issue surface
+		// (e.g. "author:@me" applied via the filter modal). The PR
+		// `switchViewTo` path keeps them in sync when the PR view actually
+		// changes; that's enough.
+		// The PR-side selection reset is also gone: switching tabs and
+		// coming back kept `selectedIndex`/`selectedRepositoryIndex` intact,
+		// so symmetric behaviour for issues is to keep `selectedIssueIndex`
+		// too. `useClampedIndex` will rein in any stale value if the list
+		// shrunk in the meantime.
 	}
 
 	const cycleWorkspaceSurface = (delta: 1 | -1) => switchWorkspaceSurface(nextWorkspaceSurface(activeWorkspaceSurface, delta, workspaceTabSurfaces))

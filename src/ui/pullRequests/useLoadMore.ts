@@ -1,11 +1,11 @@
-import { RegistryContext, useAtomSet } from "@effect/atom-react"
-import { type MutableRefObject, useContext, useRef, useState } from "react"
+import { useAtomSet } from "@effect/atom-react"
+import { type MutableRefObject, useRef, useState } from "react"
 import { config } from "../../config.js"
 import { errorMessage } from "../../errors.js"
 import type { PullRequestLoad } from "../../pullRequestLoad.js"
 import { type PullRequestView, viewToListInput } from "../../pullRequestViews.js"
 import { pullRequestPageSize } from "../../services/runtime.js"
-import { cacheViewerFor, listOpenPullRequestPageAtom, nextLoadAfterPage, queueLoadCacheAtom, writeQueueCacheAtom } from "./atoms.js"
+import { cacheViewerFor, listOpenPullRequestPageAtom, nextLoadAfterPage, writeQueueCacheAtom } from "./atoms.js"
 
 export interface UseLoadMoreInput {
 	readonly activeView: PullRequestView
@@ -68,7 +68,6 @@ export const useLoadMore = ({
 	flashNotice,
 	setQueueLoadCache,
 }: UseLoadMoreInput): UseLoadMoreResult => {
-	const registry = useContext(RegistryContext)
 	const loadPullRequestPage = useAtomSet(listOpenPullRequestPageAtom, { mode: "promise" })
 	const writeQueueCache = useAtomSet(writeQueueCacheAtom, { mode: "promise" })
 	const inFlightKeyRef = useRef<string | null>(null)
@@ -94,13 +93,21 @@ export const useLoadMore = ({
 		void Promise.race([fetchPromise, timeoutPromise])
 			.then((page) => {
 				if (generation !== refreshGenerationRef.current) return
-				const currentLoad = registry.get(queueLoadCacheAtom)[cacheKey]
-				if (!currentLoad) return
-				const persistedLoad = nextLoadAfterPage(currentLoad, page, config.prFetchLimit)
+				// TOCTOU fix: merge inside the functional updater so the merge
+				// always sees the freshest cached load. The previous version
+				// snapshotted `currentLoad` via `registry.get` *before* the
+				// `setQueueLoadCache` call, which let a `useDetailHydration`
+				// write landing in between get silently clobbered (revert
+				// detail fields, lose status checks, etc.) when the merged
+				// page was written back.
+				let persistedLoad: PullRequestLoad | null = null
 				setQueueLoadCache((current) => {
-					if (!current[cacheKey]) return current
+					const currentLoad = current[cacheKey]
+					if (!currentLoad) return current
+					persistedLoad = nextLoadAfterPage(currentLoad, page, config.prFetchLimit)
 					return { ...current, [cacheKey]: persistedLoad }
 				})
+				if (!persistedLoad) return
 				const viewer = cacheViewerFor(activeView, username)
 				if (viewer) void writeQueueCache({ viewer, load: persistedLoad }).catch(() => {})
 			})

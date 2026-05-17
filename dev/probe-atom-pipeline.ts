@@ -22,7 +22,7 @@ process.env.GHUI_DEBUG_LOG ??= "/tmp/ghui-debug.log"
 import * as Atom from "effect/unstable/reactivity/Atom"
 import * as AtomRegistry from "effect/unstable/reactivity/AtomRegistry"
 import * as AsyncResult from "effect/unstable/reactivity/AsyncResult"
-import { activeViewAtom, displayedPullRequestsAtom, pullRequestLoadAtom, pullRequestsAtom, queueLoadCacheAtom, visiblePullRequestsAtom } from "../src/ui/pullRequests/atoms.js"
+import { activeViewAtom, displayedPullRequestsAtom, pullRequestsAtom, queueLoadCacheAtom, resolveLoad, visiblePullRequestsAtom } from "../src/ui/pullRequests/atoms.js"
 import { filteredPullRequestsAtom } from "../src/ui/pullRequests/atoms.js"
 import type { PullRequestView } from "../src/pullRequestViews.js"
 import { viewCacheKey } from "../src/pullRequestViews.js"
@@ -52,12 +52,12 @@ const waitForResult = <A, E>(atom: Atom.Atom<AsyncResult.AsyncResult<A, E>>): Pr
 
 const sample = (label: string) => {
 	const result = registry.get(pullRequestsAtom)
-	const load = registry.get(pullRequestLoadAtom)
+	const cache = registry.get(queueLoadCacheAtom)
+	const view = registry.get(activeViewAtom)
+	const load = resolveLoad(view, cache, result)
 	const displayed = registry.get(displayedPullRequestsAtom)
 	const filtered = registry.get(filteredPullRequestsAtom)
 	const visible = registry.get(visiblePullRequestsAtom)
-	const cache = registry.get(queueLoadCacheAtom)
-	const view = registry.get(activeViewAtom)
 	console.log(`\n=== ${label} ===`)
 	console.log("activeView:           ", view)
 	console.log("activeView cacheKey:  ", viewCacheKey(view))
@@ -70,7 +70,7 @@ const sample = (label: string) => {
 	for (const [k, v] of Object.entries(cache)) {
 		console.log(`  [${k}] dataLen=${v?.data.length} sampleAuthors=${JSON.stringify(v?.data.slice(0, 3).map((pr) => pr.author))}`)
 	}
-	console.log("pullRequestLoadAtom:  ", load ? { view: load.view, dataLen: load.data.length, sampleAuthors: load.data.slice(0, 3).map((pr) => pr.author) } : null)
+	console.log("resolveLoad:          ", load ? { view: load.view, dataLen: load.data.length, sampleAuthors: load.data.slice(0, 3).map((pr) => pr.author) } : null)
 	console.log(
 		"displayedPullRequests:",
 		displayed.length,
@@ -96,7 +96,7 @@ const sample = (label: string) => {
 // tree. Without an active subscriber, derived atoms may be GC'd between reads,
 // which would mask any propagation bug.
 const unsubDisplayed = registry.subscribe(displayedPullRequestsAtom, () => {})
-const unsubLoad = registry.subscribe(pullRequestLoadAtom, () => {})
+const unsubVisible = registry.subscribe(visiblePullRequestsAtom, () => {})
 
 // 1. Start in Queue authored global (the initial-view state ghui boots into).
 const globalAuthored: PullRequestView = { _tag: "Queue", mode: "authored", repository: null }
@@ -119,7 +119,7 @@ await waitForResult(pullRequestsAtom)
 sample("STEP 3b: AFTER Queue(authored) fetch")
 
 unsubDisplayed()
-unsubLoad()
+unsubVisible()
 
 console.log("\n>> Done. See /tmp/ghui-debug.log for atom-level trace.")
 process.exit(0)

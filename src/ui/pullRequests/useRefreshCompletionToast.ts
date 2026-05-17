@@ -10,7 +10,6 @@ export interface UseRefreshCompletionToastInput {
 	readonly selectedPullRequest: PullRequestItem | null
 	readonly lastPullRequestRefreshAtRef: MutableRefObject<number>
 	readonly flashNotice: (message: string) => void
-	readonly pullRequests: readonly PullRequestItem[]
 }
 
 export interface UseRefreshCompletionToastResult {
@@ -37,7 +36,6 @@ export const useRefreshCompletionToast = ({
 	selectedPullRequest,
 	lastPullRequestRefreshAtRef,
 	flashNotice,
-	pullRequests,
 }: UseRefreshCompletionToastInput): UseRefreshCompletionToastResult => {
 	const [refreshCompletionMessage, setRefreshCompletionMessage] = useState<string | null>(null)
 	const [refreshStartedAt, setRefreshStartedAt] = useState<number | null>(null)
@@ -64,8 +62,13 @@ export const useRefreshCompletionToast = ({
 			setRefreshCompletionMessage(null)
 			setRefreshStartedAt(null)
 		}
+		// Re-runs when hydration finishes (`selectedPullRequest.detailLoaded`
+		// flips true) so the queued `✓ Refreshed` toast can finally fire. The
+		// previous version listed `pullRequests` here, which is the queue array
+		// reference and doesn't necessarily change identity when an individual
+		// PR's detail lands — that left the toast silently stuck.
 		// eslint-disable-next-line react-hooks/exhaustive-deps
-	}, [refreshCompletionMessage, refreshStartedAt, pullRequestStatus, pullRequestError, fetchedAt, pullRequests])
+	}, [refreshCompletionMessage, refreshStartedAt, pullRequestStatus, pullRequestError, fetchedAt, selectedPullRequest?.detailLoaded])
 
 	return { armRefreshToast, cancelRefreshToast }
 }

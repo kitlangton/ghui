@@ -7,16 +7,7 @@ import { issueViewCacheKey } from "../../issueViews.js"
 import type { IssueLoad } from "../../issueLoad.js"
 import { useIssueListDerivations } from "../../hooks/useIssueListDerivations.js"
 import { useIssuesLoadMore } from "../../hooks/useIssuesLoadMore.js"
-import {
-	activeIssueViewAtom,
-	hasMoreIssuesAtom,
-	issueQueueLoadCacheAtom,
-	issuesAtom,
-	issueViewRepository,
-	loadedIssueCountAtom,
-	loadMoreIssueRowSelectedAtom,
-	resolveIssueLoad,
-} from "../../ui/issues/atoms.js"
+import { activeIssueViewAtom, hasMoreIssuesAtom, issueQueueLoadCacheAtom, issuesAtom, issueViewRepository, loadedIssueCountAtom, resolveIssueLoad } from "../../ui/issues/atoms.js"
 import { useMemo } from "react"
 import { issueOverridesAtom } from "../../ui/pullRequests/atoms.js"
 import { selectedIssueIndexAtom } from "../../ui/listSelection/atoms.js"
@@ -70,6 +61,7 @@ export interface IssueSurfaceShell {
 	readonly showIssueRepositoryGroups: boolean
 	readonly loadMoreIssues: () => boolean
 	readonly isLoadingMoreIssues: boolean
+	readonly resetLoadingMoreIssues: () => void
 }
 
 // Issue Surface shell. Owns the issue list derivation (raw → overrides →
@@ -98,7 +90,6 @@ export const useIssueSurface = (input: UseIssueSurfaceInput): IssueSurfaceShell 
 	const issueQueueLoadCache = useAtomValue(issueQueueLoadCacheAtom)
 	const hasMoreIssues = useAtomValue(hasMoreIssuesAtom)
 	const loadedIssueCount = useAtomValue(loadedIssueCountAtom)
-	const loadMoreIssueRowSelected = useAtomValue(loadMoreIssueRowSelectedAtom)
 	const setIssueQueueLoadCache = useAtomSet(issueQueueLoadCacheAtom)
 	const [selectedIssueIndex, setSelectedIssueIndex] = useAtom(selectedIssueIndexAtom)
 	const [activeIssueView, setActiveIssueView] = useAtom(activeIssueViewAtom)
@@ -119,7 +110,7 @@ export const useIssueSurface = (input: UseIssueSurfaceInput): IssueSurfaceShell 
 	const showIssueRepositoryGroups = selectedRepository === null
 	const rawIssues: readonly IssueItem[] = issueLoad?.data ?? []
 
-	const { allIssues, issues, issuesStatus, issuesError, selectedIssue, selectedIssueRowIndex } = useIssueListDerivations({
+	const { allIssues, issues, issuesStatus, issuesError, selectedIssue, selectedIssueRowIndex, loadMoreIssueRowSelected, issueLoadMoreSlotAvailable } = useIssueListDerivations({
 		rawIssues,
 		issueOverrides,
 		showIssueRepositoryGroups,
@@ -128,11 +119,11 @@ export const useIssueSurface = (input: UseIssueSurfaceInput): IssueSurfaceShell 
 		selectedRepository,
 		issuesResult,
 		selectedIssueIndex,
-		loadMoreIssueRowSelected,
+		hasMoreIssues,
 	})
 
 	const currentIssueCacheKey = issueViewCacheKey(activeIssueView)
-	const { loadMoreIssues, isLoadingMoreIssues } = useIssuesLoadMore({
+	const { loadMoreIssues, isLoadingMoreIssues, resetLoadingMoreIssues } = useIssuesLoadMore({
 		activeIssueView,
 		currentIssueCacheKey,
 		issueLoad,
@@ -143,7 +134,6 @@ export const useIssueSurface = (input: UseIssueSurfaceInput): IssueSurfaceShell 
 		setIssueQueueLoadCache,
 	})
 
-	const issueLoadMoreSlotAvailable = hasMoreIssues && issues.length > 0
 	useClampedIndex(issues.length + (issueLoadMoreSlotAvailable ? 1 : 0), setSelectedIssueIndex)
 	useScrollFollowSelected(issueListScrollRef, issues.length === 0 ? null : selectedIssueRowIndex)
 	useScrollPersistence(issueListScrollRef, issueListScrollPersistedRef, activeWorkspaceSurface === "issues" && !detailFullView && !diffFullView && !commentsViewActive)
@@ -178,5 +168,6 @@ export const useIssueSurface = (input: UseIssueSurfaceInput): IssueSurfaceShell 
 		showIssueRepositoryGroups,
 		loadMoreIssues,
 		isLoadingMoreIssues,
+		resetLoadingMoreIssues,
 	}
 }

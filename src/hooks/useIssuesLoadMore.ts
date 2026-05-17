@@ -1,5 +1,5 @@
-import { RegistryContext, useAtomSet } from "@effect/atom-react"
-import { type MutableRefObject, useContext, useRef, useState } from "react"
+import { useAtomSet } from "@effect/atom-react"
+import { type MutableRefObject, useRef, useState } from "react"
 import { config } from "../config.js"
 import { errorMessage } from "../errors.js"
 import { type IssueView, issueViewCacheKey, issueViewToQuery } from "../issueViews.js"
@@ -7,7 +7,7 @@ import { issueQueryToListInput } from "../item.js"
 import { nextIssueLoadAfterPage } from "../issueCache.js"
 import type { IssueLoad } from "../issueLoad.js"
 import { pullRequestPageSize } from "../services/runtime.js"
-import { issueCacheViewerFor, issueQueueLoadCacheAtom, listIssuePageAtom, writeIssueQueueAtom } from "../ui/issues/atoms.js"
+import { issueCacheViewerFor, listIssuePageAtom, writeIssueQueueAtom } from "../ui/issues/atoms.js"
 
 export interface UseIssuesLoadMoreInput {
 	readonly activeIssueView: IssueView
@@ -47,7 +47,6 @@ export const useIssuesLoadMore = ({
 	flashNotice,
 	setIssueQueueLoadCache,
 }: UseIssuesLoadMoreInput): UseIssuesLoadMoreResult => {
-	const registry = useContext(RegistryContext)
 	const loadIssuePage = useAtomSet(listIssuePageAtom, { mode: "promise" })
 	const writeIssueQueue = useAtomSet(writeIssueQueueAtom, { mode: "promise" })
 	const inFlightKeyRef = useRef<string | null>(null)
@@ -71,13 +70,15 @@ export const useIssuesLoadMore = ({
 		void Promise.race([fetchPromise, timeoutPromise])
 			.then((page) => {
 				if (generation !== refreshGenerationRef.current) return
-				const currentLoad = registry.get(issueQueueLoadCacheAtom)[cacheKey]
-				if (!currentLoad) return
-				const persistedLoad = nextIssueLoadAfterPage(currentLoad, page, config.prFetchLimit)
+				// TOCTOU fix — see useLoadMore.ts for the longer note.
+				let persistedLoad: IssueLoad | null = null
 				setIssueQueueLoadCache((current) => {
-					if (!current[cacheKey]) return current
+					const currentLoad = current[cacheKey]
+					if (!currentLoad) return current
+					persistedLoad = nextIssueLoadAfterPage(currentLoad, page, config.prFetchLimit)
 					return { ...current, [cacheKey]: persistedLoad }
 				})
+				if (!persistedLoad) return
 				const viewer = issueCacheViewerFor(activeIssueView, username)
 				if (viewer) void writeIssueQueue({ viewer, load: persistedLoad }).catch(() => {})
 			})

@@ -258,7 +258,6 @@ export const usePullRequestSurface = (input: UsePullRequestSurfaceInput): PullRe
 		selectedPullRequest,
 		lastPullRequestRefreshAtRef,
 		flashNotice,
-		pullRequests,
 	})
 
 	const { refreshPullRequests } = usePullRequestRefresh({

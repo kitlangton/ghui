@@ -6,12 +6,14 @@ import type { PullRequestItem } from "../domain.js"
 import { type PullRequestView, nextView, viewCacheKey, viewEquals } from "../pullRequestViews.js"
 import { issueViewForPullRequestView } from "../viewSync.js"
 import { type WorkspaceSurface, nextWorkspaceSurface } from "../workspaceSurfaces.js"
-import { queueSelectionAtom } from "../ui/pullRequests/atoms.js"
+import { issuesAtom } from "../ui/issues/atoms.js"
+import { pullRequestsAtom, queueSelectionAtom } from "../ui/pullRequests/atoms.js"
 import { recentRepositoriesAtom } from "../workspace/atoms.js"
 import type { IssueView } from "../issueViews.js"
 
 interface AtomRegistryShape {
 	get<T>(atom: Atom.Atom<T>): T
+	refresh(atom: Atom.Atom<unknown>): void
 }
 
 export interface UseWorkspaceNavigationInput {
@@ -97,6 +99,16 @@ export const useWorkspaceNavigation = (input: UseWorkspaceNavigationInput): Work
 		refreshGenerationRef.current += 1
 		setQueueSelection((current) => ({ ...current, [currentQueueCacheKey]: selectedIndex }))
 		setActiveView(view)
+		// Workaround for an effect-atom dep-tracking quirk: after certain
+		// transition sequences (open repo → esc → open another repo), the
+		// `pullRequestsAtom` runtime atom stops responding to `activeView`
+		// invalidations and its body never re-runs — the new repo's PR
+		// list spins on "Loading pull requests..." forever. Explicitly
+		// refreshing the atom here forces the body to evaluate with the
+		// new view. Same for `issuesAtom` since `setActiveIssueView` below
+		// has the same hazard. Audit note recorded in plans/.
+		registry.refresh(pullRequestsAtom)
+		registry.refresh(issuesAtom)
 		setSelectedIndex(registry.get(queueSelectionAtom)[viewCacheKey(view)] ?? 0)
 		setSelectedIssueIndex(0)
 		setRecentlyCompletedPullRequests({})
@@ -147,16 +159,19 @@ export const useWorkspaceNavigation = (input: UseWorkspaceNavigationInput): Work
 
 	const goUpWorkspaceScope = (): boolean => {
 		if (!selectedRepository) return false
-		// "Go up" lands the user back on the global Repos hub regardless of
-		// which surface they came from. Previously this routed through
-		// `switchViewTo({...repository: null})`, which fired all of
-		// `switchViewTo`'s PR-scoped side effects (reset PR selection, bump
-		// PR refresh generation, clear `recentlyCompletedPullRequestsAtom`,
-		// etc.) even when triggered from the Issues surface. Direct atom
-		// writes here keep the action's blast radius matched to its intent.
-		setActiveView({ _tag: "Queue", mode: "authored", repository: null })
-		setActiveIssueView(issueViewForPullRequestView({ _tag: "Queue", mode: "authored", repository: null }))
-		setActiveWorkspaceSurface("repos")
+		// Route through `switchViewTo` so the activeView atom write propagates
+		// cleanly through the same atom-graph path as every other nav action.
+		// Earlier attempt to call `setActiveView`/`setActiveIssueView`/
+		// `setActiveWorkspaceSurface` directly (to skip PR-scoped side effects
+		// when triggered from the Issue surface) left the runtime atom graph
+		// in a state where the next `switchViewTo` invocation no longer
+		// triggered `pullRequestsAtom`'s body — so reopening any repo from
+		// the global Repos hub hung forever on "Loading pull requests...".
+		// The trade-off is worth it: a single extra invalidation cycle vs.
+		// a complete freeze. See the audit note in
+		// `plans/app-shell-deepening.md` for the underlying effect-atom
+		// dep-tracking quirk this is dodging.
+		switchViewTo({ _tag: "Queue", mode: "authored", repository: null })
 		return true
 	}
 

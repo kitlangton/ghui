@@ -22,7 +22,7 @@ process.env.GHUI_DEBUG_LOG ??= "/tmp/ghui-debug.log"
 import * as Atom from "effect/unstable/reactivity/Atom"
 import * as AtomRegistry from "effect/unstable/reactivity/AtomRegistry"
 import * as AsyncResult from "effect/unstable/reactivity/AsyncResult"
-import { activeViewAtom, displayedPullRequestsAtom, pullRequestsAtom, queueLoadCacheAtom, resolveLoad, visiblePullRequestsAtom } from "../src/ui/pullRequests/atoms.js"
+import { activeViewAtom, displayedPullRequestsAtom, pullRequestsForView, queueLoadCacheAtom, resolveLoad, visiblePullRequestsAtom } from "../src/ui/pullRequests/atoms.js"
 import { filteredPullRequestsAtom } from "../src/ui/pullRequests/atoms.js"
 import type { PullRequestView } from "../src/pullRequestViews.js"
 import { viewCacheKey } from "../src/pullRequestViews.js"
@@ -51,9 +51,9 @@ const waitForResult = <A, E>(atom: Atom.Atom<AsyncResult.AsyncResult<A, E>>): Pr
 	})
 
 const sample = (label: string) => {
-	const result = registry.get(pullRequestsAtom)
-	const cache = registry.get(queueLoadCacheAtom)
 	const view = registry.get(activeViewAtom)
+	const result = registry.get(pullRequestsForView(view))
+	const cache = registry.get(queueLoadCacheAtom)
 	const load = resolveLoad(view, cache, result)
 	const displayed = registry.get(displayedPullRequestsAtom)
 	const filtered = registry.get(filteredPullRequestsAtom)
@@ -102,12 +102,12 @@ const unsubVisible = registry.subscribe(visiblePullRequestsAtom, () => {})
 const globalAuthored: PullRequestView = { _tag: "Queue", mode: "authored", repository: null }
 console.log(">> Setting activeView to Queue(authored, global)")
 registry.set(activeViewAtom, globalAuthored)
-await waitForResult(pullRequestsAtom)
+await waitForResult(pullRequestsForView(registry.get(activeViewAtom)))
 sample("STEP 1: AFTER global authored fetch")
 
 console.log("\n>> Switching activeView to Repository(anomalyco/opencode)")
 registry.set(activeViewAtom, repositoryView)
-await waitForResult(pullRequestsAtom)
+await waitForResult(pullRequestsForView(registry.get(activeViewAtom)))
 sample("STEP 2: AFTER Repository fetch")
 
 console.log("\n>> Switching activeView to Queue(authored, anomalyco/opencode) — repro the bug")
@@ -115,7 +115,7 @@ registry.set(activeViewAtom, authoredView)
 // Sample IMMEDIATELY (before fetch completes) to capture the transient state
 // the user actually sees.
 sample("STEP 3a: IMMEDIATELY AFTER set(authoredView)")
-await waitForResult(pullRequestsAtom)
+await waitForResult(pullRequestsForView(registry.get(activeViewAtom)))
 sample("STEP 3b: AFTER Queue(authored) fetch")
 
 unsubDisplayed()

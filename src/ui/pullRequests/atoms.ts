@@ -71,110 +71,128 @@ export const queueLoadCacheAtom = Atom.make<Partial<Record<string, PullRequestLo
 export const queueSelectionAtom = Atom.make<Partial<Record<string, number>>>({}).pipe(Atom.keepAlive)
 
 // === Data-fetching atoms ===
-// The `(get)` parameter is what makes this atom reactive: `get(activeViewAtom)`
-// inside the generator registers a dependency on the active view via the
-// AtomContext, so a view switch invalidates and re-evaluates this atom. The
-// bare `Atom.get(...)` Effect service is a non-tracking read — never use it
-// inside a runtime atom body when you want reactivity.
-export const pullRequestsAtom = githubRuntime
-	.atom(
-		Effect.fnUntraced(function* (get) {
-			const github = yield* GitHubService
-			const cacheService = yield* CacheService
-			const view = get(activeViewAtom)
-			const cacheKey = viewCacheKey(view)
-			devLog("pullRequestsAtom:start", { view, cacheKey })
-			const cacheUsername =
-				view._tag === "Repository"
-					? null
-					: yield* github.getAuthenticatedUser().pipe(
-							Effect.catch((cause) => {
-								devLog("pullRequestsAtom:authFailed", { view, cause: String(cause) })
-								return Effect.succeed(null)
-							}),
-						)
-			const cacheViewer = cacheViewerFor(view, cacheUsername)
-			devLog("pullRequestsAtom:viewer", { cacheUsername, cacheViewer })
-			if (cacheViewer) {
-				const cachedLoad = yield* cacheService.readQueue(cacheViewer, view).pipe(Effect.catch(() => Effect.succeed(null)))
-				devLog("pullRequestsAtom:sqliteRead", {
-					cacheKey,
-					hit: cachedLoad !== null,
-					count: cachedLoad?.data.length ?? 0,
-					storedView: cachedLoad?.view,
-					sampleAuthors: cachedLoad?.data.slice(0, 5).map((pr) => pr.author),
-				})
-				if (cachedLoad) {
-					yield* Atom.update(queueLoadCacheAtom, (cache) => (cache[cacheKey] ? cache : trimQueueLoadCache({ ...cache, [cacheKey]: cachedLoad })))
-				}
-			}
-			yield* Atom.set(retryProgressAtom, initialRetryProgress)
-			const listInput = viewToListInput(view, null, Math.min(pullRequestPageSize, config.prFetchLimit))
-			devLog("pullRequestsAtom:fetch", { cacheKey, listInput, query: searchQualifier(listInput) })
-			const page = yield* github.listPullRequestPage(listInput).pipe(
-				Effect.tapError((error) =>
-					shouldRetryPullRequestFetch(error)
-						? Atom.update(retryProgressAtom, (current) =>
-								RetryProgress.Retrying({
-									attempt: Math.min(RetryProgress.$match(current, { Idle: () => 0, Retrying: ({ attempt }) => attempt }) + 1, PR_FETCH_RETRIES),
-									max: PR_FETCH_RETRIES,
+//
+// Family of one runtime atom per view, keyed by `viewCacheKey(view)`.
+// Each family member's body bakes the view into its closure — it does NOT
+// `get(activeViewAtom)`. Switching the active view means consumers read
+// a DIFFERENT family member; no shared atom needs to invalidate or
+// re-evaluate.
+//
+// Why a family instead of one shared `pullRequestsAtom` that reads
+// `activeViewAtom`: the shared shape forced effect-atom into a
+// re-run-on-dep-change pattern that broke after certain transition
+// sequences (open repo A → esc → open repo B left the runtime atom
+// stuck — its body never ran for B). Family-per-view sidesteps that
+// entire class of bug: the new view's atom is fresh and runs its body
+// on first read; the old view's atom keeps its value or completes
+// independently.
+//
+// Cached by `viewCacheKey` string so equal-content views share an atom
+// even when constructed as new object literals (which would defeat the
+// reference-equality keying that `Atom.family` uses for plain objects).
+type PullRequestsAtom = Atom.Atom<AsyncResult.AsyncResult<PullRequestLoad, unknown>>
+const pullRequestsAtomByCacheKey = new Map<string, PullRequestsAtom>()
+
+const buildPullRequestsForView = (view: PullRequestView): PullRequestsAtom =>
+	githubRuntime
+		.atom(
+			Effect.fnUntraced(function* () {
+				const github = yield* GitHubService
+				const cacheService = yield* CacheService
+				const cacheKey = viewCacheKey(view)
+				devLog("pullRequestsAtom:start", { view, cacheKey })
+				const cacheUsername =
+					view._tag === "Repository"
+						? null
+						: yield* github.getAuthenticatedUser().pipe(
+								Effect.catch((cause) => {
+									devLog("pullRequestsAtom:authFailed", { view, cause: String(cause) })
+									return Effect.succeed(null)
 								}),
 							)
-						: Effect.void,
-				),
-				Effect.retry({ times: PR_FETCH_RETRIES, schedule: Schedule.exponential("300 millis", 2), while: shouldRetryPullRequestFetch }),
-				Effect.tapError(() => Atom.set(retryProgressAtom, initialRetryProgress)),
-			)
-
-			yield* Atom.set(retryProgressAtom, initialRetryProgress)
-			devLog("pullRequestsAtom:page", {
-				cacheKey,
-				count: page.items.length,
-				hasNextPage: page.hasNextPage,
-				sampleAuthors: page.items.slice(0, 8).map((pr) => pr.author),
-			})
-			// Atomic read-merge-write into the queue cache. `Atom.modify` returns
-			// a value (the new load) while updating the atom in one registry op.
-			const load = yield* Atom.modify(queueLoadCacheAtom, (cache) => {
-				const existing = cache[cacheKey]
-				// Don't overwrite a non-empty cache with an empty fetch: gh can
-				// transiently return [] for a repo that actually has PRs (rate
-				// limit, auth blip, cold gh cache). Persisting that empty page
-				// would make subsequent visits read "0 PRs" from SQLite and
-				// surface "No open pull requests" until the user manually
-				// presses `r`. Keep the existing entries instead and let the
-				// next refresh correct things.
-				const looksLikeBogusEmpty = page.items.length === 0 && (existing?.data.length ?? 0) > 0
-				const data = looksLikeBogusEmpty ? existing!.data : mergeCachedDetails(page.items, existing?.data)
-				const next: PullRequestLoad = {
-					view,
-					data,
-					fetchedAt: new Date(),
-					endCursor: looksLikeBogusEmpty ? (existing?.endCursor ?? page.endCursor) : page.endCursor,
-					hasNextPage: looksLikeBogusEmpty ? (existing?.hasNextPage ?? false) : page.hasNextPage && data.length < config.prFetchLimit,
+				const cacheViewer = cacheViewerFor(view, cacheUsername)
+				devLog("pullRequestsAtom:viewer", { cacheUsername, cacheViewer })
+				if (cacheViewer) {
+					const cachedLoad = yield* cacheService.readQueue(cacheViewer, view).pipe(Effect.catch(() => Effect.succeed(null)))
+					devLog("pullRequestsAtom:sqliteRead", {
+						cacheKey,
+						hit: cachedLoad !== null,
+						count: cachedLoad?.data.length ?? 0,
+						storedView: cachedLoad?.view,
+						sampleAuthors: cachedLoad?.data.slice(0, 5).map((pr) => pr.author),
+					})
+					if (cachedLoad) {
+						yield* Atom.update(queueLoadCacheAtom, (cache) => (cache[cacheKey] ? cache : trimQueueLoadCache({ ...cache, [cacheKey]: cachedLoad })))
+					}
 				}
-				const cacheNext = { ...cache }
-				delete cacheNext[cacheKey]
-				cacheNext[cacheKey] = next
-				return [next, trimQueueLoadCache(cacheNext)]
-			})
-			// Don't persist an empty queue to SQLite. If gh transiently returns
-			// [] on a first-time visit (no existing in-memory entry to fall
-			// back to), the in-memory guard above can't help — we'd cache the
-			// empty load and read it back next session as authoritative.
-			// Skipping the write costs one extra fetch on cold start of a
-			// genuinely empty repo, which is acceptable.
-			if (cacheViewer && load.data.length > 0) yield* cacheService.writeQueue(cacheViewer, load)
-			devLog("pullRequestsAtom:done", {
-				cacheKey,
-				loadView: load.view,
-				dataLen: load.data.length,
-				sampleAuthors: load.data.slice(0, 8).map((pr) => pr.author),
-			})
-			return load
-		}),
-	)
-	.pipe(Atom.keepAlive)
+				yield* Atom.set(retryProgressAtom, initialRetryProgress)
+				const listInput = viewToListInput(view, null, Math.min(pullRequestPageSize, config.prFetchLimit))
+				devLog("pullRequestsAtom:fetch", { cacheKey, listInput, query: searchQualifier(listInput) })
+				const page = yield* github.listPullRequestPage(listInput).pipe(
+					Effect.tapError((error) =>
+						shouldRetryPullRequestFetch(error)
+							? Atom.update(retryProgressAtom, (current) =>
+									RetryProgress.Retrying({
+										attempt: Math.min(RetryProgress.$match(current, { Idle: () => 0, Retrying: ({ attempt }) => attempt }) + 1, PR_FETCH_RETRIES),
+										max: PR_FETCH_RETRIES,
+									}),
+								)
+							: Effect.void,
+					),
+					Effect.retry({ times: PR_FETCH_RETRIES, schedule: Schedule.exponential("300 millis", 2), while: shouldRetryPullRequestFetch }),
+					Effect.tapError(() => Atom.set(retryProgressAtom, initialRetryProgress)),
+				)
+
+				yield* Atom.set(retryProgressAtom, initialRetryProgress)
+				devLog("pullRequestsAtom:page", {
+					cacheKey,
+					count: page.items.length,
+					hasNextPage: page.hasNextPage,
+					sampleAuthors: page.items.slice(0, 8).map((pr) => pr.author),
+				})
+				const load = yield* Atom.modify(queueLoadCacheAtom, (cache) => {
+					const existing = cache[cacheKey]
+					// Don't overwrite a non-empty cache with an empty fetch: gh can
+					// transiently return [] for a repo that actually has PRs (rate
+					// limit, auth blip, cold gh cache). Persisting that empty page
+					// would make subsequent visits read "0 PRs" from SQLite and
+					// surface "No open pull requests" until the user manually
+					// presses `r`. Keep the existing entries instead and let the
+					// next refresh correct things.
+					const looksLikeBogusEmpty = page.items.length === 0 && (existing?.data.length ?? 0) > 0
+					const data = looksLikeBogusEmpty ? existing!.data : mergeCachedDetails(page.items, existing?.data)
+					const next: PullRequestLoad = {
+						view,
+						data,
+						fetchedAt: new Date(),
+						endCursor: looksLikeBogusEmpty ? (existing?.endCursor ?? page.endCursor) : page.endCursor,
+						hasNextPage: looksLikeBogusEmpty ? (existing?.hasNextPage ?? false) : page.hasNextPage && data.length < config.prFetchLimit,
+					}
+					const cacheNext = { ...cache }
+					delete cacheNext[cacheKey]
+					cacheNext[cacheKey] = next
+					return [next, trimQueueLoadCache(cacheNext)]
+				})
+				if (cacheViewer && load.data.length > 0) yield* cacheService.writeQueue(cacheViewer, load)
+				devLog("pullRequestsAtom:done", {
+					cacheKey,
+					loadView: load.view,
+					dataLen: load.data.length,
+					sampleAuthors: load.data.slice(0, 8).map((pr) => pr.author),
+				})
+				return load
+			}),
+		)
+		.pipe(Atom.keepAlive)
+
+export const pullRequestsForView = (view: PullRequestView): PullRequestsAtom => {
+	const key = viewCacheKey(view)
+	let atom = pullRequestsAtomByCacheKey.get(key)
+	if (atom) return atom
+	atom = buildPullRequestsForView(view)
+	pullRequestsAtomByCacheKey.set(key, atom)
+	return atom
+}
 
 export const usernameAtom = githubRuntime.atom(GitHubService.use((github) => github.getAuthenticatedUser())).pipe(Atom.keepAlive)
 
@@ -302,37 +320,36 @@ export const resolveLoad = (
 	return null
 }
 
-// Convenience accessor for `useAtomValue(pullRequestLoadAtom)` consumers.
-// IMPORTANT: even though every body in this module inlines `resolveLoad`
-// instead of reading this atom, deleting it regresses the original
-// "filter doesn't update the list" bug — its mere presence in the dep
-// graph appears to keep `displayedPullRequestsAtom`'s invalidation
-// propagating cleanly after view switches. Removing it caused the same
-// stale-load symptom to come back in headless and live tests. Keep this
-// atom alive (and `keepAlive`d, so it stays subscribed) until the
-// underlying effect-atom propagation issue is properly understood.
-export const pullRequestLoadAtom = Atom.make((get) => resolveLoad(get(activeViewAtom), get(queueLoadCacheAtom), get(pullRequestsAtom))).pipe(Atom.keepAlive)
+// Read the result for the CURRENT view's family member. Equivalent to the
+// old `get(pullRequestsAtom)` but routes through the family so each view
+// is its own atom.
+const getCurrentPullRequestsResult = (get: Atom.AtomContext) => get(pullRequestsForView(get(activeViewAtom)))
+
+export const pullRequestLoadAtom = Atom.make((get) => resolveLoad(get(activeViewAtom), get(queueLoadCacheAtom), getCurrentPullRequestsResult(get))).pipe(Atom.keepAlive)
 
 export const isLoadingQueueModeAtom = Atom.make((get) => {
-	const cacheKey = viewCacheKey(get(activeViewAtom))
-	const resolved = AsyncResult.getOrElse(get(pullRequestsAtom), () => null)
-	return resolved !== null && viewCacheKey(resolved.view) !== cacheKey
+	// Pure delegate of "is the active view's queue still loading".
+	// With family-per-view this is just whether the current view's atom
+	// is in a waiting state without a resolved value — the old check
+	// for "resolved.view doesn't match activeView" is gone because each
+	// family member's resolved.view always matches its own key.
+	const result = getCurrentPullRequestsResult(get)
+	return result.waiting && AsyncResult.getOrElse(result, () => null) === null
 })
 
 export const pullRequestStatusAtom = Atom.make((get): LoadStatus => {
-	const result = get(pullRequestsAtom)
+	const result = getCurrentPullRequestsResult(get)
 	const load = resolveLoad(get(activeViewAtom), get(queueLoadCacheAtom), result)
-	const isLoadingQueue = get(isLoadingQueueModeAtom)
-	if ((result.waiting || isLoadingQueue) && load === null) return "loading"
+	if (result.waiting && load === null) return "loading"
 	if (AsyncResult.isFailure(result) && load === null) return "error"
 	return "ready"
 })
 
 export const selectedRepositoryAtom = Atom.make((get) => viewRepository(get(activeViewAtom)))
 export const activeViewsAtom = Atom.make((get) => activePullRequestViews(get(activeViewAtom)))
-export const loadedPullRequestCountAtom = Atom.make((get) => resolveLoad(get(activeViewAtom), get(queueLoadCacheAtom), get(pullRequestsAtom))?.data.length ?? 0)
+export const loadedPullRequestCountAtom = Atom.make((get) => resolveLoad(get(activeViewAtom), get(queueLoadCacheAtom), getCurrentPullRequestsResult(get))?.data.length ?? 0)
 export const hasMorePullRequestsAtom = Atom.make((get) => {
-	const load = resolveLoad(get(activeViewAtom), get(queueLoadCacheAtom), get(pullRequestsAtom))
+	const load = resolveLoad(get(activeViewAtom), get(queueLoadCacheAtom), getCurrentPullRequestsResult(get))
 	return Boolean(load?.hasNextPage && load.data.length < config.prFetchLimit)
 })
 
@@ -358,7 +375,7 @@ export const loadMoreRowSelectedAtom = Atom.make((get) => {
 
 export const displayedPullRequestsAtom = Atom.make((get) => {
 	const view = get(activeViewAtom)
-	const load = resolveLoad(view, get(queueLoadCacheAtom), get(pullRequestsAtom))
+	const load = resolveLoad(view, get(queueLoadCacheAtom), get(pullRequestsForView(view)))
 	const overrides = get(pullRequestOverridesAtom)
 	const recentlyCompleted = get(recentlyCompletedPullRequestsAtom)
 	const scope = viewRepository(view)

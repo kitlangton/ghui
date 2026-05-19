@@ -6,14 +6,12 @@ import type { PullRequestItem } from "../domain.js"
 import { type PullRequestView, nextView, viewCacheKey, viewEquals } from "../pullRequestViews.js"
 import { issueViewForPullRequestView } from "../viewSync.js"
 import { type WorkspaceSurface, nextWorkspaceSurface } from "../workspaceSurfaces.js"
-import { issuesAtom } from "../ui/issues/atoms.js"
-import { pullRequestsAtom, queueSelectionAtom } from "../ui/pullRequests/atoms.js"
+import { queueSelectionAtom } from "../ui/pullRequests/atoms.js"
 import { recentRepositoriesAtom } from "../workspace/atoms.js"
 import type { IssueView } from "../issueViews.js"
 
 interface AtomRegistryShape {
 	get<T>(atom: Atom.Atom<T>): T
-	refresh(atom: Atom.Atom<unknown>): void
 }
 
 export interface UseWorkspaceNavigationInput {
@@ -99,16 +97,6 @@ export const useWorkspaceNavigation = (input: UseWorkspaceNavigationInput): Work
 		refreshGenerationRef.current += 1
 		setQueueSelection((current) => ({ ...current, [currentQueueCacheKey]: selectedIndex }))
 		setActiveView(view)
-		// Workaround for an effect-atom dep-tracking quirk: after certain
-		// transition sequences (open repo → esc → open another repo), the
-		// `pullRequestsAtom` runtime atom stops responding to `activeView`
-		// invalidations and its body never re-runs — the new repo's PR
-		// list spins on "Loading pull requests..." forever. Explicitly
-		// refreshing the atom here forces the body to evaluate with the
-		// new view. Same for `issuesAtom` since `setActiveIssueView` below
-		// has the same hazard. Audit note recorded in plans/.
-		registry.refresh(pullRequestsAtom)
-		registry.refresh(issuesAtom)
 		setSelectedIndex(registry.get(queueSelectionAtom)[viewCacheKey(view)] ?? 0)
 		setSelectedIssueIndex(0)
 		setRecentlyCompletedPullRequests({})

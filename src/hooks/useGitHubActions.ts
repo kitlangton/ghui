@@ -1,4 +1,6 @@
-import { useAtomSet, useAtomRefresh } from "@effect/atom-react"
+import { RegistryContext, useAtomSet } from "@effect/atom-react"
+import { useCallback, useContext } from "react"
+import type { IssueView } from "../issueViews.js"
 import {
 	addPullRequestLabelAtom,
 	closePullRequestAtom,
@@ -7,7 +9,7 @@ import {
 	removePullRequestLabelAtom,
 	toggleDraftAtom,
 } from "../ui/pullRequests/atoms.js"
-import { addIssueLabelAtom, closeIssueAtom, issuesAtom, removeIssueLabelAtom } from "../ui/issues/atoms.js"
+import { addIssueLabelAtom, closeIssueAtom, issuesForView, removeIssueLabelAtom } from "../ui/issues/atoms.js"
 import { listIssueCommentsAtom, listPullRequestCommentsAtom } from "../ui/comments/atoms.js"
 import { listPullRequestReviewCommentsAtom } from "../ui/diff/atoms.js"
 import { openUrlAtom, submitPullRequestReviewAtom } from "../services/systemAtoms.js"
@@ -34,7 +36,10 @@ export const useGitHubActions = () => {
 	const prewarmRepositoryDetails = useAtomSet(prewarmRepositoryDetailsAtom, { mode: "promise" })
 	const closePullRequest = useAtomSet(closePullRequestAtom, { mode: "promise" })
 	const closeIssue = useAtomSet(closeIssueAtom, { mode: "promise" })
-	const refreshIssuesAtomRaw = useAtomRefresh(issuesAtom)
+	const registry = useContext(RegistryContext)
+	// `issuesAtom` is now a family of one atom per view; refresh must
+	// target the family member for the view being refreshed.
+	const refreshIssuesForView = useCallback((view: IssueView) => registry.refresh(issuesForView(view)), [registry])
 	const submitPullRequestReview = useAtomSet(submitPullRequestReviewAtom, { mode: "promise" })
 	const openUrl = useAtomSet(openUrlAtom, { mode: "promise" })
 	const readRepoRollup = useAtomSet(readRepoRollupAtom, { mode: "promise" })
@@ -53,7 +58,7 @@ export const useGitHubActions = () => {
 		prewarmRepositoryDetails,
 		closePullRequest,
 		closeIssue,
-		refreshIssuesAtomRaw,
+		refreshIssuesForView,
 		submitPullRequestReview,
 		openUrl,
 		readRepoRollup,

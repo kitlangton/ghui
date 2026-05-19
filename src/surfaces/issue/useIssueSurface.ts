@@ -7,7 +7,15 @@ import { issueViewCacheKey } from "../../issueViews.js"
 import type { IssueLoad } from "../../issueLoad.js"
 import { useIssueListDerivations } from "../../hooks/useIssueListDerivations.js"
 import { useIssuesLoadMore } from "../../hooks/useIssuesLoadMore.js"
-import { activeIssueViewAtom, hasMoreIssuesAtom, issueQueueLoadCacheAtom, issuesAtom, issueViewRepository, loadedIssueCountAtom, resolveIssueLoad } from "../../ui/issues/atoms.js"
+import {
+	activeIssueViewAtom,
+	hasMoreIssuesAtom,
+	issueQueueLoadCacheAtom,
+	issuesForView,
+	issueViewRepository,
+	loadedIssueCountAtom,
+	resolveIssueLoad,
+} from "../../ui/issues/atoms.js"
 import { useMemo } from "react"
 import { issueOverridesAtom } from "../../ui/pullRequests/atoms.js"
 import { selectedIssueIndexAtom } from "../../ui/listSelection/atoms.js"
@@ -86,22 +94,16 @@ export const useIssueSurface = (input: UseIssueSurfaceInput): IssueSurfaceShell 
 		issueListScrollPersistedRef,
 	} = input
 
-	const issuesResult = useAtomValue(issuesAtom)
+	const [activeIssueView, setActiveIssueView] = useAtom(activeIssueViewAtom)
+	const currentIssuesAtom = useMemo(() => issuesForView(activeIssueView), [activeIssueView])
+	const issuesResult = useAtomValue(currentIssuesAtom)
 	const issueQueueLoadCache = useAtomValue(issueQueueLoadCacheAtom)
 	const hasMoreIssues = useAtomValue(hasMoreIssuesAtom)
 	const loadedIssueCount = useAtomValue(loadedIssueCountAtom)
 	const setIssueQueueLoadCache = useAtomSet(issueQueueLoadCacheAtom)
 	const [selectedIssueIndex, setSelectedIssueIndex] = useAtom(selectedIssueIndexAtom)
-	const [activeIssueView, setActiveIssueView] = useAtom(activeIssueViewAtom)
 	const [issueOverrides, setIssueOverrides] = useAtom(issueOverridesAtom)
 
-	// Resolve the issue load directly from underlying atoms rather than
-	// reading `issueLoadAtom`. The derived `issueLoadAtom` does not always
-	// re-evaluate after `activeIssueViewAtom` changes (same effect-atom
-	// dep-propagation behaviour documented on `resolveLoad` in
-	// `ui/pullRequests/atoms.ts`), which would leave the issue list showing
-	// the previous view's data after switching modes. Re-deriving here puts
-	// `useIssueSurface` on the underlying atoms' dep graph directly.
 	const issueLoad = useMemo(() => resolveIssueLoad(activeIssueView, issueQueueLoadCache, issuesResult), [activeIssueView, issueQueueLoadCache, issuesResult])
 
 	const selectedIssueRepository = issueViewRepository(activeIssueView)

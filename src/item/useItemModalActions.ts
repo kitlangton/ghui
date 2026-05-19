@@ -32,7 +32,7 @@ export interface UseItemModalActionsInput {
 	readonly markPullRequestCompleted: (pr: PullRequestItem, state: "closed" | "merged") => void
 	readonly restoreOptimisticPullRequest: (pr: PullRequestItem) => void
 	readonly refreshPullRequests: (message?: string, options?: { readonly resetTransientState?: boolean }) => void
-	readonly refreshIssuesAtomRaw: () => void
+	readonly refreshIssues: () => void
 	readonly toggleDraftStatus: (input: { repository: string; number: number; isDraft: boolean }) => Promise<unknown>
 	readonly closePullRequest: (input: { repository: string; number: number }) => Promise<unknown>
 	readonly closeIssue: (input: { repository: string; number: number }) => Promise<unknown>
@@ -82,7 +82,7 @@ export const useItemModalActions = (input: UseItemModalActionsInput): ItemModalA
 		markPullRequestCompleted,
 		restoreOptimisticPullRequest,
 		refreshPullRequests,
-		refreshIssuesAtomRaw,
+		refreshIssues,
 		toggleDraftStatus,
 		closePullRequest,
 		closeIssue,
@@ -127,7 +127,7 @@ export const useItemModalActions = (input: UseItemModalActionsInput): ItemModalA
 			const previousIssue = allIssues.find((issue) => issue.url === url)
 			if (previousIssue) setIssueOverrides((current) => ({ ...current, [url]: { ...previousIssue, state: "closed" } }))
 			void closeIssue({ repository, number })
-				.then(() => refreshIssuesAtomRaw())
+				.then(() => refreshIssues())
 				.catch((error) => {
 					if (previousIssue) setIssueOverrides((current) => ({ ...current, [url]: previousIssue }))
 					flashNotice(errorMessage(error))

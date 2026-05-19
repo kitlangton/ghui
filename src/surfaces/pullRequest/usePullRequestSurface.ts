@@ -1,4 +1,4 @@
-import { RegistryContext, useAtom, useAtomRefresh, useAtomSet, useAtomValue } from "@effect/atom-react"
+import { RegistryContext, useAtom, useAtomSet, useAtomValue } from "@effect/atom-react"
 import type { ScrollBoxRenderable } from "@opentui/core"
 import * as AsyncResult from "effect/unstable/reactivity/AsyncResult"
 import { Cause } from "effect"
@@ -25,7 +25,7 @@ import {
 	loadedPullRequestCountAtom,
 	pullRequestLoadAtom,
 	pullRequestOverridesAtom,
-	pullRequestsAtom,
+	pullRequestsForView,
 	pullRequestStatusAtom,
 	queueLoadCacheAtom,
 	recentlyCompletedPullRequestsAtom,
@@ -164,13 +164,19 @@ export const usePullRequestSurface = (input: UsePullRequestSurfaceInput): PullRe
 	const maybeRefreshPullRequestsRef = useRef<(minimumAgeMs: number) => void>(() => {})
 
 	// PR atom reads.
-	const pullRequestResult = useAtomValue(pullRequestsAtom)
-	const refreshPullRequestsAtomRaw = useAtomRefresh(pullRequestsAtom)
-	const refreshPullRequestsAtom = useCallback(() => {
-		if (registry.get(pullRequestsAtom).waiting) return
-		refreshPullRequestsAtomRaw()
-	}, [refreshPullRequestsAtomRaw, registry])
+	// `pullRequestsForView` is a family of runtime atoms keyed by view —
+	// each view gets its own atom node. Read the family member for the
+	// current `activeView` so the subscription is always against the
+	// freshly-keyed atom; view switches simply read a different member
+	// rather than invalidating one shared atom.
 	const [activeView, setActiveView] = useAtom(activeViewAtom)
+	const currentPullRequestsAtom = useMemo(() => pullRequestsForView(activeView), [activeView])
+	const pullRequestResult = useAtomValue(currentPullRequestsAtom)
+	const refreshPullRequestsAtom = useCallback(() => {
+		const atom = pullRequestsForView(activeView)
+		if (registry.get(atom).waiting) return
+		registry.refresh(atom)
+	}, [registry, activeView])
 	const setQueueLoadCache = useAtomSet(queueLoadCacheAtom)
 	const setPullRequestOverrides = useAtomSet(pullRequestOverridesAtom)
 	const setRecentlyCompletedPullRequests = useAtomSet(recentlyCompletedPullRequestsAtom)

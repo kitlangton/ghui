@@ -14,7 +14,7 @@ import type {
 } from "../../domain.js"
 import { devLog } from "../../devLog.js"
 import { type ItemListInput, searchQualifier } from "../../item.js"
-import { mergeCachedDetails } from "../../pullRequestCache.js"
+import { freshPullRequestLoad } from "../../pullRequestCache.js"
 export { appendPullRequestPage, nextLoadAfterPage } from "../../pullRequestCache.js"
 import type { PullRequestLoad } from "../../pullRequestLoad.js"
 import { activePullRequestViews, initialPullRequestView, type PullRequestView, viewCacheKey, viewRepository, viewToListInput } from "../../pullRequestViews.js"
@@ -152,28 +152,13 @@ const buildPullRequestsForView = (view: PullRequestView): PullRequestsAtom =>
 				})
 				const load = yield* Atom.modify(queueLoadCacheAtom, (cache) => {
 					const existing = cache[cacheKey]
-					// Don't overwrite a non-empty cache with an empty fetch: gh can
-					// transiently return [] for a repo that actually has PRs (rate
-					// limit, auth blip, cold gh cache). Persisting that empty page
-					// would make subsequent visits read "0 PRs" from SQLite and
-					// surface "No open pull requests" until the user manually
-					// presses `r`. Keep the existing entries instead and let the
-					// next refresh correct things.
-					const looksLikeBogusEmpty = page.items.length === 0 && (existing?.data.length ?? 0) > 0
-					const data = looksLikeBogusEmpty ? existing!.data : mergeCachedDetails(page.items, existing?.data)
-					const next: PullRequestLoad = {
-						view,
-						data,
-						fetchedAt: new Date(),
-						endCursor: looksLikeBogusEmpty ? (existing?.endCursor ?? page.endCursor) : page.endCursor,
-						hasNextPage: looksLikeBogusEmpty ? (existing?.hasNextPage ?? false) : page.hasNextPage && data.length < config.prFetchLimit,
-					}
+					const next = freshPullRequestLoad(view, page, existing, config.prFetchLimit)
 					const cacheNext = { ...cache }
 					delete cacheNext[cacheKey]
 					cacheNext[cacheKey] = next
 					return [next, trimQueueLoadCache(cacheNext)]
 				})
-				if (cacheViewer && load.data.length > 0) yield* cacheService.writeQueue(cacheViewer, load)
+				if (cacheViewer) yield* cacheService.writeQueue(cacheViewer, load)
 				devLog("pullRequestsAtom:done", {
 					cacheKey,
 					loadView: load.view,

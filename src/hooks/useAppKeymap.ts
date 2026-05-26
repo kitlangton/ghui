@@ -292,7 +292,7 @@ export const useAppKeymap = (i: UseAppKeymapInput): void => {
 				canGoUpWorkspace: i.selectedRepository !== null,
 				canScrollDetailPreview:
 					(i.activeWorkspaceSurface === "pullRequests" && i.selectedPullRequest !== null) ||
-					(i.activeWorkspaceSurface === "issues" && !i.isWideLayout && i.selectedIssue !== null) ||
+					(i.activeWorkspaceSurface === "issues" && i.selectedIssue !== null) ||
 					(i.activeWorkspaceSurface === "repos" && !i.isWideLayout && i.selectedRepositoryItem !== null),
 				runCommandById: i.runCommandById,
 				openSelection: () => {

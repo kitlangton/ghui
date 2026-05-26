@@ -27,6 +27,8 @@ const issueRowTitleWidth = (contentWidth: number, numberText: string, ageWidth: 
 
 const GROUP_ICON = "◆"
 
+export const issueActivityAgeText = (issue: IssueItem) => `${daysOpen(issue.updatedAt)}d`
+
 const IssueDetailLine = ({ children, width }: { children: ReactNode; width: number }) => <PaneInsetLine width={width}>{children}</PaneInsetLine>
 
 const issueGroups = (issues: readonly IssueItem[], showRepositoryGroups: boolean) => {
@@ -97,7 +99,7 @@ export const IssueList = ({
 	onSelectLoadMore?: () => void
 }) => {
 	const { isHovered, onHoverChange } = useHoverState<number>()
-	const ageWidth = Math.max(4, ...issues.map((issue) => `${daysOpen(issue.createdAt)}d`.length + 1))
+	const ageWidth = Math.max(4, ...issues.map((issue) => issueActivityAgeText(issue).length + 1))
 	const groups = issueGroups(issues, repository === null)
 
 	return (
@@ -132,7 +134,7 @@ export const IssueList = ({
 				for (const { issue, index } of groupIssues) {
 					const selected = index === selectedIndex
 					const closed = issue.state === "closed"
-					const ageText = `${daysOpen(issue.createdAt)}d`
+					const ageText = issueActivityAgeText(issue)
 					const numberText = `#${issue.number}`
 					const titleWidth = issueRowTitleWidth(contentWidth, numberText, ageWidth)
 					const iconFg = selected ? colors.accent : colors.muted

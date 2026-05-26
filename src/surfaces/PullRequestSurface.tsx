@@ -23,6 +23,7 @@ import { PullRequestList } from "../ui/PullRequestList.js"
 import type { DiffFilePanelBundle } from "./WorkspaceContent.js"
 
 export interface PullRequestSurfaceProps {
+	readonly showScrollbars: boolean
 	readonly isWideLayout: boolean
 	readonly contentWidth: number
 	readonly leftPaneWidth: number
@@ -86,6 +87,7 @@ export interface PullRequestSurfaceProps {
 
 export const PullRequestSurface = (props: PullRequestSurfaceProps) => {
 	const {
+		showScrollbars,
 		isWideLayout,
 		contentWidth,
 		leftPaneWidth,
@@ -159,6 +161,7 @@ export const PullRequestSurface = (props: PullRequestSurfaceProps) => {
 				height={wideBodyHeight}
 				loadingIndicator={loadingIndicator}
 				themeGeneration={systemThemeGeneration}
+				showScrollbar={showScrollbars}
 			/>
 		)
 	}
@@ -186,6 +189,7 @@ export const PullRequestSurface = (props: PullRequestSurfaceProps) => {
 				onSelectCommentLine={selectDiffCommentLine}
 				themeId={themeId}
 				themeGeneration={systemThemeGeneration}
+				showScrollbar={showScrollbars}
 			/>
 		)
 		if (!panel.visible) return diffPane
@@ -302,7 +306,7 @@ export const PullRequestSurface = (props: PullRequestSurfaceProps) => {
 							comments={selectedComments}
 							commentsStatus={selectedCommentsStatus}
 						/>
-						<scrollbox ref={detailScrollRef} focusable={false} flexGrow={1} verticalScrollbarOptions={{ visible: fullscreenDetailBodyScrollable }}>
+						<scrollbox ref={detailScrollRef} focusable={false} flexGrow={1} verticalScrollbarOptions={{ visible: showScrollbars && fullscreenDetailBodyScrollable }}>
 							<DetailBody
 								pullRequest={selectedPullRequest}
 								contentWidth={fullscreenContentWidth}
@@ -369,7 +373,7 @@ export const PullRequestSurface = (props: PullRequestSurfaceProps) => {
 					<box height={wideBodyHeight} flexDirection="column">
 						{widePullRequestFilterBar}
 						{widePullRequestListNeedsScroll ? (
-							<scrollbox ref={prListScrollRef} focusable={false} height={widePullRequestListHeight} flexGrow={0}>
+							<scrollbox ref={prListScrollRef} focusable={false} height={widePullRequestListHeight} flexGrow={0} verticalScrollbarOptions={{ visible: showScrollbars }}>
 								{widePullRequestList}
 							</scrollbox>
 						) : (
@@ -416,7 +420,7 @@ export const PullRequestSurface = (props: PullRequestSurfaceProps) => {
 								comments={selectedComments}
 								commentsStatus={selectedCommentsStatus}
 							/>
-							<scrollbox ref={detailPreviewScrollRef} flexGrow={1} verticalScrollbarOptions={{ visible: wideDetailBodyScrollable }}>
+							<scrollbox ref={detailPreviewScrollRef} flexGrow={1} verticalScrollbarOptions={{ visible: showScrollbars && wideDetailBodyScrollable }}>
 								<DetailBody
 									pullRequest={selectedPullRequest}
 									contentWidth={rightContentWidth}
@@ -463,7 +467,7 @@ export const PullRequestSurface = (props: PullRequestSurfaceProps) => {
 							comments={selectedComments}
 							commentsStatus={selectedCommentsStatus}
 						/>
-						<scrollbox ref={detailScrollRef} focusable={false} flexGrow={1} verticalScrollbarOptions={{ visible: fullscreenDetailBodyScrollable }}>
+						<scrollbox ref={detailScrollRef} focusable={false} flexGrow={1} verticalScrollbarOptions={{ visible: showScrollbars && fullscreenDetailBodyScrollable }}>
 							<DetailBody
 								pullRequest={selectedPullRequest}
 								contentWidth={fullscreenContentWidth}
@@ -497,7 +501,7 @@ export const PullRequestSurface = (props: PullRequestSurfaceProps) => {
 			<box height={narrowPullRequestListHeight} flexDirection="column">
 				{narrowPullRequestFilterBar}
 				{narrowPullRequestListNeedsScroll ? (
-					<scrollbox ref={prListScrollRef} focusable={false} height={narrowPullRequestRowsHeight} flexGrow={0}>
+					<scrollbox ref={prListScrollRef} focusable={false} height={narrowPullRequestRowsHeight} flexGrow={0} verticalScrollbarOptions={{ visible: showScrollbars }}>
 						{narrowPullRequestList}
 					</scrollbox>
 				) : (
@@ -535,7 +539,7 @@ export const PullRequestSurface = (props: PullRequestSurfaceProps) => {
 							focusable={false}
 							height={narrowPreviewBodyHeight}
 							flexGrow={0}
-							verticalScrollbarOptions={{ visible: narrowPreviewBodyScrollable }}
+							verticalScrollbarOptions={{ visible: showScrollbars && narrowPreviewBodyScrollable }}
 						>
 							<DetailBody
 								pullRequest={selectedPullRequest}

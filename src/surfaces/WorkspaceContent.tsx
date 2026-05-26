@@ -15,6 +15,7 @@ import { PullRequestSurface } from "./PullRequestSurface.js"
 import { RepoSurface } from "./RepoSurface.js"
 
 export interface WorkspaceContentProps {
+	readonly showScrollbars: boolean
 	readonly activeWorkspaceSurface: WorkspaceSurface
 	readonly commentsViewActive: boolean
 	readonly diffFullView: boolean
@@ -79,6 +80,7 @@ export const WorkspaceContent = (props: WorkspaceContentProps) => {
 	if (activeWorkspaceSurface === "repos" && !commentsViewActive && !diffFullView && !detailFullView) {
 		return (
 			<RepoSurface
+				showScrollbars={props.showScrollbars}
 				isWideLayout={layout.isWideLayout}
 				wideBodyHeight={layout.wideBodyHeight}
 				contentWidth={layout.contentWidth}
@@ -101,6 +103,7 @@ export const WorkspaceContent = (props: WorkspaceContentProps) => {
 	if (activeWorkspaceSurface === "issues" && !commentsViewActive && !diffFullView) {
 		return (
 			<IssueSurface
+				showScrollbars={props.showScrollbars}
 				isWideLayout={layout.isWideLayout}
 				wideBodyHeight={layout.wideBodyHeight}
 				contentWidth={layout.contentWidth}
@@ -118,6 +121,7 @@ export const WorkspaceContent = (props: WorkspaceContentProps) => {
 				issueListProps={derivations.issueListProps}
 				selectedIssue={props.selectedIssue}
 				issueListScrollRef={props.scrollRefs.issueListScrollRef}
+				detailScrollRef={props.scrollRefs.detailScrollRef}
 				detailPreviewScrollRef={props.scrollRefs.detailPreviewScrollRef}
 				detailFullView={detailFullView}
 				onLinkOpen={props.openInlineLink}
@@ -126,6 +130,7 @@ export const WorkspaceContent = (props: WorkspaceContentProps) => {
 	}
 	return (
 		<PullRequestSurface
+			showScrollbars={props.showScrollbars}
 			isWideLayout={layout.isWideLayout}
 			contentWidth={layout.contentWidth}
 			leftPaneWidth={layout.leftPaneWidth}

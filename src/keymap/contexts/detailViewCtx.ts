@@ -22,7 +22,7 @@ export const buildDetailViewCtx = ({ halfPage, activeSurface, scrollDetailFullVi
 	openMerge: () => runCommandById("pull.merge"),
 	toggleDraft: () => runCommandById("pull.toggle-draft"),
 	openReview: () => runCommandById("pull.submit-review"),
-	refresh: () => runCommandById("pull.refresh"),
-	openInBrowser: () => runCommandById("pull.open-browser"),
-	copyMetadata: () => runCommandById("pull.copy-metadata"),
+	refresh: () => runCommandById(activeSurface === "issues" ? "issue.refresh" : "pull.refresh"),
+	openInBrowser: () => runCommandById(activeSurface === "issues" ? "issue.open-browser" : "pull.open-browser"),
+	copyMetadata: () => runCommandById(activeSurface === "issues" ? "issue.copy-metadata" : "pull.copy-metadata"),
 })

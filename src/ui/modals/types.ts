@@ -1,11 +1,18 @@
 import { Data } from "effect"
-import type { PullRequestLabel, PullRequestMergeInfo, PullRequestMergeKind, PullRequestMergeMethod, RepositoryMergeMethods } from "../../domain.js"
+import type { DiffCommentSide, PullRequestLabel, PullRequestMergeInfo, PullRequestMergeKind, PullRequestMergeMethod, RepositoryMergeMethods } from "../../domain.js"
 import type { ThemeConfig, ThemeMode } from "../../themeConfig.js"
 import type { ThemeId, ThemeTone } from "../colors.js"
 import type { WorkspaceSurface } from "../../workspaceSurfaces.js"
 
 export interface LabelModalState {
 	readonly repository: string | null
+	readonly target: {
+		readonly kind: "pullRequest" | "issue"
+		readonly repository: string
+		readonly number: number
+		readonly url: string
+		readonly labels: readonly PullRequestLabel[]
+	} | null
 	readonly query: string
 	readonly selectedIndex: number
 	readonly availableLabels: readonly PullRequestLabel[]
@@ -46,11 +53,31 @@ export interface PullRequestStateModalState {
 	readonly error: string | null
 }
 
+export interface FrozenCommentSubject {
+	readonly repository: string
+	readonly number: number
+	readonly key: string
+	readonly issueUrl: string | null
+}
+
 export type CommentModalTarget =
-	| { readonly kind: "diff" }
-	| { readonly kind: "issue" }
-	| { readonly kind: "reply"; readonly inReplyTo: string; readonly anchorLabel: string }
-	| { readonly kind: "edit"; readonly commentId: string; readonly commentTag: "comment" | "review-comment"; readonly anchorLabel: string }
+	| {
+			readonly kind: "diff"
+			readonly target?: {
+				readonly repository: string
+				readonly number: number
+				readonly commitId: string
+				readonly diffKey: string
+				readonly anchor: { readonly path: string; readonly line: number; readonly side: DiffCommentSide }
+				readonly range: {
+					readonly start: { readonly line: number; readonly side: DiffCommentSide }
+					readonly end: { readonly line: number; readonly side: DiffCommentSide }
+				} | null
+			}
+	  }
+	| { readonly kind: "issue"; readonly subject?: FrozenCommentSubject }
+	| { readonly kind: "reply"; readonly subject: FrozenCommentSubject; readonly inReplyTo: string; readonly anchorLabel: string }
+	| { readonly kind: "edit"; readonly subject: FrozenCommentSubject; readonly commentId: string; readonly commentTag: "comment" | "review-comment"; readonly anchorLabel: string }
 
 export interface CommentModalState {
 	readonly body: string
@@ -60,6 +87,7 @@ export interface CommentModalState {
 }
 
 export interface DeleteCommentModalState {
+	readonly subject: FrozenCommentSubject | null
 	readonly commentId: string
 	readonly commentTag: "comment" | "review-comment"
 	readonly author: string
@@ -116,6 +144,7 @@ export interface OpenRepositoryModalState {
 
 export const initialLabelModalState: LabelModalState = {
 	repository: null,
+	target: null,
 	query: "",
 	selectedIndex: 0,
 	availableLabels: [],
@@ -164,6 +193,7 @@ export const initialCommentModalState: CommentModalState = {
 }
 
 export const initialDeleteCommentModalState: DeleteCommentModalState = {
+	subject: null,
 	commentId: "",
 	commentTag: "comment",
 	author: "",

@@ -544,7 +544,7 @@ const liveCacheService = (sql: SqlClient.SqlClient) => {
 		yield* sql`INSERT INTO workspace_preferences ${sql.insert(row)}
 			ON CONFLICT(viewer) DO UPDATE SET
 				preferences_json = excluded.preferences_json,
-				updated_at = excluded.updated_at`.pipe(Effect.catch(() => Effect.void))
+				updated_at = excluded.updated_at`.pipe(Effect.mapError((cause) => toCacheError("writeWorkspacePreferences", cause)))
 	})
 
 	const readQueue = (viewer: string, view: PullRequestView): Effect.Effect<PullRequestLoad | null, CacheError> =>
@@ -846,7 +846,7 @@ export class CacheService extends Context.Service<
 		readonly readRepositoryDetailsFetchedAt: (repository: string) => Effect.Effect<Date | null, CacheError>
 		readonly writeRepositoryDetails: (details: RepositoryDetails) => Effect.Effect<void>
 		readonly readWorkspacePreferences: (viewer: ViewerId) => Effect.Effect<WorkspacePreferences | null, CacheError>
-		readonly writeWorkspacePreferences: (preferences: WorkspacePreferencesInput | WorkspacePreferences) => Effect.Effect<void>
+		readonly writeWorkspacePreferences: (preferences: WorkspacePreferencesInput | WorkspacePreferences) => Effect.Effect<void, CacheError>
 		readonly prune: () => Effect.Effect<void>
 	}
 >()("ghui/CacheService") {

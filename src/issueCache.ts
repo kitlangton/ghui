@@ -1,6 +1,7 @@
 import type { IssueItem } from "./domain.js"
 import type { ItemPage } from "./item.js"
 import type { IssueLoad } from "./issueLoad.js"
+import type { IssueView } from "./issueViews.js"
 
 // Append a fresh page to an existing issue queue, deduping by URL. The merged
 // result preserves the relative order of `existing` followed by *new* items
@@ -9,6 +10,14 @@ export const appendIssuePage = (existing: readonly IssueItem[], incoming: readon
 	const seen = new Set(existing.map((issue) => issue.url))
 	return [...existing, ...incoming.filter((issue) => !seen.has(issue.url))]
 }
+
+export const freshIssueLoad = (view: IssueView, page: ItemPage<IssueItem>, fetchedAt: Date = new Date()): IssueLoad => ({
+	view,
+	data: page.items,
+	fetchedAt,
+	endCursor: page.endCursor,
+	hasNextPage: page.hasNextPage,
+})
 
 // Compute the next IssueLoad after a load-more page lands. Same shape and
 // invariants as `nextLoadAfterPage` for PRs:

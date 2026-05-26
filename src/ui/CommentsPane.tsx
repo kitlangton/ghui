@@ -180,6 +180,7 @@ export const CommentsPane = ({
 	height,
 	loadingIndicator,
 	themeGeneration,
+	showScrollbar,
 }: {
 	item: { readonly repository: string; readonly number: number }
 	comments: readonly PullRequestComment[]
@@ -191,6 +192,7 @@ export const CommentsPane = ({
 	height: number
 	loadingIndicator: string
 	themeGeneration: number
+	showScrollbar: boolean
 }) => {
 	const realBlocks = useMemo(() => buildBlocks(orderedComments, contentWidth), [orderedComments, contentWidth, themeGeneration])
 	const blocks = useMemo<readonly CommentBlock[]>(() => [...realBlocks, placeholderBlock], [realBlocks])
@@ -274,7 +276,7 @@ export const CommentsPane = ({
 						<Filler rows={Math.max(0, bodyHeight - blockRows)} prefix="comments-pad" />
 					</box>
 				) : (
-					<scrollbox ref={scrollboxRef} focusable={false} flexGrow={1} verticalScrollbarOptions={{ visible: true }}>
+					<scrollbox ref={scrollboxRef} focusable={false} flexGrow={1} verticalScrollbarOptions={{ visible: showScrollbar }}>
 						{renderedBlocks}
 					</scrollbox>
 				)}

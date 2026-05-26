@@ -2,8 +2,16 @@ import { useEffect, type MutableRefObject } from "react"
 import type { ScrollBoxRenderable } from "@opentui/core"
 import type { DiffCommentSide, PullRequestItem } from "../domain.js"
 import type { DiffFilePatch, StackedDiffCommentAnchor, StackedDiffFilePatch } from "../ui/diff.js"
-import { diffAnchorOnSide, diffCommentLocationKey, safeDiffFileIndex, scrollTopForVisibleLine, stackedDiffFileIndexAtLine, verticalDiffAnchor } from "../ui/diff.js"
-import { sameDiffCommentTarget } from "../ui/diff/comments.js"
+import {
+	diffAnchorOnSide,
+	diffCommentLocationKey,
+	pullRequestDiffKey,
+	safeDiffFileIndex,
+	scrollTopForVisibleLine,
+	stackedDiffFileIndexAtLine,
+	verticalDiffAnchor,
+} from "../ui/diff.js"
+import { diffCommentRangeSelection, sameDiffCommentTarget } from "../ui/diff/comments.js"
 
 const DIFF_STICKY_HEADER_LINES = 2
 import type { ChangedFilesModalState, CommentModalState } from "../ui/modals/types.js"
@@ -243,7 +251,28 @@ export const useDiffCommentNavigator = (input: DiffCommentNavigatorInput): DiffC
 
 	const openDiffCommentModal = () => {
 		if (!selectedDiffCommentAnchor || !selectedPullRequest) return
-		setCommentModal(initialCommentModalState)
+		const normalizedRange = diffCommentRangeActive ? diffCommentRangeSelection(diffCommentRangeStartAnchor, selectedDiffCommentAnchor) : null
+		const targetAnchor = normalizedRange?.end ?? selectedDiffCommentAnchor
+		const range = normalizedRange
+			? {
+					start: { line: normalizedRange.start.line, side: normalizedRange.start.side },
+					end: { line: normalizedRange.end.line, side: normalizedRange.end.side },
+				}
+			: null
+		setCommentModal({
+			...initialCommentModalState,
+			target: {
+				kind: "diff",
+				target: {
+					repository: selectedPullRequest.repository,
+					number: selectedPullRequest.number,
+					commitId: selectedPullRequest.headRefOid,
+					diffKey: pullRequestDiffKey(selectedPullRequest),
+					anchor: { path: targetAnchor.path, line: targetAnchor.line, side: targetAnchor.side },
+					range,
+				},
+			},
+		})
 	}
 
 	const openDiffCommentThreadModal = () => {

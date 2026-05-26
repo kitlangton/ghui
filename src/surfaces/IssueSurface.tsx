@@ -8,6 +8,7 @@ import { SplitPane } from "../ui/paneLayout.js"
 import { Divider } from "../ui/primitives.js"
 
 export interface IssueSurfaceProps {
+	readonly showScrollbars: boolean
 	readonly isWideLayout: boolean
 	readonly wideBodyHeight: number
 	readonly contentWidth: number
@@ -25,12 +26,14 @@ export interface IssueSurfaceProps {
 	readonly issueListProps: Omit<ComponentProps<typeof IssueList>, "contentWidth">
 	readonly selectedIssue: IssueItem | null
 	readonly issueListScrollRef: MutableRefObject<ScrollBoxRenderable | null>
+	readonly detailScrollRef: MutableRefObject<ScrollBoxRenderable | null>
 	readonly detailPreviewScrollRef: MutableRefObject<ScrollBoxRenderable | null>
 	readonly detailFullView: boolean
 	readonly onLinkOpen?: (url: string) => void
 }
 
 export const IssueSurface = ({
+	showScrollbars,
 	isWideLayout,
 	wideBodyHeight,
 	contentWidth,
@@ -48,12 +51,18 @@ export const IssueSurface = ({
 	issueListProps,
 	selectedIssue,
 	issueListScrollRef,
+	detailScrollRef,
 	detailPreviewScrollRef,
 	detailFullView,
 	onLinkOpen,
 }: IssueSurfaceProps) => {
 	if (detailFullView) {
-		return <IssueDetailPane issue={selectedIssue} width={contentWidth} height={wideBodyHeight} {...(onLinkOpen ? { onLinkOpen } : {})} />
+		const fullDetailNeedsScroll = selectedIssue !== null && getIssueDetailContentHeight(selectedIssue, contentWidth, wideBodyHeight, DETAIL_BODY_SCROLL_LIMIT) > wideBodyHeight
+		return (
+			<scrollbox ref={detailScrollRef} focusable={false} height={wideBodyHeight} flexGrow={0} verticalScrollbarOptions={{ visible: showScrollbars && fullDetailNeedsScroll }}>
+				<IssueDetailPane issue={selectedIssue} width={contentWidth} height={wideBodyHeight} bodyLineLimit={DETAIL_BODY_SCROLL_LIMIT} {...(onLinkOpen ? { onLinkOpen } : {})} />
+			</scrollbox>
+		)
 	}
 	const wideDetailNeedsScroll = selectedIssue !== null && getIssueDetailContentHeight(selectedIssue, rightPaneWidth, wideBodyHeight, DETAIL_BODY_SCROLL_LIMIT) > wideBodyHeight
 	const narrowDetailNeedsScroll =
@@ -90,7 +99,7 @@ export const IssueSurface = ({
 					<box height={wideBodyHeight} flexDirection="column">
 						{wideFilterBar}
 						{issueListNeedsScroll ? (
-							<scrollbox ref={issueListScrollRef} focusable={false} height={wideIssueRowsHeight} flexGrow={0}>
+							<scrollbox ref={issueListScrollRef} focusable={false} height={wideIssueRowsHeight} flexGrow={0} verticalScrollbarOptions={{ visible: showScrollbars }}>
 								<box flexDirection="column" paddingLeft={sectionPadding}>
 									<IssueList {...issueListProps} contentWidth={leftContentWidth} />
 								</box>
@@ -103,7 +112,13 @@ export const IssueSurface = ({
 					</box>
 				}
 				right={
-					<scrollbox ref={detailPreviewScrollRef} focusable={false} height={wideBodyHeight} flexGrow={0} verticalScrollbarOptions={{ visible: wideDetailNeedsScroll }}>
+					<scrollbox
+						ref={detailPreviewScrollRef}
+						focusable={false}
+						height={wideBodyHeight}
+						flexGrow={0}
+						verticalScrollbarOptions={{ visible: showScrollbars && wideDetailNeedsScroll }}
+					>
 						<IssueDetailPane
 							issue={selectedIssue}
 							width={rightPaneWidth}
@@ -122,7 +137,7 @@ export const IssueSurface = ({
 			<box height={narrowIssueListHeight} flexDirection="column">
 				{narrowFilterBar}
 				{narrowIssueListNeedsScroll ? (
-					<scrollbox ref={issueListScrollRef} focusable={false} height={narrowIssueRowsHeight} flexGrow={0}>
+					<scrollbox ref={issueListScrollRef} focusable={false} height={narrowIssueRowsHeight} flexGrow={0} verticalScrollbarOptions={{ visible: showScrollbars }}>
 						<box flexDirection="column" paddingLeft={sectionPadding} paddingRight={sectionPadding}>
 							<IssueList {...issueListProps} contentWidth={fullscreenContentWidth} />
 						</box>
@@ -134,7 +149,13 @@ export const IssueSurface = ({
 				)}
 			</box>
 			<Divider width={contentWidth} />
-			<scrollbox ref={detailPreviewScrollRef} focusable={false} height={narrowIssueDetailHeight} flexGrow={0} verticalScrollbarOptions={{ visible: narrowDetailNeedsScroll }}>
+			<scrollbox
+				ref={detailPreviewScrollRef}
+				focusable={false}
+				height={narrowIssueDetailHeight}
+				flexGrow={0}
+				verticalScrollbarOptions={{ visible: showScrollbars && narrowDetailNeedsScroll }}
+			>
 				<IssueDetailPane
 					issue={selectedIssue}
 					width={contentWidth}

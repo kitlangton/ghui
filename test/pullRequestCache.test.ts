@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test"
 import type { PullRequestItem } from "../src/domain.ts"
-import { mergeCachedDetails } from "../src/pullRequestCache.ts"
+import { freshPullRequestLoad, mergeCachedDetails } from "../src/pullRequestCache.ts"
 
 const pullRequest = (overrides: Partial<PullRequestItem> = {}): PullRequestItem => ({
 	repository: "owner/repo",
@@ -101,5 +101,15 @@ describe("mergeCachedDetails", () => {
 			body: "",
 			detailLoaded: false,
 		})
+	})
+})
+
+describe("freshPullRequestLoad", () => {
+	test("accepts an authoritative empty refresh over cached rows", () => {
+		const view = { _tag: "Repository", repository: "owner/repo" } as const
+		const previous = { view, data: [pullRequest()], fetchedAt: new Date(), endCursor: "cursor", hasNextPage: false }
+		const next = freshPullRequestLoad(view, { items: [], endCursor: null, hasNextPage: false }, previous, 500)
+
+		expect(next.data).toEqual([])
 	})
 })

@@ -52,7 +52,7 @@ import { diffCommentThreadMapKey } from "../ui/diff/comments.js"
 import { useDiffLineColors } from "../ui/diff/useDiffLineColors.js"
 import { useDiffLocationPreservation } from "../ui/diff/useDiffLocationPreservation.js"
 import { useDiffPrefetch } from "../ui/diff/useDiffPrefetch.js"
-import { themeIdAtom } from "../ui/theme/atoms.js"
+import { showScrollbarsAtom, themeIdAtom } from "../ui/theme/atoms.js"
 import { useThemeModal } from "../ui/theme/useThemeModal.js"
 import { useMergeFlow } from "../ui/merge/useMergeFlow.js"
 import { initialCommentModalState, submitReviewOptions } from "../ui/modals.js"
@@ -113,6 +113,7 @@ export const useAppShell = ({ systemThemeGeneration }: UseAppShellInput) => {
 	const setPullRequestComments = useAtomSet(pullRequestCommentsAtom)
 	const setPullRequestCommentsLoaded = useAtomSet(pullRequestCommentsLoadedAtom)
 	const themeId = useAtomValue(themeIdAtom)
+	const showScrollbars = useAtomValue(showScrollbarsAtom)
 	const {
 		activeModal,
 		closeActiveModal,
@@ -379,7 +380,6 @@ export const useAppShell = ({ systemThemeGeneration }: UseAppShellInput) => {
 		selectedDiffCommentAnchorIndex,
 		selectedDiffCommentAnchor,
 		diffCommentRangeStartAnchor,
-		selectedDiffCommentRange,
 		selectedDiffCommentRangeAnchors,
 		diffCommentRangeActive,
 		selectedDiffCommentLabel,
@@ -696,12 +696,8 @@ export const useAppShell = ({ systemThemeGeneration }: UseAppShellInput) => {
 
 	const { submitCommentModal, openNewIssueCommentModal, openReplyToSelectedComment, openEditSelectedComment, openDeleteSelectedComment, confirmDeleteComment } =
 		useCommentMutations({
-			selectedPullRequest,
 			selectedCommentSubject,
 			selectedCommentKey,
-			selectedDiffCommentAnchor,
-			selectedDiffCommentRange,
-			selectedDiffKey,
 			selectedOrderedComment,
 			selectedComments,
 			username,
@@ -749,15 +745,11 @@ export const useAppShell = ({ systemThemeGeneration }: UseAppShellInput) => {
 		setPullRequestStateModal,
 		closeModal,
 		labelModal,
+		setLabelModal,
 		submitReviewModal,
 		setSubmitReviewModal,
 		submitReviewOptions,
 		reviewStatusAfterSubmit,
-		selectedItemLabels,
-		selectedCommentSubject,
-		selectedIssue,
-		selectedPullRequest,
-		activeWorkspaceSurface,
 		pullRequests,
 		allIssues,
 		closeActiveModal,
@@ -1192,6 +1184,7 @@ export const useAppShell = ({ systemThemeGeneration }: UseAppShellInput) => {
 		derivations,
 		headerProps: { selectedRepository, homeCrumb, breadcrumbSeparatorText, headerLeftWidth, headerRepoWidth, homeCrumbHovered, setHomeCrumbHovered, goUpWorkspaceScope },
 		contentProps: {
+			showScrollbars,
 			activeWorkspaceSurface,
 			commentsViewActive,
 			diffFullView,

@@ -29,7 +29,7 @@ export const RawCheckContextSchema = Schema.Union([
 	}),
 ]).pipe(Schema.toTaggedUnion("__typename"))
 
-const RawAuthorSchema = Schema.Struct({ login: Schema.String })
+const RawAuthorSchema = Schema.NullOr(Schema.Struct({ login: Schema.String }))
 const RawRepositorySchema = Schema.Struct({
 	nameWithOwner: Schema.String,
 	defaultBranchRef: Schema.optionalKey(Schema.NullOr(Schema.Struct({ name: Schema.String }))),

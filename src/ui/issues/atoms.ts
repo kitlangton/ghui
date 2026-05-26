@@ -5,6 +5,7 @@ import { devLog } from "../../devLog.js"
 import type { IssueItem } from "../../domain.js"
 import { type ItemListInput, issueQueryToListInput } from "../../item.js"
 import type { IssueLoad } from "../../issueLoad.js"
+import { freshIssueLoad } from "../../issueCache.js"
 import { type IssueView, initialIssueView, issueViewCacheKey, issueViewMode, issueViewRepository, issueViewToQuery } from "../../issueViews.js"
 import { CacheService } from "../../services/CacheService.js"
 import { GitHubService } from "../../services/GitHubService.js"
@@ -78,23 +79,10 @@ const buildIssuesForView = (view: IssueView): IssuesViewAtom =>
 				}
 				const page = yield* github.listIssuePage(issueQueryToListInput(issueViewToQuery(view), null, pullRequestPageSize))
 				const load = yield* Atom.modify(issueQueueLoadCacheAtom, (cache) => {
-					const existing = cache[cacheKey]
-					// Same guard as pullRequestsAtom: don't overwrite a non-empty
-					// cache entry with an empty fetch, since gh can transiently
-					// return [] for a repo that actually has issues.
-					const looksLikeBogusEmpty = page.items.length === 0 && (existing?.data.length ?? 0) > 0
-					const next: IssueLoad = {
-						view,
-						data: looksLikeBogusEmpty ? existing!.data : page.items,
-						fetchedAt: new Date(),
-						endCursor: looksLikeBogusEmpty ? (existing?.endCursor ?? page.endCursor) : page.endCursor,
-						hasNextPage: looksLikeBogusEmpty ? (existing?.hasNextPage ?? false) : page.hasNextPage,
-					}
+					const next = freshIssueLoad(view, page)
 					return [next, trimIssueQueueLoadCache({ ...cache, [cacheKey]: next })]
 				})
-				// Same SQLite-write guard as pullRequestsAtom — don't persist an
-				// empty queue or it'll come back authoritative next session.
-				if (cacheViewer && load.data.length > 0) yield* cacheService.writeIssueQueue(cacheViewer, load)
+				if (cacheViewer) yield* cacheService.writeIssueQueue(cacheViewer, load)
 				return load
 			}),
 		)

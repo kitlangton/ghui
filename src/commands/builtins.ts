@@ -4,21 +4,18 @@ import { BrowserOpener } from "../services/BrowserOpener.js"
 import { Clipboard } from "../services/Clipboard.js"
 import { GitHubService } from "../services/GitHubService.js"
 import { saveStoredDiffWhitespaceMode } from "../themeStore.js"
-import { commentsViewActiveAtom } from "../ui/comments/atoms.js"
+import { commentsViewActiveAtom, selectedCommentKeyAtom } from "../ui/comments/atoms.js"
 import { detailFullViewAtom, detailScrollOffsetAtom } from "../ui/detail/atoms.js"
 import { diffCommentRangeStartIndexAtom, diffFullViewAtom, diffRenderViewAtom, diffWhitespaceModeAtom, diffWrapModeAtom } from "../ui/diff/atoms.js"
 import { filterDraftAtom, filterModeAtom, filterQueryAtom } from "../ui/filter/atoms.js"
 import { selectedIssueAtom } from "../ui/issues/atoms.js"
-import { selectedIssueIndexAtom } from "../ui/listSelection/atoms.js"
-import { activeIssueViewAtom } from "../ui/issues/atoms.js"
 import { activeModalAtom } from "../ui/modals/atoms.js"
 import { submitReviewOptions } from "../ui/modals/shared.js"
 import { initialCommandPaletteState, initialCommentModalState, initialOpenRepositoryModalState, Modal } from "../ui/modals/types.js"
 import { noticeAtom } from "../ui/notice/atoms.js"
 import type { PullRequestUserQueueMode } from "../domain.js"
 import { pullRequestQueueModes } from "../domain.js"
-import { activeViewAtom, labelCacheAtom, selectedPullRequestAtom, selectedRepositoryAtom } from "../ui/pullRequests/atoms.js"
-import { issueViewForPullRequestView } from "../viewSync.js"
+import { labelCacheAtom, selectedPullRequestAtom, selectedRepositoryAtom } from "../ui/pullRequests/atoms.js"
 import { workspaceSurfaceAtom, workspaceTabSurfacesAtom } from "../workspace/atoms.js"
 import { type WorkspaceSurface, workspaceSurfaceLabels, workspaceSurfaces } from "../workspaceSurfaces.js"
 import {
@@ -112,7 +109,6 @@ function switchWorkspaceSurfaceEffect(surface: WorkspaceSurface) {
 		const current = yield* Atom.get(workspaceSurfaceAtom)
 		if (current === surface) return
 		yield* Atom.set(workspaceSurfaceAtom, surface)
-		yield* Atom.set(selectedIssueIndexAtom, 0)
 		yield* Atom.set(detailFullViewAtom, false)
 		yield* Atom.set(diffFullViewAtom, false)
 		yield* Atom.set(commentsViewActiveAtom, false)
@@ -121,10 +117,6 @@ function switchWorkspaceSurfaceEffect(surface: WorkspaceSurface) {
 		const query = yield* Atom.get(filterQueryAtom)
 		yield* Atom.set(filterDraftAtom, query)
 		yield* Atom.set(noticeAtom, null)
-		// Sync the issue view's scope to the PR view's — otherwise pressing
-		// the Issues tab from within a repo can surface a stale repo's issues.
-		const pullRequestView = yield* Atom.get(activeViewAtom)
-		yield* Atom.set(activeIssueViewAtom, issueViewForPullRequestView(pullRequestView))
 	})
 }
 
@@ -386,8 +378,16 @@ export const globalCommands: readonly CommandDefinition[] = [
 		disabledReason: noSelectedItemReasonAtom,
 		run: Effect.gen(function* () {
 			const subject = yield* Atom.get(selectedCommentSubjectAtom)
-			if (!subject) return
-			yield* Atom.set(activeModalAtom, Modal.Comment({ ...initialCommentModalState, target: { kind: "issue" } }))
+			const key = yield* Atom.get(selectedCommentKeyAtom)
+			if (!subject || !key) return
+			const surface = yield* Atom.get(workspaceSurfaceAtom)
+			yield* Atom.set(
+				activeModalAtom,
+				Modal.Comment({
+					...initialCommentModalState,
+					target: { kind: "issue", subject: { repository: subject.repository, number: subject.number, key, issueUrl: surface === "issues" ? subject.url : null } },
+				}),
+			)
 		}),
 	}),
 	defineCommand({
@@ -401,13 +401,15 @@ export const globalCommands: readonly CommandDefinition[] = [
 			const subject = yield* Atom.get(selectedCommentSubjectAtom)
 			if (!subject) return
 			const repository = subject.repository
+			const surface = yield* Atom.get(workspaceSurfaceAtom)
+			const target = { kind: surface === "issues" ? ("issue" as const) : ("pullRequest" as const), repository, number: subject.number, url: subject.url, labels: subject.labels }
 			const cache = yield* Atom.get(labelCacheAtom)
 			const cached = cache[repository]
 			if (cached) {
-				yield* Atom.set(activeModalAtom, Modal.Label({ repository, query: "", selectedIndex: 0, availableLabels: cached, loading: false }))
+				yield* Atom.set(activeModalAtom, Modal.Label({ repository, target, query: "", selectedIndex: 0, availableLabels: cached, loading: false }))
 				return
 			}
-			yield* Atom.set(activeModalAtom, Modal.Label({ repository, query: "", selectedIndex: 0, availableLabels: [], loading: true }))
+			yield* Atom.set(activeModalAtom, Modal.Label({ repository, target, query: "", selectedIndex: 0, availableLabels: [], loading: true }))
 			yield* GitHubService.use((github) => github.listRepoLabels(repository)).pipe(
 				Effect.flatMap((labels) =>
 					Effect.gen(function* () {
@@ -479,6 +481,20 @@ export const globalCommands: readonly CommandDefinition[] = [
 				Effect.tap(() => Atom.set(noticeAtom, "Issue metadata copied")),
 				Effect.catch(flashErrorEffect),
 			)
+		}),
+	}),
+	defineCommand({
+		id: "issue.open-browser",
+		title: "Open issue in browser",
+		scope: "Issue",
+		subtitle: selectedIssueLabelAtom,
+		shortcut: "o",
+		keywords: ["github", "web"],
+		disabledReason: issueSelectedReasonAtom,
+		run: Effect.gen(function* () {
+			const issue = yield* Atom.get(selectedIssueAtom)
+			if (!issue) return
+			yield* BrowserOpener.use((opener) => opener.openUrl(issue.url)).pipe(Effect.catch(flashErrorEffect))
 		}),
 	}),
 

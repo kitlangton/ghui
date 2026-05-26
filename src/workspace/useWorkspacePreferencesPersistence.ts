@@ -50,7 +50,8 @@ export const useWorkspacePreferencesPersistence = ({
 				setLoadedViewer(username)
 			})
 			.catch(() => {
-				if (!cancelled) setLoadedViewer(username)
+				// Do not enable writes after a failed read: writing the startup
+				// defaults here would overwrite persisted favorites and recents.
 			})
 		return () => {
 			cancelled = true

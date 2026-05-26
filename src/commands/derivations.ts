@@ -41,9 +41,11 @@ export const noPullRequestReasonAtom = Atom.make((get): string | null => {
 })
 
 export const noOpenPullRequestReasonAtom = Atom.make((get): string | null => {
+	const surface = get(pullRequestSurfaceReasonAtom)
+	if (surface !== null) return surface
 	const pr = get(selectedPullRequestAtom)
 	if (pr) return pr.state === "open" ? null : "Pull request is not open."
-	return get(noPullRequestReasonAtom)
+	return "Select a pull request first."
 })
 
 export const noSelectedItemReasonAtom = Atom.make((get): string | null => {

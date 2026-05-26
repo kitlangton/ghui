@@ -27,6 +27,7 @@ export type {
 	CommentThreadModalState,
 	DeleteCommentModalState,
 	FilterModalState,
+	FrozenCommentSubject,
 	LabelModalState,
 	MergeModalState,
 	ModalState,

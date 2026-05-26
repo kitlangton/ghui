@@ -78,13 +78,18 @@ Example:
 ```json
 {
 	"theme": "system",
-	"systemThemeAutoReload": true
+	"systemThemeAutoReload": true,
+	"showScrollbars": false
 }
 ```
 
 `systemThemeAutoReload` defaults to `false`. Set it to `true` to let external
 theme reload signals update the active system theme palette while ghui is
 running.
+
+Scrollable panes hide their scrollbar rails by default. Set `showScrollbars`
+to `true` to display them while retaining the same keyboard and mouse scrolling
+behavior.
 
 ## Keybindings
 

@@ -110,6 +110,17 @@ describe("GitHubService list queries", () => {
 		expect(isGitHubRateLimitError({ detail: "API rate limit already exceeded for user ID 1." })).toBe(true)
 		expect(isGitHubRateLimitError({ detail: "Repository not found" })).toBe(false)
 	})
+
+	test("loads large repository label sets for the label picker", async () => {
+		const recorder: RecordedCall[] = []
+		const layer = GitHubService.layerNoDeps.pipe(Layer.provide(fakeCommandRunner("[]", recorder)))
+		await runWith(
+			GitHubService.use((github) => github.listRepoLabels("owner/repo")),
+			layer,
+		)
+
+		expect(recorder[0]!.args).toContain("1000")
+	})
 })
 
 describe("GitHubService comment edit/delete", () => {

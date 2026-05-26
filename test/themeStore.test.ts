@@ -3,7 +3,7 @@ import { mkdtemp, rm, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { Effect } from "effect"
-import { loadStoredSystemThemeAutoReload } from "../src/themeStore.js"
+import { loadStoredShowScrollbars, loadStoredSystemThemeAutoReload } from "../src/themeStore.js"
 
 const originalConfigDir = process.env.GHUI_CONFIG_DIR
 const tempDirs: string[] = []
@@ -30,6 +30,7 @@ const useTempConfig = async (content?: string) => {
 }
 
 const loadSystemThemeAutoReload = () => Effect.runPromise(loadStoredSystemThemeAutoReload)
+const loadShowScrollbars = () => Effect.runPromise(loadStoredShowScrollbars)
 
 describe("loadStoredSystemThemeAutoReload", () => {
 	test("defaults to disabled", async () => {
@@ -54,5 +55,25 @@ describe("loadStoredSystemThemeAutoReload", () => {
 		await useTempConfig('{"systemThemeAutoReload":"true"}')
 
 		expect(await loadSystemThemeAutoReload()).toBe(false)
+	})
+})
+
+describe("loadStoredShowScrollbars", () => {
+	test("defaults to hidden", async () => {
+		await useTempConfig()
+
+		expect(await loadShowScrollbars()).toBe(false)
+	})
+
+	test("shows scrollbars only when explicitly enabled", async () => {
+		await useTempConfig('{"showScrollbars":true}')
+
+		expect(await loadShowScrollbars()).toBe(true)
+	})
+
+	test("ignores non-boolean values", async () => {
+		await useTempConfig('{"showScrollbars":"true"}')
+
+		expect(await loadShowScrollbars()).toBe(false)
 	})
 })

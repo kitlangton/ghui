@@ -64,16 +64,17 @@ export const useIssueListDerivations = ({
 	hasMoreIssues,
 }: UseIssueListDerivationsInput): IssueListDerivations => {
 	const allIssues = useMemo(() => {
+		const inScope = (issue: IssueItem) => selectedRepository === null || issue.repository === selectedRepository
 		const seen = new Set<string>()
 		const mapped: IssueItem[] = []
-		for (const issue of rawIssues) {
+		for (const issue of rawIssues.filter(inScope)) {
 			seen.add(issue.url)
 			mapped.push(issueOverrides[issue.url] ?? issue)
 		}
-		const orphans = Object.values(issueOverrides).filter((issue) => !seen.has(issue.url) && issue.state === "closed")
+		const orphans = Object.values(issueOverrides).filter((issue) => inScope(issue) && !seen.has(issue.url) && issue.state === "closed")
 		const merged = [...mapped, ...orphans].sort((left, right) => right.updatedAt.getTime() - left.updatedAt.getTime())
 		return orderIssuesForDisplay(merged, showIssueRepositoryGroups)
-	}, [rawIssues, issueOverrides, showIssueRepositoryGroups])
+	}, [rawIssues, issueOverrides, showIssueRepositoryGroups, selectedRepository])
 
 	const issues = useMemo(() => {
 		if (activeWorkspaceSurface !== "issues" || visibleFilterText.trim().length === 0) return allIssues
@@ -81,7 +82,7 @@ export const useIssueListDerivations = ({
 		return orderIssuesForDisplay(filtered, showIssueRepositoryGroups)
 	}, [activeWorkspaceSurface, allIssues, visibleFilterText, showIssueRepositoryGroups])
 
-	const issuesStatus: LoadStatus = selectedRepository === null ? "ready" : issuesResult.waiting ? "loading" : AsyncResult.isFailure(issuesResult) ? "error" : "ready"
+	const issuesStatus: LoadStatus = issuesResult.waiting && rawIssues.length === 0 ? "loading" : AsyncResult.isFailure(issuesResult) && rawIssues.length === 0 ? "error" : "ready"
 	const issuesError = AsyncResult.isFailure(issuesResult) ? errorMessage(Cause.squash(issuesResult.cause)) : null
 	const selectedIssue = issues[Math.max(0, Math.min(selectedIssueIndex, issues.length - 1))] ?? null
 	const filterActive = activeWorkspaceSurface === "issues" && visibleFilterText.trim().length > 0

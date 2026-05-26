@@ -181,6 +181,10 @@ describe("parsePullRequestSummary", () => {
 		const pr = parsePullRequestSummary({ ...baseSummary, closedAt: "0001-01-01T00:00:00Z" })
 		expect(pr.closedAt).toBeNull()
 	})
+
+	test("keeps pull requests from deleted authors displayable", () => {
+		expect(parsePullRequestSummary({ ...baseSummary, author: null }).author).toBe("unknown")
+	})
 })
 
 const baseDetail: RawPullRequestNode = {
@@ -231,6 +235,10 @@ describe("parseIssueSearchNode", () => {
 	test("state defaults to open when not 'closed'", () => {
 		expect(parseIssueSearchNode(issue).state).toBe("open")
 		expect(parseIssueSearchNode({ ...issue, state: "CLOSED" }).state).toBe("closed")
+	})
+
+	test("keeps issues from deleted authors displayable", () => {
+		expect(parseIssueSearchNode({ ...issue, author: null }).author).toBe("unknown")
 	})
 })
 

@@ -13,15 +13,11 @@ export interface UseItemModalActionsInput {
 	readonly setPullRequestStateModal: (next: PullRequestStateModalState | ((prev: PullRequestStateModalState) => PullRequestStateModalState)) => void
 	readonly closeModal: CloseModalState
 	readonly labelModal: LabelModalState
+	readonly setLabelModal: (next: LabelModalState | ((prev: LabelModalState) => LabelModalState)) => void
 	readonly submitReviewModal: SubmitReviewModalState
 	readonly setSubmitReviewModal: (next: SubmitReviewModalState | ((prev: SubmitReviewModalState) => SubmitReviewModalState)) => void
 	readonly submitReviewOptions: readonly SubmitReviewOption[]
 	readonly reviewStatusAfterSubmit: Readonly<Record<string, PullRequestItem["reviewStatus"] | null>>
-	readonly selectedItemLabels: readonly PullRequestLabel[]
-	readonly selectedCommentSubject: IssueItem | PullRequestItem | null
-	readonly selectedIssue: IssueItem | null
-	readonly selectedPullRequest: PullRequestItem | null
-	readonly activeWorkspaceSurface: string
 	readonly pullRequests: readonly PullRequestItem[]
 	readonly allIssues: readonly IssueItem[]
 	readonly closeActiveModal: () => void
@@ -63,15 +59,11 @@ export const useItemModalActions = (input: UseItemModalActionsInput): ItemModalA
 		setPullRequestStateModal,
 		closeModal,
 		labelModal,
+		setLabelModal,
 		submitReviewModal,
 		setSubmitReviewModal,
 		submitReviewOptions,
 		reviewStatusAfterSubmit,
-		selectedItemLabels,
-		selectedCommentSubject,
-		selectedIssue,
-		selectedPullRequest,
-		activeWorkspaceSurface,
 		pullRequests,
 		allIssues,
 		closeActiveModal,
@@ -146,29 +138,25 @@ export const useItemModalActions = (input: UseItemModalActionsInput): ItemModalA
 	}
 
 	const toggleLabelAtIndex = () => {
-		if (!selectedCommentSubject) return
+		const target = labelModal.target
+		if (!target) return
 		const filtered = filterLabels(labelModal.availableLabels, labelModal.query)
 		const label = filtered[labelModal.selectedIndex]
 		if (!label) return
-		const isIssue = activeWorkspaceSurface === "issues"
-		const isActive = selectedItemLabels.some((l) => l.name.toLowerCase() === label.name.toLowerCase())
-		const previousPullRequest = isIssue ? null : selectedPullRequest
-		const previousIssue = isIssue ? selectedIssue : null
+		const isIssue = target.kind === "issue"
+		const isActive = target.labels.some((l) => l.name.toLowerCase() === label.name.toLowerCase())
 		const updateSelectedLabels = (labels: readonly PullRequestLabel[]) => {
-			if (isIssue && selectedIssue) {
-				updateIssue(selectedIssue.url, (issue) => ({ ...issue, labels }))
-			} else if (selectedPullRequest) {
-				updatePullRequest(selectedPullRequest.url, (pr) => ({ ...pr, labels }))
-			}
+			if (isIssue) updateIssue(target.url, (issue) => ({ ...issue, labels }))
+			else updatePullRequest(target.url, (pr) => ({ ...pr, labels }))
+			setLabelModal((current) => (current.target?.url === target.url ? { ...current, target: { ...target, labels } } : current))
 		}
 		const restorePreviousLabels = () => {
-			if (previousIssue) updateIssue(previousIssue.url, () => previousIssue)
-			if (previousPullRequest) updatePullRequest(previousPullRequest.url, () => previousPullRequest)
+			updateSelectedLabels(target.labels)
 		}
-		const { repository, number } = selectedCommentSubject
+		const { repository, number } = target
 
 		if (isActive) {
-			updateSelectedLabels(selectedItemLabels.filter((l) => l.name.toLowerCase() !== label.name.toLowerCase()))
+			updateSelectedLabels(target.labels.filter((l) => l.name.toLowerCase() !== label.name.toLowerCase()))
 			const removeLabel = isIssue ? removeIssueLabel : removePullRequestLabel
 			void removeLabel({ repository, number, label: label.name })
 				.then(() => flashNotice(`Removed ${label.name} from #${number}`))
@@ -177,7 +165,7 @@ export const useItemModalActions = (input: UseItemModalActionsInput): ItemModalA
 					flashNotice(errorMessage(error))
 				})
 		} else {
-			updateSelectedLabels([...selectedItemLabels, { name: label.name, color: label.color }])
+			updateSelectedLabels([...target.labels, { name: label.name, color: label.color }])
 			const addLabel = isIssue ? addIssueLabel : addPullRequestLabel
 			void addLabel({ repository, number, label: label.name })
 				.then(() => flashNotice(`Added ${label.name} to #${number}`))

@@ -152,7 +152,7 @@ export const parsePullRequestSummary = (item: RawPullRequestSummaryNode): PullRe
 	const checkInfo = getCheckInfoFromContexts(item.statusCheckRollup?.contexts.nodes ?? [])
 	return {
 		repository: item.repository.nameWithOwner,
-		author: item.author.login,
+		author: item.author?.login ?? "unknown",
 		headRefOid: item.headRefOid,
 		headRefName: item.headRefName,
 		baseRefName: item.baseRefName,
@@ -203,7 +203,7 @@ export const parseIssueSearchNode = (item: RawIssueSearchNode): IssueItem => ({
 	state: item.state.toLowerCase() === "closed" ? "closed" : "open",
 	title: item.title,
 	body: item.body,
-	author: item.author.login,
+	author: item.author?.login ?? "unknown",
 	labels: item.labels.nodes.map((label) => ({
 		name: label.name,
 		color: label.color ? `#${label.color.replace(/^#/, "")}` : null,

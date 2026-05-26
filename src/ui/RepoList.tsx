@@ -156,6 +156,7 @@ export const RepoDetailPane = ({
 	height,
 	descriptionLineLimit = 1,
 	descriptionScrollRef,
+	showScrollbar = false,
 }: {
 	repository: RepositoryListItem | null
 	details: RepositoryDetails | null
@@ -163,6 +164,7 @@ export const RepoDetailPane = ({
 	height: number
 	descriptionLineLimit?: number
 	descriptionScrollRef?: RefObject<ScrollBoxRenderable | null>
+	showScrollbar?: boolean
 }) => {
 	const contentWidth = paneContentWidth(width)
 	if (!repository) {
@@ -236,7 +238,7 @@ export const RepoDetailPane = ({
 				focusable={false}
 				height={descriptionHeight}
 				flexGrow={0}
-				verticalScrollbarOptions={{ visible: descriptionLines.length > descriptionHeight }}
+				verticalScrollbarOptions={{ visible: showScrollbar && descriptionLines.length > descriptionHeight }}
 			>
 				<box flexDirection="column">
 					{descriptionLines.map((line, index) => (

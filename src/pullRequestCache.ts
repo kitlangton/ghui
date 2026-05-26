@@ -1,6 +1,7 @@
 import type { PullRequestItem } from "./domain.js"
 import type { ItemPage } from "./item.js"
 import type { PullRequestLoad } from "./pullRequestLoad.js"
+import type { PullRequestView } from "./pullRequestViews.js"
 
 // When a fresh summary page arrives, fold in fields that only the detail
 // query carries (body, labels, line counts, status checks) from a cached
@@ -37,6 +38,23 @@ export const appendPullRequestPage = (existing: readonly PullRequestItem[], inco
 	const seen = new Set(existing.map((pullRequest) => pullRequest.url))
 	const mergedIncoming = mergeCachedDetails(incoming, existing)
 	return [...existing, ...mergedIncoming.filter((pullRequest) => !seen.has(pullRequest.url))]
+}
+
+export const freshPullRequestLoad = (
+	view: PullRequestView,
+	page: ItemPage<PullRequestItem>,
+	existing: PullRequestLoad | undefined,
+	prFetchLimit: number,
+	fetchedAt: Date = new Date(),
+): PullRequestLoad => {
+	const data = mergeCachedDetails(page.items, existing?.data)
+	return {
+		view,
+		data,
+		fetchedAt,
+		endCursor: page.endCursor,
+		hasNextPage: page.hasNextPage && data.length < prFetchLimit,
+	}
 }
 
 // Compute the next PullRequestLoad after a load-more page lands.

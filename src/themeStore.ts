@@ -13,6 +13,7 @@ interface StoredConfig {
 	readonly lightTheme?: unknown
 	readonly diffWhitespaceMode?: unknown
 	readonly systemThemeAutoReload?: unknown
+	readonly showScrollbars?: unknown
 }
 
 const configDirectory = () => {
@@ -65,6 +66,14 @@ export const loadStoredSystemThemeAutoReload: Effect.Effect<boolean> = Effect.ca
 	Effect.tryPromise(async () => {
 		const config = await readStoredConfig()
 		return typeof config.systemThemeAutoReload === "boolean" ? config.systemThemeAutoReload : false
+	}),
+	() => Effect.succeed(false),
+)
+
+export const loadStoredShowScrollbars: Effect.Effect<boolean> = Effect.catchCause(
+	Effect.tryPromise(async () => {
+		const config = await readStoredConfig()
+		return typeof config.showScrollbars === "boolean" ? config.showScrollbars : false
 	}),
 	() => Effect.succeed(false),
 )

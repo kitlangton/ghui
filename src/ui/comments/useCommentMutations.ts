@@ -1,4 +1,4 @@
-import type { CreatePullRequestCommentInput, IssueItem, PullRequestComment, PullRequestItem, PullRequestReviewComment } from "../../domain.js"
+import type { CreatePullRequestCommentInput, IssueItem, PullRequestComment, PullRequestReviewComment } from "../../domain.js"
 import { errorMessage } from "../../errors.js"
 import { quotedReplyBody } from "../comments.js"
 import {
@@ -11,16 +11,10 @@ import {
 	replyToReviewCommentAtom,
 } from "./atoms.js"
 import { useAtomSet } from "@effect/atom-react"
-import type { CommentModalState, DeleteCommentModalState } from "../modals.js"
+import type { CommentModalState, DeleteCommentModalState, FrozenCommentSubject } from "../modals.js"
 import { initialCommentModalState } from "../modals.js"
-import { pullRequestDiffKey, type StackedDiffCommentAnchor } from "../diff.js"
 
 const reviewCommentAsPullRequestComment = (comment: PullRequestReviewComment): PullRequestComment => ({ _tag: "review-comment", ...comment })
-
-type DiffCommentRangeSelection = {
-	readonly start: StackedDiffCommentAnchor
-	readonly end: StackedDiffCommentAnchor
-}
 
 /** Selected comment must belong to the viewer and have a server id (not the
  * optimistic `local:` prefix) before edit/delete affordances are offered. */
@@ -45,12 +39,8 @@ const findReviewThreadRootId = (comments: readonly PullRequestComment[], comment
 
 export interface UseCommentMutationsInput {
 	// Selection / context
-	readonly selectedPullRequest: PullRequestItem | null
 	readonly selectedCommentSubject: { readonly repository: string; readonly number: number } | null
 	readonly selectedCommentKey: string | null
-	readonly selectedDiffCommentAnchor: StackedDiffCommentAnchor | null
-	readonly selectedDiffCommentRange: DiffCommentRangeSelection | null
-	readonly selectedDiffKey: string | null
 	readonly selectedOrderedComment: PullRequestComment | null
 	readonly selectedComments: readonly PullRequestComment[]
 	readonly username: string | null
@@ -112,12 +102,8 @@ export const useCommentMutations = (input: UseCommentMutationsInput): UseComment
 	const deleteReviewComment = useAtomSet(deleteReviewCommentAtom, { mode: "promise" })
 
 	const {
-		selectedPullRequest,
 		selectedCommentSubject,
 		selectedCommentKey,
-		selectedDiffCommentAnchor,
-		selectedDiffCommentRange,
-		selectedDiffKey,
 		selectedOrderedComment,
 		selectedComments,
 		username,
@@ -175,13 +161,25 @@ export const useCommentMutations = (input: UseCommentMutationsInput): UseComment
 		return body
 	}
 
+	const frozenCommentSubject = (): FrozenCommentSubject | null =>
+		selectedCommentSubject && selectedCommentKey
+			? {
+					repository: selectedCommentSubject.repository,
+					number: selectedCommentSubject.number,
+					key: selectedCommentKey,
+					issueUrl: activeWorkspaceSurface === "issues" ? (selectedIssue?.url ?? null) : null,
+				}
+			: null
+
 	const openNewIssueCommentModal = () => {
-		if (!selectedCommentSubject) return
-		setCommentModal({ ...initialCommentModalState, target: { kind: "issue" } })
+		const subject = frozenCommentSubject()
+		if (!subject) return
+		setCommentModal({ ...initialCommentModalState, target: { kind: "issue", subject } })
 	}
 
 	const openReplyToSelectedComment = () => {
-		if (!selectedCommentSubject) return
+		const subject = frozenCommentSubject()
+		if (!subject) return
 		const comment = selectedOrderedComment
 		if (!comment) {
 			flashNotice("No comment selected")
@@ -191,25 +189,26 @@ export const useCommentMutations = (input: UseCommentMutationsInput): UseComment
 			// Issue comments don't thread on GitHub; pre-fill a quote so the reply
 			// reads as a response in the chronological list.
 			const quote = quotedReplyBody(comment.author, comment.body)
-			setCommentModal({ ...initialCommentModalState, body: quote, cursor: quote.length, target: { kind: "issue" } })
+			setCommentModal({ ...initialCommentModalState, body: quote, cursor: quote.length, target: { kind: "issue", subject } })
 			return
 		}
 		// GitHub /comments/{id}/replies wants the *thread root* id; replying via a
 		// reply id can return "parent comment not found".
 		const rootId = findReviewThreadRootId(selectedComments, comment.id)
 		const anchor = `${comment.path}:${comment.line}`
-		setCommentModal({ ...initialCommentModalState, target: { kind: "reply", inReplyTo: rootId, anchorLabel: anchor } })
+		setCommentModal({ ...initialCommentModalState, target: { kind: "reply", subject, inReplyTo: rootId, anchorLabel: anchor } })
 	}
 
 	const submitDiffComment = () => {
-		if (!selectedPullRequest || !selectedDiffCommentAnchor) return
+		if (commentModal.target.kind !== "diff" || !commentModal.target.target) return
 		const body = requireCommentBody()
 		if (body === null) return
 
-		const targetRange = selectedDiffCommentRange
-		const target = targetRange?.end ?? selectedDiffCommentAnchor
-		const key = pullRequestDiffKey(selectedPullRequest)
-		const threadKey = selectedDiffKey ? diffCommentThreadMapKey(selectedDiffKey, target) : null
+		const frozen = commentModal.target.target
+		const targetRange = frozen.range
+		const target = frozen.anchor
+		const key = frozen.diffKey
+		const threadKey = diffCommentThreadMapKey(frozen.diffKey, target)
 		const optimisticReview = {
 			id: `local:${Date.now()}`,
 			path: target.path,
@@ -223,9 +222,9 @@ export const useCommentMutations = (input: UseCommentMutationsInput): UseComment
 		} satisfies PullRequestReviewComment
 		const rangeInput = targetRange && targetRange.start.line !== targetRange.end.line ? { startLine: targetRange.start.line, startSide: targetRange.start.side } : {}
 		const apiInput = {
-			repository: selectedPullRequest.repository,
-			number: selectedPullRequest.number,
-			commitId: selectedPullRequest.headRefOid,
+			repository: frozen.repository,
+			number: frozen.number,
+			commitId: frozen.commitId,
 			path: target.path,
 			line: target.line,
 			side: target.side,
@@ -269,35 +268,33 @@ export const useCommentMutations = (input: UseCommentMutationsInput): UseComment
 	}
 
 	const submitIssueComment = () => {
-		if (!selectedCommentSubject || !selectedCommentKey) return
+		if (commentModal.target.kind !== "issue" || !commentModal.target.subject) return
 		const body = requireCommentBody()
 		if (body === null) return
-		const { repository, number } = selectedCommentSubject
-		const selectedIssueUrl = activeWorkspaceSurface === "issues" ? selectedIssue?.url : null
+		const { repository, number, key, issueUrl } = commentModal.target.subject
 		submitOptimisticComment({
-			key: selectedCommentKey,
+			key,
 			optimistic: { _tag: "comment", id: `local:issue:${Date.now()}`, author: username ?? "you", body, createdAt: new Date(), url: null },
 			postingMessage: `Posting comment on #${number}`,
 			successMessage: `Commented on #${number}`,
 			request: () => createPullRequestIssueComment({ repository, number, body }),
 			onOptimistic: () => {
-				if (selectedIssueUrl) updateIssue(selectedIssueUrl, (issue) => ({ ...issue, commentCount: issue.commentCount + 1 }))
+				if (issueUrl) updateIssue(issueUrl, (issue) => ({ ...issue, commentCount: issue.commentCount + 1 }))
 			},
 			onRevert: () => {
-				if (selectedIssueUrl) updateIssue(selectedIssueUrl, (issue) => ({ ...issue, commentCount: Math.max(0, issue.commentCount - 1) }))
+				if (issueUrl) updateIssue(issueUrl, (issue) => ({ ...issue, commentCount: Math.max(0, issue.commentCount - 1) }))
 			},
 		})
 	}
 
 	const submitReplyComment = () => {
-		if (!selectedPullRequest || commentModal.target.kind !== "reply") return
+		if (commentModal.target.kind !== "reply") return
 		const body = requireCommentBody()
 		if (body === null) return
-		const { repository, number } = selectedPullRequest
+		const { repository, number, key } = commentModal.target.subject
 		const target = commentModal.target
 		const parent = selectedComments.find((entry) => entry._tag === "review-comment" && entry.id === target.inReplyTo)
 		const reviewParent = parent?._tag === "review-comment" ? parent : null
-		const key = pullRequestDiffKey(selectedPullRequest)
 		const threadKey = reviewParent ? diffCommentThreadMapKey(key, reviewParent) : null
 		submitOptimisticComment({
 			key,
@@ -341,33 +338,34 @@ export const useCommentMutations = (input: UseCommentMutationsInput): UseComment
 	}
 
 	const openEditSelectedComment = () => {
-		if (!selectedCommentSubject) return
+		const subject = frozenCommentSubject()
+		if (!subject) return
 		const comment = selectedOrderedComment
 		if (!canEditComment(comment, username)) {
 			flashNotice(comment ? "Can't edit this comment" : "No comment selected")
 			return
 		}
-		const anchorLabel = comment._tag === "review-comment" ? `Editing ${comment.path}:${comment.line}` : `Editing comment on #${selectedCommentSubject.number}`
+		const anchorLabel = comment._tag === "review-comment" ? `Editing ${comment.path}:${comment.line}` : `Editing comment on #${subject.number}`
 		setCommentModal({
 			body: comment.body,
 			cursor: comment.body.length,
 			error: null,
-			target: { kind: "edit", commentId: comment.id, commentTag: comment._tag, anchorLabel },
+			target: { kind: "edit", subject, commentId: comment.id, commentTag: comment._tag, anchorLabel },
 		})
 	}
 
 	const submitEditComment = () => {
-		if (!selectedCommentSubject || !selectedCommentKey || commentModal.target.kind !== "edit") return
+		if (commentModal.target.kind !== "edit") return
 		const body = requireCommentBody()
 		if (body === null) return
 		const target = commentModal.target
-		const key = selectedCommentKey
+		const key = target.subject.key
 		const previous = (pullRequestComments[key] ?? []).find((entry) => entry.id === target.commentId)
 		if (!previous) {
 			setCommentModal((current) => ({ ...current, error: "Comment not found in cache." }))
 			return
 		}
-		const repository = selectedCommentSubject.repository
+		const repository = target.subject.repository
 
 		const previousReview = previous._tag === "review-comment" ? previous : null
 		const threadKey = previousReview ? diffCommentThreadMapKey(key, previousReview) : null
@@ -429,7 +427,8 @@ export const useCommentMutations = (input: UseCommentMutationsInput): UseComment
 	}
 
 	const openDeleteSelectedComment = () => {
-		if (!selectedCommentSubject) return
+		const subject = frozenCommentSubject()
+		if (!subject) return
 		const comment = selectedOrderedComment
 		if (!canEditComment(comment, username)) {
 			flashNotice(comment ? "Can't delete this comment" : "No comment selected")
@@ -438,6 +437,7 @@ export const useCommentMutations = (input: UseCommentMutationsInput): UseComment
 		const firstLine = comment.body.split("\n").find((line) => line.trim().length > 0) ?? ""
 		const preview = firstLine.length > 80 ? `${firstLine.slice(0, 79)}…` : firstLine
 		setDeleteCommentModal({
+			subject,
 			commentId: comment.id,
 			commentTag: comment._tag,
 			author: comment.author,
@@ -448,9 +448,9 @@ export const useCommentMutations = (input: UseCommentMutationsInput): UseComment
 	}
 
 	const confirmDeleteComment = () => {
-		if (!selectedCommentSubject || !selectedCommentKey || deleteCommentModal.running) return
+		if (!deleteCommentModal.subject || deleteCommentModal.running) return
 		const target = { commentId: deleteCommentModal.commentId, commentTag: deleteCommentModal.commentTag }
-		const key = selectedCommentKey
+		const key = deleteCommentModal.subject.key
 		const list = pullRequestComments[key] ?? []
 		const previousIndex = list.findIndex((entry) => entry.id === target.commentId)
 		const previous = previousIndex >= 0 ? list[previousIndex] : undefined
@@ -462,8 +462,8 @@ export const useCommentMutations = (input: UseCommentMutationsInput): UseComment
 		const threadKey = previousReview ? diffCommentThreadMapKey(key, previousReview) : null
 		const previousThread = threadKey ? (diffCommentThreads[threadKey] ?? []) : []
 		const previousThreadIndex = previousReview ? previousThread.findIndex((entry) => entry.id === previous.id) : -1
-		const repository = selectedCommentSubject.repository
-		const selectedIssueUrl = activeWorkspaceSurface === "issues" ? selectedIssue?.url : null
+		const repository = deleteCommentModal.subject.repository
+		const selectedIssueUrl = deleteCommentModal.subject.issueUrl
 
 		setPullRequestComments((current) => ({
 			...current,

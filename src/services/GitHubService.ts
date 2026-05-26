@@ -437,7 +437,7 @@ export class GitHubService extends Context.Service<
 				ghVoid("toggleDraftStatus", ["pr", "ready", String(number), "--repo", repository, ...(isDraft ? [] : ["--undo"])])
 
 			const listRepoLabels = (repository: string) =>
-				ghJson("listRepoLabels", RepoLabelsResponseSchema, ["label", "list", "--repo", repository, "--json", "name,color", "--limit", "100"]).pipe(
+				ghJson("listRepoLabels", RepoLabelsResponseSchema, ["label", "list", "--repo", repository, "--json", "name,color", "--limit", "1000"]).pipe(
 					Effect.map((labels) => labels.map((label) => ({ name: label.name, color: `#${label.color}` }))),
 				)
 

@@ -15,8 +15,8 @@ const centeredOffset = (outer: number, inner: number) => Math.floor((outer - inn
 const sizedRect =
 	(contentWidth: number, terminalHeight: number) =>
 	(minW: number, maxW: number, padX: number, maxH: number): ModalRect => {
-		const width = Math.min(maxW, Math.max(minW, contentWidth - padX))
-		const height = Math.min(maxH, terminalHeight - 4)
+		const width = Math.max(1, Math.min(contentWidth, maxW, Math.max(minW, contentWidth - padX)))
+		const height = Math.max(1, Math.min(maxH, terminalHeight))
 		return { width, height, left: centeredOffset(contentWidth, width), top: centeredOffset(terminalHeight, height) }
 	}
 
@@ -46,16 +46,16 @@ export interface ModalLayouts {
 
 export const computeModalLayouts = ({ contentWidth, terminalHeight, longestLabelName, longestDiffFileName, changedFilesModalActive }: ModalLayoutInput): ModalLayouts => {
 	const sized = sizedRect(contentWidth, terminalHeight)
-	const labelWidth = Math.min(Math.max(42, longestLabelName + 16), 56, contentWidth - 4)
-	const labelHeight = Math.min(20, terminalHeight - 4)
+	const labelWidth = Math.max(1, Math.min(Math.max(42, longestLabelName + 16), 56, contentWidth))
+	const labelHeight = Math.max(1, Math.min(20, terminalHeight))
 	const label: ModalRect = {
 		width: labelWidth,
 		height: labelHeight,
 		left: centeredOffset(contentWidth, labelWidth),
 		top: centeredOffset(terminalHeight, labelHeight),
 	}
-	const changedFilesWidth = changedFilesModalActive ? Math.min(Math.max(46, longestDiffFileName + 16), 88, contentWidth - 4) : 46
-	const changedFilesHeight = Math.min(22, terminalHeight - 4)
+	const changedFilesWidth = Math.max(1, Math.min(changedFilesModalActive ? Math.min(Math.max(46, longestDiffFileName + 16), 88) : 46, contentWidth))
+	const changedFilesHeight = Math.max(1, Math.min(22, terminalHeight))
 	const changedFiles: ModalRect = {
 		width: changedFilesWidth,
 		height: changedFilesHeight,

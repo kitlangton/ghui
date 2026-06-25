@@ -9,7 +9,7 @@ import { colors } from "../ui/colors.js"
 import { workspaceSurfaceAtom } from "../workspace/atoms.js"
 import { useRepoSurface } from "../surfaces/repo/useRepoSurface.js"
 import { usePullRequestSurface } from "../surfaces/pullRequest/usePullRequestSurface.js"
-import { computeLayout, diffFilePanelWidthFor } from "../workspace/layout.js"
+import { computeLayout, diffFilePanelWidthFor, isTerminalTooSmall } from "../workspace/layout.js"
 import { getDetailPlaceholderContent, reviewStatusAfterSubmit } from "../workspace/placeholders.js"
 import { computeModalLayouts } from "../workspace/modalLayouts.js"
 import { computeWorkspaceDerivations } from "../workspace/derivations.js"
@@ -179,6 +179,7 @@ export const useAppShell = ({ systemThemeGeneration }: UseAppShellInput) => {
 	} = useGitHubActions()
 	const terminalWidth = width ?? 100
 	const terminalHeight = height ?? 24
+	const terminalTooSmall = isTerminalTooSmall(terminalWidth, terminalHeight)
 	const showWorkspaceTabs = !detailFullView && !diffFullView && !commentsViewActive
 	const diffFilePanelOverride = useAtomValue(diffFilePanelOverrideAtom)
 	const setDiffFilePanelOverride = useAtomSet(diffFilePanelOverrideAtom)
@@ -935,6 +936,7 @@ export const useAppShell = ({ systemThemeGeneration }: UseAppShellInput) => {
 	}
 
 	useAppKeymap({
+		disabled: terminalTooSmall,
 		closeModalActive,
 		pullRequestStateModalActive,
 		mergeModalActive,
@@ -1055,7 +1057,7 @@ export const useAppShell = ({ systemThemeGeneration }: UseAppShellInput) => {
 	})
 
 	if (isInitialLoading) {
-		return { isInitialLoading: true as const, terminalWidth, terminalHeight, contentWidth, detailPlaceholderContent, loadingFrame }
+		return { isInitialLoading: true as const, terminalTooSmall, terminalWidth, terminalHeight, contentWidth, detailPlaceholderContent, loadingFrame }
 	}
 
 	const derivations = computeWorkspaceDerivations({
@@ -1166,6 +1168,7 @@ export const useAppShell = ({ systemThemeGeneration }: UseAppShellInput) => {
 	})
 	return {
 		isInitialLoading: false as const,
+		terminalTooSmall,
 		terminalWidth,
 		terminalHeight,
 		contentWidth,

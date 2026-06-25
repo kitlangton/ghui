@@ -5,6 +5,8 @@ import type { ChangedFilesModalState, CommandPaletteState, LabelModalState, Open
 import { editSingleLineInput, isSingleLineInputKey, printableKeyText } from "./singleLineInput.js"
 
 export interface UseTextInputDispatcherInput {
+	readonly disabled: boolean
+
 	// Modal active flags
 	readonly commandPaletteActive: boolean
 	readonly openRepositoryModalActive: boolean
@@ -54,6 +56,8 @@ export interface UseTextInputDispatcherInput {
  */
 export const useTextInputDispatcher = (input: UseTextInputDispatcherInput): void => {
 	useKeyboard((key) => {
+		if (input.disabled) return
+
 		if (input.commandPaletteActive) {
 			if (isSingleLineInputKey(key)) {
 				input.setCommandPalette((current) => {

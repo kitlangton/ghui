@@ -1,6 +1,6 @@
 import { colors } from "./ui/colors.js"
 import { LoadingLogoPane } from "./ui/LoadingLogo.js"
-import { Divider, TextLine } from "./ui/primitives.js"
+import { centerCell, Divider, TextLine } from "./ui/primitives.js"
 import { WorkspaceTabs } from "./ui/WorkspaceTabs.js"
 import { WorkspaceContent } from "./surfaces/WorkspaceContent.js"
 import { WorkspaceFooter } from "./surfaces/WorkspaceFooter.js"
@@ -20,6 +20,19 @@ interface AppProps {
  */
 export const App = ({ systemThemeGeneration = 0 }: AppProps) => {
 	const shell = useAppShell({ systemThemeGeneration })
+
+	if (shell.terminalTooSmall) {
+		const lines = ["Terminal too small", `Need 60x16; current ${shell.terminalWidth}x${shell.terminalHeight}`, "Resize to continue"]
+		return (
+			<box width={shell.terminalWidth} height={shell.terminalHeight} flexDirection="column" justifyContent="center" backgroundColor={colors.background}>
+				{lines.map((line) => (
+					<TextLine key={line} width={shell.terminalWidth}>
+						{centerCell(line, shell.terminalWidth)}
+					</TextLine>
+				))}
+			</box>
+		)
+	}
 
 	if (shell.isInitialLoading) {
 		return (

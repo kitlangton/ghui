@@ -16,6 +16,8 @@ import { useKeymapWiring } from "./useKeymapWiring.js"
 import type { CommentEditorValue } from "../ui/commentEditor.js"
 
 export interface UseAppKeymapInput {
+	readonly disabled: boolean
+
 	// Active flags
 	readonly closeModalActive: boolean
 	readonly pullRequestStateModalActive: boolean
@@ -167,6 +169,7 @@ export interface UseAppKeymapInput {
  */
 export const useAppKeymap = (i: UseAppKeymapInput): void => {
 	useKeymapWiring({
+		disabled: i.disabled,
 		ctxInput: {
 			flags: {
 				closeModalActive: i.closeModalActive,

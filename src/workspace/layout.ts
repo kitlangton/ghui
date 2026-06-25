@@ -37,6 +37,11 @@ export interface WorkspaceLayout {
 
 const WIDE_BREAKPOINT = 100
 
+export const MIN_TERMINAL_WIDTH = 60
+export const MIN_TERMINAL_HEIGHT = 16
+
+export const isTerminalTooSmall = (terminalWidth: number, terminalHeight: number): boolean => terminalWidth < MIN_TERMINAL_WIDTH || terminalHeight < MIN_TERMINAL_HEIGHT
+
 // Panel width scales with the terminal so it gets a fair share on wide
 // terminals (more room for long paths) without overwhelming the diff. The
 // floor/ceiling keep the column readable; the 0.22 factor lands a 200-col

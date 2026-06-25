@@ -1,7 +1,18 @@
 import { describe, expect, it } from "vitest"
-import { computeLayout, diffFilePanelWidthFor } from "../src/workspace/layout.js"
+import { computeLayout, diffFilePanelWidthFor, isTerminalTooSmall } from "../src/workspace/layout.js"
 
 const noPanel = { showDiffFilePanel: false, diffFilePanelWidth: 0 } as const
+
+describe("isTerminalTooSmall", () => {
+	it("supports the 60x16 boundary", () => {
+		expect(isTerminalTooSmall(60, 16)).toBe(false)
+	})
+
+	it("rejects a terminal below either minimum", () => {
+		expect(isTerminalTooSmall(59, 16)).toBe(true)
+		expect(isTerminalTooSmall(60, 15)).toBe(true)
+	})
+})
 
 describe("computeLayout", () => {
 	it("treats terminals < 100 cols as narrow (single pane)", () => {

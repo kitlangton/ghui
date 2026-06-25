@@ -1,10 +1,14 @@
 import { beforeAll, describe, expect, test } from "bun:test"
 import { act } from "react"
 
-process.env.GHUI_MOCK_PR_COUNT = "8"
-process.env.GHUI_MOCK_REPO_COUNT = "2"
+// App-side modules select their runtime once per test process. Keep this in
+// sync with scrolling.test.tsx so file execution order cannot change either
+// suite's fixture shape on CI.
+process.env.GHUI_MOCK_PR_COUNT = "80"
+process.env.GHUI_MOCK_REPO_COUNT = "4"
 process.env.GHUI_MOCK_FIXTURE_PATH = "/var/folders/dd/5fz89drs5p9_r0fk7rwqqnbr0000gn/T/opencode/ghui-test-no-fixture.json"
 process.env.GHUI_MOCK_WORKSPACE_PREFERENCES_PATH = "off"
+process.env.GHUI_PR_PAGE_SIZE = "100"
 
 const loadApp = async () => {
 	const { createTestRenderer } = await import("@opentui/core/testing")

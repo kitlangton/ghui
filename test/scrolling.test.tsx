@@ -110,13 +110,14 @@ const leftPaneRowOf = (frame: string, prNumber: number) => {
 }
 
 const press = async (
-	mockInput: { pressArrow: (d: "up" | "down" | "left" | "right") => void; pressEscape: () => void; pressKey: (k: string, m?: { shift?: boolean }) => void },
+	mockInput: { pressArrow: (d: "up" | "down" | "left" | "right") => void; pressEnter: () => void; pressEscape: () => void; pressKey: (k: string, m?: { shift?: boolean }) => void },
 	renderOnce: () => Promise<void>,
-	key: { kind: "arrow"; dir: "up" | "down" | "left" | "right" } | { kind: "escape" } | { kind: "key"; name: string; shift?: boolean },
+	key: { kind: "arrow"; dir: "up" | "down" | "left" | "right" } | { kind: "enter" } | { kind: "escape" } | { kind: "key"; name: string; shift?: boolean },
 	settleFrames = 2,
 ) => {
 	await act(async () => {
 		if (key.kind === "arrow") mockInput.pressArrow(key.dir)
+		else if (key.kind === "enter") mockInput.pressEnter()
 		else if (key.kind === "escape") mockInput.pressEscape()
 		else mockInput.pressKey(key.name, { shift: key.shift })
 	})
@@ -313,6 +314,24 @@ describe("PR list scrolling", () => {
 		renderer.destroy()
 	})
 
+	test("clearing a temporary filter restores the selected pull request by identity", async () => {
+		const { mockInput, renderOnce, captureCharFrame, renderer } = await setupApp(100, 20)
+		for (let i = 0; i < 5; i++) await press(mockInput, renderOnce, { kind: "key", name: "j" })
+		const selectedBeforeFilter = detailPaneNumber(captureCharFrame())
+		expect(selectedBeforeFilter).toBe(numberFromIndex(5))
+
+		await press(mockInput, renderOnce, { kind: "key", name: "/" })
+		for (const key of "1000") await press(mockInput, renderOnce, { kind: "key", name: key })
+		await press(mockInput, renderOnce, { kind: "enter" }, 3)
+		const filteredSelectionReady = await settle(renderOnce, () => detailPaneNumber(captureCharFrame()) === 1000)
+		expect(filteredSelectionReady, captureCharFrame()).toBe(true)
+
+		await press(mockInput, renderOnce, { kind: "escape" }, 3)
+		const restoredSelectionReady = await settle(renderOnce, () => detailPaneNumber(captureCharFrame()) === selectedBeforeFilter)
+		expect(restoredSelectionReady, captureCharFrame()).toBe(true)
+		renderer.destroy()
+	})
+
 	test("alternating j/k bursts net out to zero displacement", async () => {
 		const { mockInput, renderOnce, captureCharFrame, renderer } = await setupApp(100, 20)
 		await act(async () => {
@@ -340,13 +359,14 @@ describe("PR list scrolling", () => {
 		await press(mockInput, renderOnce, { kind: "arrow", dir: "down" }, 2)
 		expect(detailPaneNumber(captureCharFrame())).toBe(numberFromIndex(26))
 
-		// And the previous PR title should still be directly above its metadata row (no skip).
+		// Authored-only queues use compact rows; the preceding PR should be one
+		// visible line above the newly selected PR (no skip).
 		const frame = captureCharFrame()
 		const selectedRow = leftPaneRowOf(frame, numberFromIndex(26))
 		expect(selectedRow).not.toBeNull()
 		const lines = frame.split("\n")
 		if (selectedRow! > 5) {
-			const above = lines[selectedRow! - 2]!
+			const above = lines[selectedRow! - 1]!
 			expect(above.split("│")[0] ?? above).toMatch(new RegExp(`#${numberFromIndex(25)}\\s+`))
 		}
 		renderer.destroy()

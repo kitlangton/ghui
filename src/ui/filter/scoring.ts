@@ -1,4 +1,4 @@
-import type { IssueItem } from "../../domain.js"
+import type { IssueItem, PullRequestItem } from "../../domain.js"
 import type { RepositoryListItem } from "../RepoList.js"
 
 // Lower scores rank earlier in the result list. `null` means the item didn't
@@ -39,6 +39,17 @@ export const issueFilterScore = (issue: IssueItem, query: string): number | null
 	]
 	const scores = fields.flatMap((field, index) => {
 		const matchIndex = field.indexOf(normalized)
+		return matchIndex >= 0 ? [index * 1000 + matchIndex] : []
+	})
+	return scores.length > 0 ? Math.min(...scores) : null
+}
+
+export const pullRequestFilterScore = (pullRequest: PullRequestItem, query: string): number | null => {
+	const normalized = query.trim().toLowerCase()
+	if (normalized.length === 0) return 0
+	const fields = [pullRequest.title, pullRequest.repository, pullRequest.author, pullRequest.headRefName, String(pullRequest.number)]
+	const scores = fields.flatMap((field, index) => {
+		const matchIndex = field.toLowerCase().indexOf(normalized)
 		return matchIndex >= 0 ? [index * 1000 + matchIndex] : []
 	})
 	return scores.length > 0 ? Math.min(...scores) : null

@@ -4,7 +4,7 @@ import type { DiffCommentSide, PullRequestReviewComment } from "../../domain.js"
 import { loadStoredDiffWhitespaceMode } from "../../themeStore.js"
 import { GitHubService } from "../../services/GitHubService.js"
 import { githubRuntime } from "../../services/runtime.js"
-import { selectedPullRequestAtom } from "../pullRequests/atoms.js"
+import { parsePullRequestRevisionAtomKey, selectedPullRequestAtom } from "../pullRequests/atoms.js"
 import {
 	type DiffFilePatch,
 	type DiffView,
@@ -40,28 +40,17 @@ export const diffCommentThreadsAtom = Atom.make<Record<string, readonly PullRequ
 export const diffCommentsLoadedAtom = Atom.make<Record<string, "loading" | "ready">>({}).pipe(Atom.keepAlive)
 export const pullRequestDiffCacheAtom = Atom.make<Record<string, PullRequestDiffState>>({}).pipe(Atom.keepAlive)
 
-// === Data-fetching atoms ===
-//
-// The diff fetch is a one-shot action — we trigger it from React via
-// `useDiffLoader.loadPullRequestDiff` and mirror the result into
-// `pullRequestDiffCacheAtom`. Using `runtime.fn` gives us a clean
-// Promise (`useAtomSet(diffFn, { mode: "promise" })`) that always
-// resolves or rejects.
-//
-// The prior shape — `Atom.family((key) => runtime.atom(...))` read via
-// `Effect.runPromise(AtomRegistry.getResult(atom, { suspendOnWaiting: true }))`
-// — could leave the AsyncResult stuck in Waiting if the fiber was
-// interrupted (refresh-raced, family-entry GC'd) without producing
-// a settled state, wedging the cache on Loading forever. The fn
-// pattern doesn't suspend on an atom subscription, so that hazard
-// is gone.
-export const pullRequestDiffAtom = githubRuntime.fn<{ readonly repository: string; readonly number: number }>()((input) =>
-	GitHubService.use((github) => github.getPullRequestDiff(input.repository, input.number)),
-)
+// Diff and review-comment requests are keyed by PR revision so concurrent
+// HOME prefetches have distinct Effect lifetimes and result channels.
+export const pullRequestDiffForRevision = Atom.family((revisionKey: string) => {
+	const { repository, number } = parsePullRequestRevisionAtomKey(revisionKey, "diff")
+	return githubRuntime.atom(GitHubService.use((github) => github.getPullRequestDiff(repository, number))).pipe(Atom.setIdleTTL(0))
+})
 
-export const listPullRequestReviewCommentsAtom = githubRuntime.fn<{ readonly repository: string; readonly number: number }>()((input) =>
-	GitHubService.use((github) => github.listPullRequestReviewComments(input.repository, input.number)),
-)
+export const pullRequestReviewCommentsForRevision = Atom.family((revisionKey: string) => {
+	const { repository, number } = parsePullRequestRevisionAtomKey(revisionKey, "review comments")
+	return githubRuntime.atom(GitHubService.use((github) => github.listPullRequestReviewComments(repository, number))).pipe(Atom.setIdleTTL(0))
+})
 
 // === Derived selection atoms ===
 export const selectedDiffKeyAtom = Atom.make((get) => {

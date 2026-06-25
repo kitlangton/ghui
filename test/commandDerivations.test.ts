@@ -1,4 +1,5 @@
 import { describe, expect, test } from "bun:test"
+import { runIsolatedProbe } from "./isolatedProbe.ts"
 
 describe("PR command derivations", () => {
 	test("disables PR mutations when a hidden PR remains selected on Issues", async () => {
@@ -17,11 +18,7 @@ describe("PR command derivations", () => {
 			registry.set(workspaceSurfaceAtom, "issues")
 			console.log(registry.get(noOpenPullRequestReasonAtom))
 		`
-		const process = Bun.spawn(["bun", "--eval", probe], { cwd: new URL("..", import.meta.url).pathname, stdout: "pipe", stderr: "pipe" })
-		const stdout = await new Response(process.stdout).text()
-		const stderr = await new Response(process.stderr).text()
-
-		expect(await process.exited, stderr).toBe(0)
-		expect(stdout.trim()).toBe("Pull request surface is not active.")
+		const stdout = await runIsolatedProbe(probe)
+		expect(stdout).toBe("Pull request surface is not active.")
 	})
 })

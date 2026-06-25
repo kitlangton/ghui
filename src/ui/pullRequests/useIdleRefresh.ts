@@ -1,4 +1,4 @@
-import { useEffect, type MutableRefObject } from "react"
+import { useEffect, useEffectEvent, type MutableRefObject } from "react"
 
 export interface UseIdleRefreshInput {
 	readonly enabled: boolean
@@ -19,13 +19,14 @@ export interface UseIdleRefreshInput {
  * the terminal regains focus.
  */
 export const useIdleRefresh = ({ enabled, lastRefreshAtRef, idleAfterMs, jitterMs, onRefresh, refreshGeneration }: UseIdleRefreshInput): void => {
+	const refresh = useEffectEvent(onRefresh)
 	useEffect(() => {
 		if (!enabled) return
 		const lastRefreshAt = lastRefreshAtRef.current || Date.now()
 		const ageMs = Date.now() - lastRefreshAt
 		const delayMs = Math.max(0, idleAfterMs - ageMs) + Math.floor(Math.random() * jitterMs)
 		const timeout = globalThis.setTimeout(() => {
-			onRefresh(idleAfterMs)
+			refresh(idleAfterMs)
 		}, delayMs)
 		return () => globalThis.clearTimeout(timeout)
 		// eslint-disable-next-line react-hooks/exhaustive-deps

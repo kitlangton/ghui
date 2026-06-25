@@ -42,7 +42,7 @@ export interface RepoRollupRow {
 
 export class CacheError extends Schema.TaggedErrorClass<CacheError>()("CacheError", {
 	operation: Schema.String,
-	cause: Schema.Defect,
+	cause: Schema.Defect(),
 }) {}
 
 const CheckConclusionSchema = Schema.Literals(checkConclusions)

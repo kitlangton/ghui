@@ -45,6 +45,7 @@
 		"dev:mock": "GHUI_FORCE_FULL_REPAINT_ON_START=1 GHUI_MOCK_PR_COUNT=200 GHUI_MOCK_REPO_COUNT=4 bun --watch src/index.tsx",
 		"start": "bun run src/index.tsx",
 		"test": "bun test test",
+		"test:keymap": "bun run --cwd=packages/keymap test",
 		"typecheck": "tsc --noEmit",
 		"lint": "oxlint --tsconfig tsconfig.json src/ test/",
 		"format": "oxfmt src/ test/ dev/",
@@ -58,11 +59,11 @@
 		"packages/*"
 	],
 	"dependencies": {
-		"@effect/atom-react": "4.0.0-beta.70",
-		"@effect/sql-sqlite-bun": "4.0.0-beta.70",
+		"@effect/atom-react": "4.0.0-beta.85",
+		"@effect/sql-sqlite-bun": "4.0.0-beta.85",
 		"@opentui/core": "0.2.15",
 		"@opentui/react": "0.2.15",
-		"effect": "4.0.0-beta.70",
+		"effect": "4.0.0-beta.85",
 		"react": "19.2.6",
 		"scheduler": "0.27.0"
 	},

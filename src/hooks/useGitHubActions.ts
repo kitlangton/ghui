@@ -1,6 +1,5 @@
 import { RegistryContext, useAtomSet } from "@effect/atom-react"
 import { useCallback, useContext } from "react"
-import type { IssueView } from "../issueViews.js"
 import {
 	addPullRequestLabelAtom,
 	closePullRequestAtom,
@@ -9,9 +8,8 @@ import {
 	removePullRequestLabelAtom,
 	toggleDraftAtom,
 } from "../ui/pullRequests/atoms.js"
-import { addIssueLabelAtom, closeIssueAtom, issuesForView, removeIssueLabelAtom } from "../ui/issues/atoms.js"
+import { addIssueLabelAtom, closeIssueAtom, issuesAtom, removeIssueLabelAtom } from "../ui/issues/atoms.js"
 import { listIssueCommentsAtom, listPullRequestCommentsAtom } from "../ui/comments/atoms.js"
-import { listPullRequestReviewCommentsAtom } from "../ui/diff/atoms.js"
 import { openUrlAtom, submitPullRequestReviewAtom } from "../services/systemAtoms.js"
 import { readRepoRollupAtom, readWorkspacePreferencesAtom, writeWorkspacePreferencesAtom } from "../workspace/atoms.js"
 
@@ -27,7 +25,6 @@ export const useGitHubActions = () => {
 	const addIssueLabel = useAtomSet(addIssueLabelAtom, { mode: "promise" })
 	const removeIssueLabel = useAtomSet(removeIssueLabelAtom, { mode: "promise" })
 	const toggleDraftStatus = useAtomSet(toggleDraftAtom, { mode: "promise" })
-	const listPullRequestReviewComments = useAtomSet(listPullRequestReviewCommentsAtom, { mode: "promise" })
 	const listPullRequestComments = useAtomSet(listPullRequestCommentsAtom, { mode: "promise" })
 	const listIssueComments = useAtomSet(listIssueCommentsAtom, { mode: "promise" })
 	const readWorkspacePreferences = useAtomSet(readWorkspacePreferencesAtom, { mode: "promise" })
@@ -37,9 +34,7 @@ export const useGitHubActions = () => {
 	const closePullRequest = useAtomSet(closePullRequestAtom, { mode: "promise" })
 	const closeIssue = useAtomSet(closeIssueAtom, { mode: "promise" })
 	const registry = useContext(RegistryContext)
-	// `issuesAtom` is now a family of one atom per view; refresh must
-	// target the family member for the view being refreshed.
-	const refreshIssuesForView = useCallback((view: IssueView) => registry.refresh(issuesForView(view)), [registry])
+	const refreshIssues = useCallback(() => registry.refresh(issuesAtom), [registry])
 	const submitPullRequestReview = useAtomSet(submitPullRequestReviewAtom, { mode: "promise" })
 	const openUrl = useAtomSet(openUrlAtom, { mode: "promise" })
 	const readRepoRollup = useAtomSet(readRepoRollupAtom, { mode: "promise" })
@@ -49,7 +44,6 @@ export const useGitHubActions = () => {
 		addIssueLabel,
 		removeIssueLabel,
 		toggleDraftStatus,
-		listPullRequestReviewComments,
 		listPullRequestComments,
 		listIssueComments,
 		readWorkspacePreferences,
@@ -58,7 +52,7 @@ export const useGitHubActions = () => {
 		prewarmRepositoryDetails,
 		closePullRequest,
 		closeIssue,
-		refreshIssuesForView,
+		refreshIssues,
 		submitPullRequestReview,
 		openUrl,
 		readRepoRollup,

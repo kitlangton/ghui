@@ -7,8 +7,9 @@ import { type PullRequestView, nextView, viewCacheKey, viewEquals } from "../pul
 import { issueViewForPullRequestView } from "../viewSync.js"
 import { type WorkspaceSurface, nextWorkspaceSurface } from "../workspaceSurfaces.js"
 import { queueSelectionAtom } from "../ui/pullRequests/atoms.js"
-import { recentRepositoriesAtom } from "../workspace/atoms.js"
+import { recentRepositoriesAtom, workspaceScopeAtom } from "../workspace/atoms.js"
 import type { IssueView } from "../issueViews.js"
+import { workspaceScopeForRepository } from "../workspaceScope.js"
 
 interface AtomRegistryShape {
 	get<T>(atom: Atom.Atom<T>): T
@@ -34,6 +35,7 @@ export interface UseWorkspaceNavigationInput {
 	readonly setNotice: (next: string | null) => void
 	readonly cancelRefreshToast: () => void
 	readonly filterQuery: string
+	readonly filterMode: boolean
 	readonly setRecentlyCompletedPullRequests: (next: Record<string, PullRequestItem>) => void
 	readonly setActiveWorkspaceSurface: (next: WorkspaceSurface) => void
 	readonly activeWorkspaceSurface: WorkspaceSurface
@@ -80,6 +82,7 @@ export const useWorkspaceNavigation = (input: UseWorkspaceNavigationInput): Work
 		setNotice,
 		cancelRefreshToast,
 		filterQuery,
+		filterMode,
 		setRecentlyCompletedPullRequests,
 		setActiveWorkspaceSurface,
 		activeWorkspaceSurface,
@@ -90,13 +93,20 @@ export const useWorkspaceNavigation = (input: UseWorkspaceNavigationInput): Work
 		resetLoadingMore,
 	} = input
 	const setRecentRepositories = useAtomSet(recentRepositoriesAtom)
+	const setWorkspaceScope = useAtomSet(workspaceScopeAtom)
 
 	const switchViewTo = (view: PullRequestView) => {
 		devLog("switchViewTo:enter", { from: activeView, to: view, equal: viewEquals(view, activeView) })
-		if (viewEquals(view, activeView)) return
+		if (viewEquals(view, activeView)) {
+			if (view.repository !== selectedRepository) setWorkspaceScope(workspaceScopeForRepository(view.repository))
+			return
+		}
 		refreshGenerationRef.current += 1
-		setQueueSelection((current) => ({ ...current, [currentQueueCacheKey]: selectedIndex }))
+		if (!filterMode && filterQuery.length === 0) setQueueSelection((current) => ({ ...current, [currentQueueCacheKey]: selectedIndex }))
+		const issueView = issueViewForPullRequestView(view)
 		setActiveView(view)
+		setActiveIssueView(issueView)
+		setWorkspaceScope(workspaceScopeForRepository(view.repository))
 		setSelectedIndex(registry.get(queueSelectionAtom)[viewCacheKey(view)] ?? 0)
 		setSelectedIssueIndex(0)
 		setRecentlyCompletedPullRequests({})
@@ -108,7 +118,6 @@ export const useWorkspaceNavigation = (input: UseWorkspaceNavigationInput): Work
 		setFilterDraft(filterQuery)
 		setNotice(null)
 		cancelRefreshToast()
-		setActiveIssueView(issueViewForPullRequestView(view))
 		if (view._tag === "Repository") {
 			setRecentRepositories((current) => [view.repository, ...current.filter((repository) => repository !== view.repository)].slice(0, 12))
 			if (activeWorkspaceSurface === "repos") setActiveWorkspaceSurface("pullRequests")

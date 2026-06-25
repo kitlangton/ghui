@@ -3,9 +3,11 @@ import { CacheService, type RepoRollupRow } from "../services/CacheService.js"
 import { githubRuntime, initialRecentRepositories } from "../services/runtime.js"
 import type { ViewerId, WorkspacePreferences } from "../workspacePreferences.js"
 import { repositoryWorkspaceSurfaces, userWorkspaceSurfaces, type WorkspaceSurface } from "../workspaceSurfaces.js"
-import { selectedRepositoryAtom } from "../ui/pullRequests/atoms.js"
+import { userWorkspaceScope, workspaceScopeRepository, type WorkspaceScope } from "../workspaceScope.js"
 
 export const workspaceSurfaceAtom = Atom.make<WorkspaceSurface>("pullRequests")
+export const workspaceScopeAtom = Atom.make<WorkspaceScope>(userWorkspaceScope).pipe(Atom.keepAlive)
+export const selectedRepositoryAtom = Atom.make((get) => workspaceScopeRepository(get(workspaceScopeAtom)))
 export const selectedRepositoryIndexAtom = Atom.make(0)
 export const favoriteRepositoriesAtom = Atom.make<Record<string, true>>({}).pipe(Atom.keepAlive)
 export const recentRepositoriesAtom = Atom.make<readonly string[]>(initialRecentRepositories).pipe(Atom.keepAlive)

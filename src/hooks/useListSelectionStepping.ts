@@ -7,8 +7,6 @@ export interface UseListSelectionSteppingInput {
 	readonly visiblePullRequests: readonly PullRequestItem[]
 	readonly issues: readonly IssueItem[]
 	readonly repositoryItems: readonly RepositoryListItem[]
-	readonly selectedIndex: number
-	readonly visibleHasMorePullRequests: boolean
 	readonly loadMoreSlotAvailable: boolean
 	readonly issueLoadMoreSlotAvailable: boolean
 	readonly groupStarts: readonly number[]
@@ -46,7 +44,6 @@ export const useListSelectionStepping = ({
 	visiblePullRequests,
 	issues,
 	repositoryItems,
-	selectedIndex,
 	loadMoreSlotAvailable,
 	issueLoadMoreSlotAvailable,
 	groupStarts,
@@ -111,7 +108,6 @@ export const useListSelectionStepping = ({
 			const max = prMaxIndex()
 			return current >= max ? 0 : current + 1
 		})
-		void selectedIndex
 	}
 	const stepSelectedUpWrap = () =>
 		activeWorkspaceSurface === "repos"

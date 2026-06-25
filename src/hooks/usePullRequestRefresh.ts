@@ -9,6 +9,7 @@ interface PullRequestLoadShape {
 export interface UsePullRequestRefreshInput {
 	readonly pullRequestLoad: PullRequestLoadShape | null
 	readonly pullRequestFetchInFlight: boolean
+	readonly isLoadingMorePullRequests: boolean
 	readonly refreshGenerationRef: MutableRefObject<number>
 	readonly lastPullRequestRefreshAtRef: MutableRefObject<number>
 	readonly pullRequestStatusRef: MutableRefObject<LoadStatus>
@@ -47,6 +48,7 @@ export interface PullRequestRefresh {
 export const usePullRequestRefresh = ({
 	pullRequestLoad,
 	pullRequestFetchInFlight,
+	isLoadingMorePullRequests,
 	refreshGenerationRef,
 	lastPullRequestRefreshAtRef,
 	pullRequestStatusRef,
@@ -64,7 +66,7 @@ export const usePullRequestRefresh = ({
 	refreshPullRequestsAtom,
 }: UsePullRequestRefreshInput): PullRequestRefresh => {
 	const refreshPullRequests = (message?: string, options: { readonly resetTransientState?: boolean } = {}) => {
-		if (pullRequestFetchInFlight) return
+		if (pullRequestFetchInFlight || isLoadingMorePullRequests) return
 		refreshGenerationRef.current += 1
 		resetHydration()
 		resetLoadingMore()

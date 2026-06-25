@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test"
 import type { PullRequestItem } from "../src/domain.ts"
-import { buildPullRequestListRows, pullRequestListRowIndex } from "../src/ui/PullRequestList.tsx"
+import { buildPullRequestListRows, pullRequestListRowIndex, pullRequestListVisualLineCount } from "../src/ui/PullRequestList.tsx"
 
 const pullRequest = (overrides: Partial<PullRequestItem> = {}): PullRequestItem => ({
 	repository: "owner/repo",
@@ -75,5 +75,23 @@ describe("buildPullRequestListRows", () => {
 
 		expect(pullRequestListRowIndex(rows, first.url)).toBe(2)
 		expect(pullRequestListRowIndex(rows, second.url)).toBe(4)
+	})
+
+	test("uses one visual line per pull request in authored-only views", () => {
+		const first = pullRequest({ number: 1, url: "https://github.com/owner/repo/pull/1" })
+		const second = pullRequest({ number: 2, url: "https://github.com/owner/repo/pull/2" })
+		const rows = buildPullRequestListRows({
+			groups: [["owner/repo", [first, second]]],
+			status: "ready",
+			error: null,
+			filterText: "",
+			loadedCount: 2,
+			hasMore: false,
+			isLoadingMore: false,
+			compact: true,
+		})
+
+		expect(pullRequestListRowIndex(rows, second.url)).toBe(3)
+		expect(pullRequestListVisualLineCount(rows)).toBe(4)
 	})
 })

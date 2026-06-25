@@ -1,9 +1,10 @@
-import { useAtomSet } from "@effect/atom-react"
-import { type MutableRefObject, useEffect, useRef, useState } from "react"
+import { RegistryContext } from "@effect/atom-react"
+import { Effect } from "effect"
+import * as AtomRegistry from "effect/unstable/reactivity/AtomRegistry"
+import { type MutableRefObject, useContext, useEffect, useRef, useState } from "react"
 import type { LoadStatus, PullRequestItem } from "../../domain.js"
 import { errorMessage } from "../../errors.js"
-import type { PullRequestLoad } from "../../pullRequestLoad.js"
-import { pullRequestDetailKey, pullRequestDetailsAtom, readCachedPullRequestAtom, writeCachedPullRequestAtom } from "./atoms.js"
+import { pullRequestDetailKey, pullRequestDetailsForRevision, pullRequestRevisionAtomKey } from "./atoms.js"
 
 const DETAIL_PREFETCH_BEHIND = 1
 const DETAIL_PREFETCH_AHEAD = 3
@@ -13,7 +14,7 @@ const DETAIL_PREFETCH_DELAY_MS = 120
 export type DetailHydrationState = { readonly _tag: "Loading" } | { readonly _tag: "Error"; readonly message: string }
 
 interface DetailHydration {
-	readonly token: symbol
+	readonly abortController: AbortController
 	notifyError: boolean
 }
 
@@ -28,12 +29,9 @@ export interface UseDetailHydrationInput {
 	 * the selected PR so its checks/labels reflect the latest server state. */
 	readonly queueFetchedAtMs: number | null
 	readonly flashNotice: (message: string) => void
-	readonly setQueueLoadCache: (next: (prev: Partial<Record<string, PullRequestLoad>>) => Partial<Record<string, PullRequestLoad>>) => void
 }
 
 export interface UseDetailHydrationResult {
-	/** Force-hydrate this PR (notifyError=true: surface failures to the user). */
-	readonly hydratePullRequestDetails: (pullRequest: PullRequestItem, notifyError: boolean) => boolean
 	/** Per-PR loading/error tracking for the selected pane. */
 	readonly detailHydrationState: Record<string, DetailHydrationState>
 	/** Cancel pending hydrations and clear the prefetch timeout — call on
@@ -60,74 +58,49 @@ export const useDetailHydration = ({
 	refreshGenerationRef,
 	queueFetchedAtMs,
 	flashNotice,
-	setQueueLoadCache,
 }: UseDetailHydrationInput): UseDetailHydrationResult => {
-	const readCachedPullRequest = useAtomSet(readCachedPullRequestAtom, { mode: "promise" })
-	const writeCachedPullRequest = useAtomSet(writeCachedPullRequestAtom, { mode: "promise" })
-	const fetchPullRequestDetails = useAtomSet(pullRequestDetailsAtom, { mode: "promise" })
+	const registry = useContext(RegistryContext)
 
 	const [detailHydrationState, setDetailHydrationState] = useState<Record<string, DetailHydrationState>>({})
+	const [hydrationResetEpoch, setHydrationResetEpoch] = useState(0)
 	const detailHydrationRef = useRef(new Map<string, DetailHydration>())
-	const cachedDetailKeysRef = useRef(new Set<string>())
+	const selectedHydrationKeyRef = useRef<string | null>(null)
 	const detailPrefetchTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
 	useEffect(
 		() => () => {
 			if (detailPrefetchTimeoutRef.current !== null) clearTimeout(detailPrefetchTimeoutRef.current)
+			for (const entry of detailHydrationRef.current.values()) entry.abortController.abort()
+			detailHydrationRef.current.clear()
 		},
 		[],
 	)
 
-	const applyPullRequestDetail = (detail: PullRequestItem) => {
-		setQueueLoadCache((current) => {
-			const next = { ...current }
-			let changed = false
-			for (const [cacheKey, load] of Object.entries(current)) {
-				if (!load) continue
-				const index = load.data.findIndex((pullRequest) => pullRequest.url === detail.url)
-				if (index < 0) continue
-				const data = [...load.data]
-				data[index] = detail
-				changed = true
-				next[cacheKey] = { ...load, data }
-			}
-			return changed ? next : current
-		})
-	}
-
 	const hydratePullRequestDetails = (pullRequest: PullRequestItem, notifyError: boolean, options?: { readonly force?: boolean }): boolean => {
-		if (pullRequest.state !== "open") return false
 		const detailKey = pullRequestDetailKey(pullRequest)
 		const force = options?.force === true
-		const forceRefresh = force || (notifyError && pullRequest.detailLoaded && cachedDetailKeysRef.current.has(detailKey))
+		const forceRefresh = force
 		if (pullRequest.detailLoaded && !forceRefresh) return false
+		if (notifyError && selectedHydrationKeyRef.current !== detailKey) {
+			const previousSelected = selectedHydrationKeyRef.current
+			if (previousSelected) detailHydrationRef.current.get(previousSelected)?.abortController.abort()
+			selectedHydrationKeyRef.current = detailKey
+		}
 		const existing = detailHydrationRef.current.get(detailKey)
 		if (existing) {
 			if (notifyError) existing.notifyError = true
 			return false
 		}
 		if (!notifyError && detailHydrationRef.current.size >= DETAIL_PREFETCH_CONCURRENCY) return false
-		const entry: DetailHydration = { token: Symbol(detailKey), notifyError }
+		const entry: DetailHydration = { abortController: new AbortController(), notifyError }
 		detailHydrationRef.current.set(detailKey, entry)
 		if (notifyError) setDetailHydrationState((current) => ({ ...current, [detailKey]: { _tag: "Loading" } }))
 		const generation = refreshGenerationRef.current
-		if (!pullRequest.detailLoaded) {
-			void readCachedPullRequest({ repository: pullRequest.repository, number: pullRequest.number })
-				.then((cached) => {
-					if (!cached || !cached.detailLoaded || cached.headRefOid !== pullRequest.headRefOid) return
-					if (generation !== refreshGenerationRef.current || detailHydrationRef.current.get(detailKey) !== entry) return
-					cachedDetailKeysRef.current.add(detailKey)
-					applyPullRequestDetail(cached)
-				})
-				.catch(() => {})
-		}
-		// `pullRequestDetailsAtom` is now a `runtime.fn`, so we just call it
-		// for a clean Promise. `forceRefresh` is implicit — fn invocations
-		// always run the effect, there's no result-caching layer to bypass.
-		void fetchPullRequestDetails({ repository: pullRequest.repository, number: pullRequest.number })
-			.then((detail) => {
+		const detailAtom = pullRequestDetailsForRevision(pullRequestRevisionAtomKey(pullRequest))
+		if (forceRefresh) registry.refresh(detailAtom)
+		void Effect.runPromise(AtomRegistry.getResult(registry, detailAtom, { suspendOnWaiting: true }), { signal: entry.abortController.signal })
+			.then(() => {
 				if (generation === refreshGenerationRef.current && detailHydrationRef.current.get(detailKey) === entry) {
-					cachedDetailKeysRef.current.delete(detailKey)
 					if (entry.notifyError) {
 						setDetailHydrationState((current) => {
 							if (!(detailKey in current)) return current
@@ -136,11 +109,10 @@ export const useDetailHydration = ({
 							return next
 						})
 					}
-					applyPullRequestDetail(detail)
-					void writeCachedPullRequest(detail).catch(() => {})
 				}
 			})
 			.catch((error) => {
+				if (entry.abortController.signal.aborted) return
 				if (entry.notifyError && generation === refreshGenerationRef.current && detailHydrationRef.current.get(detailKey) === entry) {
 					const message = errorMessage(error)
 					setDetailHydrationState((current) => ({ ...current, [detailKey]: { _tag: "Error", message } }))
@@ -154,8 +126,11 @@ export const useDetailHydration = ({
 	}
 
 	const resetHydration = () => {
+		for (const entry of detailHydrationRef.current.values()) entry.abortController.abort()
 		detailHydrationRef.current.clear()
+		selectedHydrationKeyRef.current = null
 		setDetailHydrationState({})
+		setHydrationResetEpoch((current) => current + 1)
 		if (detailPrefetchTimeoutRef.current !== null) clearTimeout(detailPrefetchTimeoutRef.current)
 	}
 
@@ -186,6 +161,7 @@ export const useDetailHydration = ({
 		selectedPullRequest?.detailLoaded,
 		selectedPullRequest?.repository,
 		selectedPullRequest?.number,
+		hydrationResetEpoch,
 	])
 
 	// Prefetch neighbours around the selected index after a short debounce.
@@ -212,7 +188,6 @@ export const useDetailHydration = ({
 	}, [pullRequestStatus, currentQueueCacheKey, selectedIndex, visiblePullRequests])
 
 	return {
-		hydratePullRequestDetails,
 		detailHydrationState,
 		resetHydration,
 	}

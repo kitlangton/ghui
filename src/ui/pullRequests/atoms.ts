@@ -2,27 +2,21 @@ import { Effect, Schedule } from "effect"
 import * as AsyncResult from "effect/unstable/reactivity/AsyncResult"
 import * as Atom from "effect/unstable/reactivity/Atom"
 import { config } from "../../config.js"
-import type {
-	IssueItem,
-	LoadStatus,
-	PullRequestItem,
-	PullRequestLabel,
-	PullRequestMergeAction,
-	PullRequestMergeMethod,
-	RepositoryDetails,
-	RepositoryMergeMethods,
-} from "../../domain.js"
+import type { LoadStatus, PullRequestItem, PullRequestLabel, PullRequestMergeAction, PullRequestMergeMethod, RepositoryDetails, RepositoryMergeMethods } from "../../domain.js"
 import { devLog } from "../../devLog.js"
 import { type ItemListInput, searchQualifier } from "../../item.js"
-import { freshPullRequestLoad } from "../../pullRequestCache.js"
-export { appendPullRequestPage, nextLoadAfterPage } from "../../pullRequestCache.js"
+import { resolveItemLoad, trimItemLoadCache } from "../../item/load.js"
+import { loadItemQueue } from "../../item/queue.js"
+import { freshPullRequestLoad, mergePullRequestDetail } from "../../pullRequestCache.js"
+export { nextLoadAfterPage } from "../../pullRequestCache.js"
 import type { PullRequestLoad } from "../../pullRequestLoad.js"
 import { activePullRequestViews, initialPullRequestView, type PullRequestView, viewCacheKey, viewRepository, viewToListInput } from "../../pullRequestViews.js"
-import { CacheService, type PullRequestCacheKey } from "../../services/CacheService.js"
+import { CacheService } from "../../services/CacheService.js"
 import { isCommandTimeoutError } from "../../services/CommandRunner.js"
 import { GitHubService, isGitHubRateLimitError } from "../../services/GitHubService.js"
 import { githubRuntime, pullRequestPageSize } from "../../services/runtime.js"
 import { effectiveFilterQueryAtom } from "../filter/atoms.js"
+import { filterByScore, pullRequestFilterScore } from "../filter/scoring.js"
 import { initialRetryProgress, RetryProgress } from "../FooterHints.js"
 import { selectedIndexAtom } from "../listSelection/atoms.js"
 import { groupBy } from "../pullRequests.js"
@@ -37,7 +31,6 @@ export const labelCacheAtom = Atom.make<Record<string, readonly PullRequestLabel
 export const repoMergeMethodsCacheAtom = Atom.make<Record<string, RepositoryMergeMethods>>({}).pipe(Atom.keepAlive)
 export const lastUsedMergeMethodAtom = Atom.make<Record<string, PullRequestMergeMethod>>({}).pipe(Atom.keepAlive)
 export const pullRequestOverridesAtom = Atom.make<Record<string, PullRequestItem>>({}).pipe(Atom.keepAlive)
-export const issueOverridesAtom = Atom.make<Record<string, IssueItem>>({}).pipe(Atom.keepAlive)
 export const recentlyCompletedPullRequestsAtom = Atom.make<Record<string, PullRequestItem>>({}).pipe(Atom.keepAlive)
 export const repositoryDetailsCacheAtom = Atom.make<Record<string, RepositoryDetails>>({}).pipe(Atom.keepAlive)
 
@@ -51,17 +44,11 @@ export const parsePullRequestRevisionAtomKey = (key: string, label: string): { r
 export const pullRequestDetailKey = (pullRequest: PullRequestItem) => `${pullRequest.url}:${pullRequest.headRefOid}`
 
 // === Helpers used by atom bodies and by load-more handlers ===
-// `appendPullRequestPage` and `nextLoadAfterPage` are re-exported from
-// pullRequestCache.js above so callers don't need to know where they live.
-
-export const cacheViewerFor = (view: PullRequestView, username: string | null): string | null => (view._tag === "Repository" ? "anonymous" : username)
+// `nextLoadAfterPage` is re-exported from pullRequestCache.js above so callers
+// don't need to know where it lives.
 
 const trimQueueLoadCache = (cache: Partial<Record<string, PullRequestLoad>>) => {
-	// Repo-scoped "all" entries are the long-tail; trim them, not user queues.
-	const repositoryKeys = Object.keys(cache).filter((key) => key.startsWith("pullRequest:all:") && !key.endsWith(":_"))
-	if (repositoryKeys.length <= MAX_REPOSITORY_CACHE_ENTRIES) return cache
-	const remove = new Set(repositoryKeys.slice(0, repositoryKeys.length - MAX_REPOSITORY_CACHE_ENTRIES))
-	return Object.fromEntries(Object.entries(cache).filter(([key]) => !remove.has(key))) as Partial<Record<string, PullRequestLoad>>
+	return trimItemLoadCache(cache, (key) => key.startsWith("pullRequest:all:") && !key.endsWith(":_"), MAX_REPOSITORY_CACHE_ENTRIES)
 }
 
 // === View / queue state atoms ===
@@ -72,116 +59,55 @@ export const queueSelectionAtom = Atom.make<Partial<Record<string, number>>>({})
 
 // === Data-fetching atoms ===
 //
-// Family of one runtime atom per view, keyed by `viewCacheKey(view)`.
-// Each family member's body bakes the view into its closure — it does NOT
-// `get(activeViewAtom)`. Switching the active view means consumers read
-// a DIFFERENT family member; no shared atom needs to invalidate or
-// re-evaluate.
-//
-// Why a family instead of one shared `pullRequestsAtom` that reads
-// `activeViewAtom`: the shared shape forced effect-atom into a
-// re-run-on-dep-change pattern that broke after certain transition
-// sequences (open repo A → esc → open repo B left the runtime atom
-// stuck — its body never ran for B). Family-per-view sidesteps that
-// entire class of bug: the new view's atom is fresh and runs its body
-// on first read; the old view's atom keeps its value or completes
-// independently.
-//
-// Cached by `viewCacheKey` string so equal-content views share an atom
-// even when constructed as new object literals (which would defeat the
-// reference-equality keying that `Atom.family` uses for plain objects).
-type PullRequestsAtom = Atom.Atom<AsyncResult.AsyncResult<PullRequestLoad, unknown>>
-const pullRequestsAtomByCacheKey = new Map<string, PullRequestsAtom>()
 
-const buildPullRequestsForView = (view: PullRequestView): PullRequestsAtom =>
-	githubRuntime
-		.atom(
-			Effect.fnUntraced(function* () {
-				const github = yield* GitHubService
-				const cacheService = yield* CacheService
-				const cacheKey = viewCacheKey(view)
-				devLog("pullRequestsAtom:start", { view, cacheKey })
-				const cacheUsername =
-					view._tag === "Repository"
-						? null
-						: yield* github.getAuthenticatedUser().pipe(
-								Effect.catch((cause) => {
-									devLog("pullRequestsAtom:authFailed", { view, cause: String(cause) })
-									return Effect.succeed(null)
-								}),
-							)
-				const cacheViewer = cacheViewerFor(view, cacheUsername)
-				devLog("pullRequestsAtom:viewer", { cacheUsername, cacheViewer })
-				if (cacheViewer) {
-					const cachedLoad = yield* cacheService.readQueue(cacheViewer, view).pipe(Effect.catch(() => Effect.succeed(null)))
-					devLog("pullRequestsAtom:sqliteRead", {
-						cacheKey,
-						hit: cachedLoad !== null,
-						count: cachedLoad?.data.length ?? 0,
-						storedView: cachedLoad?.view,
-						sampleAuthors: cachedLoad?.data.slice(0, 5).map((pr) => pr.author),
-					})
-					if (cachedLoad) {
-						yield* Atom.update(queueLoadCacheAtom, (cache) => (cache[cacheKey] ? cache : trimQueueLoadCache({ ...cache, [cacheKey]: cachedLoad })))
-					}
-				}
-				yield* Atom.set(retryProgressAtom, initialRetryProgress)
-				const listInput = viewToListInput(view, null, Math.min(pullRequestPageSize, config.prFetchLimit))
-				devLog("pullRequestsAtom:fetch", { cacheKey, listInput, query: searchQualifier(listInput) })
-				const page = yield* github.listPullRequestPage(listInput).pipe(
-					Effect.tapError((error) =>
-						shouldRetryPullRequestFetch(error)
-							? Atom.update(retryProgressAtom, (current) =>
-									RetryProgress.Retrying({
-										attempt: Math.min(RetryProgress.$match(current, { Idle: () => 0, Retrying: ({ attempt }) => attempt }) + 1, PR_FETCH_RETRIES),
-										max: PR_FETCH_RETRIES,
-									}),
-								)
-							: Effect.void,
-					),
-					Effect.retry({ times: PR_FETCH_RETRIES, schedule: Schedule.exponential("300 millis", 2), while: shouldRetryPullRequestFetch }),
-					Effect.tapError(() => Atom.set(retryProgressAtom, initialRetryProgress)),
-				)
-
-				yield* Atom.set(retryProgressAtom, initialRetryProgress)
-				devLog("pullRequestsAtom:page", {
-					cacheKey,
-					count: page.items.length,
-					hasNextPage: page.hasNextPage,
-					sampleAuthors: page.items.slice(0, 8).map((pr) => pr.author),
-				})
-				const load = yield* Atom.modify(queueLoadCacheAtom, (cache) => {
-					const existing = cache[cacheKey]
-					const next = freshPullRequestLoad(view, page, existing, config.prFetchLimit)
-					const cacheNext = { ...cache }
-					delete cacheNext[cacheKey]
-					cacheNext[cacheKey] = next
-					return [next, trimQueueLoadCache(cacheNext)]
-				})
-				if (cacheViewer) yield* cacheService.writeQueue(cacheViewer, load)
-				devLog("pullRequestsAtom:done", {
-					cacheKey,
-					loadView: load.view,
-					dataLen: load.data.length,
-					sampleAuthors: load.data.slice(0, 8).map((pr) => pr.author),
-				})
-				return load
-			}),
-		)
-		.pipe(Atom.keepAlive)
-
-export const pullRequestsForView = (view: PullRequestView): PullRequestsAtom => {
-	const key = viewCacheKey(view)
-	let atom = pullRequestsAtomByCacheKey.get(key)
-	if (atom) return atom
-	atom = buildPullRequestsForView(view)
-	pullRequestsAtomByCacheKey.set(key, atom)
-	return atom
-}
+export const pullRequestsAtom = githubRuntime.atom(
+	Effect.fnUntraced(function* (get) {
+		const view = get(activeViewAtom)
+		const github = yield* GitHubService
+		const cacheService = yield* CacheService
+		const cacheKey = viewCacheKey(view)
+		devLog("pullRequestsAtom:start", { view, cacheKey })
+		const load = yield* loadItemQueue(view, queueLoadCacheAtom, {
+			keyOfView: viewCacheKey,
+			getAuthenticatedUser: github.getAuthenticatedUser(),
+			readCached: (viewer, queueView) => cacheService.readQueue(viewer, queueView),
+			writeCached: (viewer, queueLoad) => cacheService.writeQueue(viewer, queueLoad),
+			fetchFirstPage: (queueView) =>
+				Effect.gen(function* () {
+					yield* Atom.set(retryProgressAtom, initialRetryProgress)
+					const listInput = viewToListInput(queueView, null, Math.min(pullRequestPageSize, config.prFetchLimit))
+					devLog("pullRequestsAtom:fetch", { cacheKey, listInput, query: searchQualifier(listInput) })
+					const page = yield* github.listPullRequestPage(listInput).pipe(
+						Effect.tapError((error) =>
+							shouldRetryPullRequestFetch(error)
+								? Atom.update(retryProgressAtom, (current) =>
+										RetryProgress.Retrying({
+											attempt: Math.min(RetryProgress.$match(current, { Idle: () => 0, Retrying: ({ attempt }) => attempt }) + 1, PR_FETCH_RETRIES),
+											max: PR_FETCH_RETRIES,
+										}),
+									)
+								: Effect.void,
+						),
+						Effect.retry({ times: PR_FETCH_RETRIES, schedule: Schedule.exponential("300 millis", 2), while: shouldRetryPullRequestFetch }),
+						Effect.tapError(() => Atom.set(retryProgressAtom, initialRetryProgress)),
+					)
+					yield* Atom.set(retryProgressAtom, initialRetryProgress)
+					return page
+				}),
+			freshLoad: (queueView, page, existing) => freshPullRequestLoad(queueView, page, existing, config.prFetchLimit),
+			trimCache: trimQueueLoadCache,
+		})
+		devLog("pullRequestsAtom:done", {
+			cacheKey,
+			loadView: load.view,
+			dataLen: load.data.length,
+			sampleAuthors: load.data.slice(0, 8).map((pr) => pr.author),
+		})
+		return load
+	}),
+)
 
 export const usernameAtom = githubRuntime.atom(GitHubService.use((github) => github.getAuthenticatedUser())).pipe(Atom.keepAlive)
-
-export const listRepoLabelsAtom = githubRuntime.fn<string>()((repository) => GitHubService.use((github) => github.listRepoLabels(repository)))
 
 export const listOpenPullRequestPageAtom = githubRuntime.fn<ItemListInput<"pullRequest">>()((input) => GitHubService.use((github) => github.listPullRequestPage(input)))
 
@@ -189,9 +115,7 @@ export const listOpenPullRequestPageAtom = githubRuntime.fn<ItemListInput<"pullR
 // selection" — the atom resolves to null without hitting the service, so the
 // caller can read it unconditionally from React.
 //
-// No `keepAlive`: family-created atoms self-clean via WeakRef +
-// FinalizationRegistry. Keeping them alive defeats GC and accumulates one
-// entry per repository the user has ever viewed.
+// These are singleton imperative actions; repository is their input value.
 export const readCachedRepositoryDetailsAtom = githubRuntime.fn<string>()((repository) => CacheService.use((cache) => cache.readRepositoryDetails(repository)))
 export const writeRepositoryDetailsAtom = githubRuntime.fn<RepositoryDetails>()((details) => CacheService.use((cache) => cache.writeRepositoryDetails(details)))
 export const fetchRepositoryDetailsAtom = githubRuntime.fn<string>()((repository) => GitHubService.use((github) => github.getRepositoryDetails(repository)))
@@ -226,18 +150,65 @@ export const prewarmRepositoryDetailsAtom = githubRuntime.fn<readonly string[]>(
 	),
 )
 
-// One-shot detail fetch. Triggered imperatively by `useDetailHydration`,
-// which mirrors the result into `queueLoadCacheAtom` + the SQLite-backed
-// `readCachedPullRequestAtom`. Same reasoning as `pullRequestDiffAtom` —
-// `runtime.fn` yields a clean Promise from `useAtomSet({ mode: "promise" })`
-// instead of the dangling-AsyncResult hazard of family-of-runtime.atom +
-// `Effect.runPromise(AtomRegistry.getResult(...))`.
-export const pullRequestDetailsAtom = githubRuntime.fn<{ readonly repository: string; readonly number: number }>()((input) =>
-	GitHubService.use((github) => github.getPullRequestDetails(input.repository, input.number)),
+const applyPullRequestDetail = (loads: Partial<Record<string, PullRequestLoad>>, detail: PullRequestItem) => {
+	let changed = false
+	const next = { ...loads }
+	for (const [cacheKey, load] of Object.entries(loads)) {
+		if (!load) continue
+		const index = load.data.findIndex((pullRequest) => pullRequest.url === detail.url)
+		if (index < 0) continue
+		const data = [...load.data]
+		data[index] = mergePullRequestDetail(load.data[index]!, detail)
+		next[cacheKey] = { ...load, data }
+		changed = true
+	}
+	return changed ? next : loads
+}
+
+const applyCompletedPullRequestDetail = (completed: Readonly<Record<string, PullRequestItem>>, detail: PullRequestItem) => {
+	const current = completed[detail.url]
+	if (!current) return completed
+	return {
+		...completed,
+		[detail.url]: mergePullRequestDetail(current, detail),
+	}
+}
+
+// Each PR revision gets its own async atom and Effect lifetime. `Atom.family`
+// weakly memoizes members, while `AtomRegistry.getResult` temporarily mounts a
+// requested member until it settles. This keeps concurrent detail requests
+// isolated by key; a singleton `runtime.fn` would be latest-wins and let one PR
+// invocation interrupt another.
+export const pullRequestDetailsForRevision = Atom.family((revisionKey: string) =>
+	githubRuntime
+		.atom(
+			Effect.gen(function* () {
+				const { repository, number } = parsePullRequestRevisionAtomKey(revisionKey, "detail")
+				const cache = yield* CacheService
+				const github = yield* GitHubService
+				const cached = yield* cache.readPullRequest({ repository, number }).pipe(Effect.catch(() => Effect.succeed(null)))
+				if (cached?.detailLoaded && pullRequestRevisionAtomKey(cached) === revisionKey) {
+					yield* Atom.update(queueLoadCacheAtom, (loads) => applyPullRequestDetail(loads, cached))
+					yield* Atom.update(recentlyCompletedPullRequestsAtom, (completed) => applyCompletedPullRequestDetail(completed, cached))
+				}
+				const detail = yield* github.getPullRequestDetails(repository, number)
+				if (pullRequestRevisionAtomKey(detail) !== revisionKey) return detail
+				const loads = yield* Atom.get(queueLoadCacheAtom)
+				const completed = yield* Atom.get(recentlyCompletedPullRequestsAtom)
+				const summary =
+					Object.values(loads)
+						.flatMap((load) => load?.data ?? [])
+						.find((pullRequest) => pullRequest.url === detail.url) ?? completed[detail.url]
+				const mergedDetail = summary ? mergePullRequestDetail(summary, detail) : detail
+				yield* Atom.update(queueLoadCacheAtom, (current) => applyPullRequestDetail(current, mergedDetail))
+				yield* Atom.update(recentlyCompletedPullRequestsAtom, (current) => applyCompletedPullRequestDetail(current, mergedDetail))
+				yield* cache.upsertPullRequest(mergedDetail).pipe(Effect.catch(() => Effect.void))
+				return mergedDetail
+			}),
+		)
+		.pipe(Atom.setIdleTTL(0)),
 )
 
-export const readCachedPullRequestAtom = githubRuntime.fn<PullRequestCacheKey>()((key) => CacheService.use((cache) => cache.readPullRequest(key)))
-export const writeCachedPullRequestAtom = githubRuntime.fn<PullRequestItem>()((pullRequest) => CacheService.use((cache) => cache.upsertPullRequest(pullRequest)))
 export const writeQueueCacheAtom = githubRuntime.fn<{ readonly viewer: string; readonly load: PullRequestLoad }>()(({ viewer, load }) =>
 	CacheService.use((cache) => cache.writeQueue(viewer, load)),
 )
@@ -265,27 +236,10 @@ export const closePullRequestAtom = githubRuntime.fn<{ readonly repository: stri
 )
 
 // === Derived atoms (PR list pipeline) ===
-const pullRequestFilterScore = (pullRequest: PullRequestItem, query: string) => {
-	const normalized = query.trim().toLowerCase()
-	if (normalized.length === 0) return 0
-	const fields = [
-		pullRequest.title.toLowerCase(),
-		pullRequest.repository.toLowerCase(),
-		pullRequest.author.toLowerCase(),
-		pullRequest.headRefName.toLowerCase(),
-		String(pullRequest.number),
-	]
-	const scores = fields.flatMap((field, index) => {
-		const matchIndex = field.indexOf(normalized)
-		return matchIndex >= 0 ? [index * 1000 + matchIndex] : []
-	})
-	return scores.length > 0 ? Math.min(...scores) : null
-}
-
 // Pure resolver for the current view's load: prefer the in-memory cache for
 // the active view; fall back to the latest resolved fetch only if its view
 // matches. Inlined into every consumer instead of going through a
-// `pullRequestLoadAtom` intermediate — derived atoms that read multiple
+// an intermediate load atom — derived atoms that read multiple
 // upstream atoms can fail to re-evaluate cleanly under effect-atom's dep
 // propagation for certain transitions (reproduced by switching
 // Repository(X) -> Queue(authored, X)), leaving stale `view`/`data` for
@@ -296,33 +250,11 @@ export const resolveLoad = (
 	view: PullRequestView,
 	cache: Partial<Record<string, PullRequestLoad>>,
 	result: AsyncResult.AsyncResult<PullRequestLoad, unknown>,
-): PullRequestLoad | null => {
-	const cacheKey = viewCacheKey(view)
-	const cached = cache[cacheKey] ?? null
-	if (cached) return cached
-	const resolved = AsyncResult.getOrElse(result, () => null)
-	if (resolved && viewCacheKey(resolved.view) === cacheKey) return resolved
-	return null
-}
+): PullRequestLoad | null => resolveItemLoad(view, cache, result, viewCacheKey)
 
-// Read the result for the CURRENT view's family member. Equivalent to the
-// old `get(pullRequestsAtom)` but routes through the family so each view
-// is its own atom.
-const getCurrentPullRequestsResult = (get: Atom.AtomContext) => get(pullRequestsForView(get(activeViewAtom)))
-
-export const pullRequestLoadAtom = Atom.make((get) => resolveLoad(get(activeViewAtom), get(queueLoadCacheAtom), getCurrentPullRequestsResult(get))).pipe(Atom.keepAlive)
+const getCurrentPullRequestsResult = (get: Atom.AtomContext) => get(pullRequestsAtom)
 
 const cachedPullRequestLoad = (get: Atom.AtomContext): PullRequestLoad | null => get(queueLoadCacheAtom)[viewCacheKey(get(activeViewAtom))] ?? null
-
-export const isLoadingQueueModeAtom = Atom.make((get) => {
-	// Pure delegate of "is the active view's queue still loading".
-	// With family-per-view this is just whether the current view's atom
-	// is in a waiting state without a resolved value — the old check
-	// for "resolved.view doesn't match activeView" is gone because each
-	// family member's resolved.view always matches its own key.
-	const result = getCurrentPullRequestsResult(get)
-	return result.waiting && AsyncResult.getOrElse(result, () => null) === null
-})
 
 export const pullRequestStatusAtom = Atom.make((get): LoadStatus => {
 	const result = getCurrentPullRequestsResult(get)
@@ -332,7 +264,6 @@ export const pullRequestStatusAtom = Atom.make((get): LoadStatus => {
 	return "ready"
 })
 
-export const selectedRepositoryAtom = Atom.make((get) => viewRepository(get(activeViewAtom)))
 export const activeViewsAtom = Atom.make((get) => activePullRequestViews(get(activeViewAtom)))
 export const loadedPullRequestCountAtom = Atom.make((get) => cachedPullRequestLoad(get)?.data.length ?? 0)
 export const hasMorePullRequestsAtom = Atom.make((get) => {
@@ -350,22 +281,24 @@ export const isLoadingMorePullRequestsAtom = Atom.make((get) => {
 	return key !== null && key === viewCacheKey(get(activeViewAtom))
 })
 
+export const pullRequestFetchInFlightAtom = Atom.make((get) => getCurrentPullRequestsResult(get).waiting)
+
+export const pullRequestLoadMoreSlotAvailableAtom = Atom.make((get) => {
+	return !get(pullRequestFetchInFlightAtom) && get(effectiveFilterQueryAtom).length === 0 && get(hasMorePullRequestsAtom) && get(visiblePullRequestsAtom).length > 0
+})
+
 // Selection rests on the load-more pseudo-row when the index is one past the
 // last visible PR. Surfaces an explicit boolean so the keymap layer can branch
 // Enter onto `loadMorePullRequests` instead of `detail.open`, and the renderer
 // can highlight the row.
 export const loadMoreRowSelectedAtom = Atom.make((get) => {
 	const visible = get(visiblePullRequestsAtom)
-	const hasMore = get(hasMorePullRequestsAtom)
-	return hasMore && visible.length > 0 && get(selectedIndexAtom) === visible.length
+	return get(pullRequestLoadMoreSlotAvailableAtom) && get(selectedIndexAtom) === visible.length
 })
 
 export const displayedPullRequestsAtom = Atom.make((get) => {
 	const view = get(activeViewAtom)
-	// Fetch atoms always publish successful/cached loads into this cache. Avoid
-	// dynamically depending on a per-view runtime atom here: after switching
-	// Repository(X) -> Queue(authored, X), that dependency could remain valid
-	// with the prior repository list even after the authored fetch succeeded.
+	// Fetches publish successful/cached loads into this keyed display cache.
 	const load = get(queueLoadCacheAtom)[viewCacheKey(view)] ?? null
 	const overrides = get(pullRequestOverridesAtom)
 	const recentlyCompleted = get(recentlyCompletedPullRequestsAtom)
@@ -401,14 +334,7 @@ export const filteredPullRequestsAtom = Atom.make((get) => {
 	// search qualifier; no client-side author filter is needed here.
 	const pullRequests = get(displayedPullRequestsAtom)
 	const query = get(effectiveFilterQueryAtom)
-	if (query.length === 0) return pullRequests
-	return pullRequests
-		.flatMap((pullRequest) => {
-			const score = pullRequestFilterScore(pullRequest, query)
-			return score === null ? [] : [{ pullRequest, score }]
-		})
-		.sort((left, right) => left.score - right.score || right.pullRequest.updatedAt.getTime() - left.pullRequest.updatedAt.getTime())
-		.map(({ pullRequest }) => pullRequest)
+	return filterByScore(pullRequests, query, pullRequestFilterScore, (pullRequest) => pullRequest.updatedAt.getTime())
 })
 
 export const visibleRepoOrderAtom = Atom.make((get) => {

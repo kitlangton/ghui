@@ -5,11 +5,11 @@
     "": {
       "name": "ghui",
       "dependencies": {
-        "@effect/atom-react": "4.0.0-beta.70",
-        "@effect/sql-sqlite-bun": "4.0.0-beta.70",
+        "@effect/atom-react": "4.0.0-beta.85",
+        "@effect/sql-sqlite-bun": "4.0.0-beta.85",
         "@opentui/core": "0.2.15",
         "@opentui/react": "0.2.15",
-        "effect": "4.0.0-beta.70",
+        "effect": "4.0.0-beta.85",
         "react": "19.2.6",
         "scheduler": "0.27.0",
       },
@@ -32,11 +32,11 @@
     },
   },
   "packages": {
-    "@effect/atom-react": ["@effect/atom-react@4.0.0-beta.70", "", { "peerDependencies": { "effect": "^4.0.0-beta.70", "react": "^19.2.4", "scheduler": "*" } }, "sha512-G8fZHLBclfD9mZZY+9ltvJMZOMy4cJPa0wGoQcpevcvlpJoXlrugAosQ0ggiQ//HtVUsJ7K1ri9i28WX+d/a1Q=="],
+    "@effect/atom-react": ["@effect/atom-react@4.0.0-beta.85", "", { "peerDependencies": { "effect": "^4.0.0-beta.85", "react": "^19.2.4", "scheduler": "*" } }, "sha512-DsBau/iXF8GN6lpbObhwTsP0HcqzoaSJWzbewIUHp/SY2YeQV2bvo0IfPa0dhfwACZHZmhgzdPUaD7SpFyukmg=="],
 
     "@effect/language-service": ["@effect/language-service@0.86.2", "", { "bin": { "effect-language-service": "cli.js" } }, "sha512-SaPln+8srOqDJDUwNTDmP5e+IYpEDr9+1epGznnsLqu8xvo6VnxyWARdeLpqvZJlb0Pgy9ca7ppqvvdWbHPXAg=="],
 
-    "@effect/sql-sqlite-bun": ["@effect/sql-sqlite-bun@4.0.0-beta.70", "", { "peerDependencies": { "effect": "^4.0.0-beta.70" } }, "sha512-uf2h2MZbrZnUY81BhGbfO8qC/7d3U0RNjCNkwJp5duxg7cJdU5TDZAHiJoVTH2hC2nHFVE/ZhAtk2MYdGEE0bw=="],
+    "@effect/sql-sqlite-bun": ["@effect/sql-sqlite-bun@4.0.0-beta.85", "", { "peerDependencies": { "effect": "^4.0.0-beta.85" } }, "sha512-jzJLBPMZ4oI5LxovYhvO2gLKxy4g0BdAqN7+WN+8/Qf5gyR1wJrpaIcq6k+pRa4zQ0V2iU5Qvsa6I2lMmaJpcA=="],
 
     "@ghui/keymap": ["@ghui/keymap@workspace:packages/keymap"],
 
@@ -164,7 +164,7 @@
 
     "diff": ["diff@9.0.0", "", {}, "sha512-svtcdpS8CgJyqAjEQIXdb3OjhFVVYjzGAPO8WGCmRbrml64SPw/jJD4GoE98aR7r25A0XcgrK3F02yw9R/vhQw=="],
 
-    "effect": ["effect@4.0.0-beta.70", "", { "dependencies": { "@standard-schema/spec": "^1.1.0", "fast-check": "^4.8.0", "find-my-way-ts": "^0.1.6", "ini": "^7.0.0", "kubernetes-types": "^1.30.0", "msgpackr": "^2.0.1", "multipasta": "^0.2.7", "toml": "^4.1.1", "uuid": "^14.0.0", "yaml": "^2.9.0" } }, "sha512-8AwGTRiNriirHGEYHrOS0E9fzdhIqCdZjiHP1YXmNo2UyPGS43ILsymsSHT7V0DJS+8dvlKq2RxnrDBUhDNZHg=="],
+    "effect": ["effect@4.0.0-beta.85", "", { "dependencies": { "@standard-schema/spec": "^1.1.0", "fast-check": "^4.8.0", "find-my-way-ts": "^0.1.6", "ini": "^7.0.0", "kubernetes-types": "^1.30.0", "msgpackr": "^2.0.1", "multipasta": "^0.2.7", "toml": "^4.1.1", "uuid": "^14.0.0", "yaml": "^2.9.0" } }, "sha512-Cjv9YQyv4CiIccmRAQIWAoeESCpCpiuHYY8zb5vqiYs3Ac2yE5RQAnKq7z4Ir/3VJYZb8kxh6rS8czDDnpTdkQ=="],
 
     "emoji-regex": ["emoji-regex@10.6.0", "", {}, "sha512-toUI84YS5YmxW219erniWD0CIVOo46xGKColeNQRgOzDorgBi1v4D71/OFzgD9GO2UGKIv1C3Sp8DAn0+j5w7A=="],
 

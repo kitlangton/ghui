@@ -17,14 +17,14 @@ export class CommandError extends Schema.TaggedErrorClass<CommandError>()("Comma
 	command: Schema.String,
 	args: Schema.Array(Schema.String),
 	detail: Schema.String,
-	cause: Schema.Defect,
+	cause: Schema.Defect(),
 }) {}
 
 export class JsonParseError extends Schema.TaggedErrorClass<JsonParseError>()("JsonParseError", {
 	command: Schema.String,
 	args: Schema.Array(Schema.String),
 	stdout: Schema.String,
-	cause: Schema.Defect,
+	cause: Schema.Defect(),
 }) {}
 
 export const isCommandTimeoutError = (error: unknown): boolean => {

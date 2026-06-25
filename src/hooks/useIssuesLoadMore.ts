@@ -1,19 +1,20 @@
-import { useAtomSet } from "@effect/atom-react"
-import { type MutableRefObject, useRef, useState } from "react"
+import { useAtom, useAtomSet } from "@effect/atom-react"
+import { type MutableRefObject, useRef } from "react"
 import { config } from "../config.js"
 import { errorMessage } from "../errors.js"
-import { type IssueView, issueViewCacheKey, issueViewToQuery } from "../issueViews.js"
-import { issueQueryToListInput } from "../item.js"
+import { type IssueView, issueViewToListInput } from "../issueViews.js"
+import { itemQueueCacheViewer } from "../item/queue.js"
 import { nextIssueLoadAfterPage } from "../issueCache.js"
 import type { IssueLoad } from "../issueLoad.js"
 import { pullRequestPageSize } from "../services/runtime.js"
-import { issueCacheViewerFor, listIssuePageAtom, writeIssueQueueAtom } from "../ui/issues/atoms.js"
+import { listIssuePageAtom, loadingMoreIssueKeyAtom, writeIssueQueueAtom } from "../ui/issues/atoms.js"
 
 export interface UseIssuesLoadMoreInput {
 	readonly activeIssueView: IssueView
 	readonly currentIssueCacheKey: string
 	readonly issueLoad: IssueLoad | null
 	readonly hasMoreIssues: boolean
+	readonly issueFetchInFlight: boolean
 	readonly username: string | null
 	readonly refreshGenerationRef: MutableRefObject<number>
 	readonly flashNotice: (message: string) => void
@@ -42,6 +43,7 @@ export const useIssuesLoadMore = ({
 	currentIssueCacheKey,
 	issueLoad,
 	hasMoreIssues,
+	issueFetchInFlight,
 	username,
 	refreshGenerationRef,
 	flashNotice,
@@ -50,11 +52,12 @@ export const useIssuesLoadMore = ({
 	const loadIssuePage = useAtomSet(listIssuePageAtom, { mode: "promise" })
 	const writeIssueQueue = useAtomSet(writeIssueQueueAtom, { mode: "promise" })
 	const inFlightKeyRef = useRef<string | null>(null)
-	const [loadingMoreKey, setLoadingMoreKey] = useState<string | null>(null)
+	const [loadingMoreKey, setLoadingMoreKey] = useAtom(loadingMoreIssueKeyAtom)
 	const isLoadingMoreIssues = loadingMoreKey === currentIssueCacheKey
 
 	const loadMoreIssues = (): boolean => {
 		if (inFlightKeyRef.current !== null) return false
+		if (issueFetchInFlight) return false
 		if (!issueLoad || !hasMoreIssues || !issueLoad.endCursor) return false
 		const remaining = config.prFetchLimit - issueLoad.data.length
 		if (remaining <= 0) return false
@@ -62,7 +65,7 @@ export const useIssuesLoadMore = ({
 		const generation = refreshGenerationRef.current
 		inFlightKeyRef.current = cacheKey
 		setLoadingMoreKey(cacheKey)
-		const fetchPromise = loadIssuePage(issueQueryToListInput(issueViewToQuery(activeIssueView), issueLoad.endCursor, Math.min(pullRequestPageSize, remaining)))
+		const fetchPromise = loadIssuePage(issueViewToListInput(activeIssueView, issueLoad.endCursor, Math.min(pullRequestPageSize, remaining)))
 		let timeoutId: ReturnType<typeof globalThis.setTimeout> | null = null
 		const timeoutPromise = new Promise<never>((_, reject) => {
 			timeoutId = globalThis.setTimeout(() => reject(new Error(`Load more issues timed out after ${LOAD_MORE_TIMEOUT_MS / 1000}s`)), LOAD_MORE_TIMEOUT_MS)
@@ -79,7 +82,7 @@ export const useIssuesLoadMore = ({
 					return { ...current, [cacheKey]: persistedLoad }
 				})
 				if (!persistedLoad) return
-				const viewer = issueCacheViewerFor(activeIssueView, username)
+				const viewer = itemQueueCacheViewer(activeIssueView, username)
 				if (viewer) void writeIssueQueue({ viewer, load: persistedLoad }).catch(() => {})
 			})
 			.catch((error) => {
@@ -100,5 +103,3 @@ export const useIssuesLoadMore = ({
 
 	return { loadMoreIssues, isLoadingMoreIssues, resetLoadingMoreIssues }
 }
-
-void issueViewCacheKey

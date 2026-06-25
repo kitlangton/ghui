@@ -12,7 +12,7 @@ import { commandsById } from "./index.js"
 // Unknown ids resolve quietly — the alternative is to make every keymap
 // handler defensive about IDs that haven't been ported yet.
 
-export const dispatchCommandAtom = githubRuntime.fn<string>()((id) =>
+export const dispatchCommand = (id: string) =>
 	Effect.gen(function* () {
 		const command = commandsById.get(id)
 		if (!command) return
@@ -21,5 +21,6 @@ export const dispatchCommandAtom = githubRuntime.fn<string>()((id) =>
 			if (reason !== null) return
 		}
 		yield* command.run
-	}),
-)
+	})
+
+export const dispatchCommandAtom = githubRuntime.fn<string>()(dispatchCommand)

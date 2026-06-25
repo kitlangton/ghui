@@ -14,16 +14,12 @@ import {
 import type { DiffFilePatch, DiffView } from "../ui/diff.js"
 import { readyDiffFilesAtom } from "../ui/diff/atoms.js"
 import { filterChangedFiles } from "../ui/modals/shared.js"
-import { selectedPullRequestAtom } from "../ui/pullRequests/atoms.js"
-import { pullRequestListRowIndex, type PullRequestListRow } from "../ui/PullRequestList.js"
 
 export interface UseSelectionDerivationsInput {
 	readonly diffRenderView: DiffView
 	readonly contentWidth: number
 	readonly changedFilesModalActive: boolean
 	readonly changedFilesQuery: string
-	readonly pullRequestListRows: readonly PullRequestListRow[]
-	readonly loadMoreRowSelected: boolean
 }
 
 export interface SelectionDerivations {
@@ -37,7 +33,6 @@ export interface SelectionDerivations {
 	readonly effectiveDiffRenderView: DiffView
 	readonly readyDiffFiles: readonly DiffFilePatch[]
 	readonly changedFileResults: ReturnType<typeof filterChangedFiles>
-	readonly selectedPullRequestRowIndex: number | null
 }
 
 // Thin React-side wrapper over the selection-derived atoms. Items that can
@@ -45,14 +40,7 @@ export interface SelectionDerivations {
 // in their respective atom modules — see `ui/comments/atoms.ts` and
 // `ui/diff/atoms.ts`. The hook still owns the few derivations that depend on
 // React-only state (terminal width, modal flags, the row-index lookup).
-export const useSelectionDerivations = ({
-	diffRenderView,
-	contentWidth,
-	changedFilesModalActive,
-	changedFilesQuery,
-	pullRequestListRows,
-	loadMoreRowSelected,
-}: UseSelectionDerivationsInput): SelectionDerivations => {
+export const useSelectionDerivations = ({ diffRenderView, contentWidth, changedFilesModalActive, changedFilesQuery }: UseSelectionDerivationsInput): SelectionDerivations => {
 	const selectedCommentSubject = useAtomValue(selectedCommentSubjectAtom)
 	const selectedCommentKey = useAtomValue(selectedCommentKeyAtom)
 	const selectedItemLabels = useAtomValue(selectedItemLabelsAtom)
@@ -61,15 +49,12 @@ export const useSelectionDerivations = ({
 	const selectedCommentCount = useAtomValue(selectedCommentCountAtom)
 	const commentsRowCount = useAtomValue(commentsRowCountAtom)
 	const readyDiffFiles = useAtomValue(readyDiffFilesAtom)
-	const selectedPullRequest = useAtomValue(selectedPullRequestAtom)
 
 	const effectiveDiffRenderView: DiffView = contentWidth >= 100 ? diffRenderView : "unified"
 	const changedFileResults = useMemo(
 		() => (changedFilesModalActive ? filterChangedFiles(readyDiffFiles, changedFilesQuery) : []),
 		[changedFilesModalActive, readyDiffFiles, changedFilesQuery],
 	)
-	const selectedPullRequestRowIndex = pullRequestListRowIndex(pullRequestListRows, selectedPullRequest?.url ?? null, loadMoreRowSelected)
-
 	return {
 		selectedCommentSubject,
 		selectedCommentKey,
@@ -81,6 +66,5 @@ export const useSelectionDerivations = ({
 		effectiveDiffRenderView,
 		readyDiffFiles,
 		changedFileResults,
-		selectedPullRequestRowIndex,
 	}
 }

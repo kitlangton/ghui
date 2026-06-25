@@ -250,4 +250,4 @@ No data migration needed — the `queue_snapshots` table is reused as-is.
 
 ## Status
 
-Not started.
+Shipped — issue queue caching, repo rollup hydration, repository-details prewarm, and issue pruning are present in the current implementation.

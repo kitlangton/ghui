@@ -15,8 +15,8 @@ import { initialCommandPaletteState, initialCommentModalState, initialOpenReposi
 import { noticeAtom } from "../ui/notice/atoms.js"
 import type { PullRequestUserQueueMode } from "../domain.js"
 import { pullRequestQueueModes } from "../domain.js"
-import { labelCacheAtom, selectedPullRequestAtom, selectedRepositoryAtom } from "../ui/pullRequests/atoms.js"
-import { workspaceSurfaceAtom, workspaceTabSurfacesAtom } from "../workspace/atoms.js"
+import { labelCacheAtom, selectedPullRequestAtom } from "../ui/pullRequests/atoms.js"
+import { selectedRepositoryAtom, workspaceSurfaceAtom, workspaceTabSurfacesAtom } from "../workspace/atoms.js"
 import { type WorkspaceSurface, workspaceSurfaceLabels, workspaceSurfaces } from "../workspaceSurfaces.js"
 import {
 	changedFilesReasonAtom,

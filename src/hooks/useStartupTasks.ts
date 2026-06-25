@@ -20,6 +20,7 @@ export interface UseStartupTasksInput {
 	readonly issueLoad: IssueLoadShape | null
 	readonly currentQueueCacheKey: string
 	readonly selectedIndex: number
+	readonly persistQueueSelection: boolean
 	readonly readRepoRollup: (username: string) => Promise<readonly RepoRollupRow[]>
 	readonly setRepoRollup: (rows: readonly RepoRollupRow[]) => void
 	readonly prewarmRepositoryDetails: (repositories: readonly string[]) => Promise<unknown>
@@ -49,6 +50,7 @@ export const useStartupTasks = ({
 	issueLoad,
 	currentQueueCacheKey,
 	selectedIndex,
+	persistQueueSelection,
 	readRepoRollup,
 	setRepoRollup,
 	prewarmRepositoryDetails,
@@ -74,6 +76,7 @@ export const useStartupTasks = ({
 	}, [username, recentRepositories, favoriteRepositories, detectedRepository, prewarmRepositoryDetails])
 
 	useEffect(() => {
+		if (!persistQueueSelection) return
 		setQueueSelection((current) => (current[currentQueueCacheKey] === selectedIndex ? current : { ...current, [currentQueueCacheKey]: selectedIndex }))
-	}, [currentQueueCacheKey, selectedIndex, setQueueSelection])
+	}, [currentQueueCacheKey, persistQueueSelection, selectedIndex, setQueueSelection])
 }

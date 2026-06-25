@@ -35,6 +35,7 @@ export interface WorkspaceDerivationsInput {
 	readonly pullRequestStatus: LoadStatus
 	readonly pullRequestError: string | null
 	readonly pullRequestActiveFilterLabel: string | null
+	readonly compactPullRequestRows: boolean
 	readonly issueActiveFilterLabel: string | null
 	readonly pullRequestListRows: readonly PullRequestListRow[]
 	readonly visibleGroups: PullRequestGroups
@@ -47,6 +48,7 @@ export interface WorkspaceDerivationsInput {
 	readonly selectedIssueIndex: number
 	readonly selectedRepositoryIndex: number
 	readonly hasMorePullRequests: boolean
+	readonly pullRequestLoadMoreSlotAvailable: boolean
 	readonly isLoadingMorePullRequests: boolean
 	readonly loadedPullRequestCount: number
 	readonly loadingIndicator: string
@@ -58,6 +60,7 @@ export interface WorkspaceDerivationsInput {
 	readonly loadMoreSelected: boolean
 	readonly onSelectLoadMore: () => void
 	readonly hasMoreIssues: boolean
+	readonly issueLoadMoreSlotAvailable: boolean
 	readonly isLoadingMoreIssues: boolean
 	readonly loadedIssueCount: number
 	readonly loadMoreIssueRowSelected: boolean
@@ -133,6 +136,7 @@ export const computeWorkspaceDerivations = (input: WorkspaceDerivationsInput): W
 		pullRequestStatus,
 		pullRequestError,
 		pullRequestActiveFilterLabel,
+		compactPullRequestRows,
 		issueActiveFilterLabel,
 		pullRequestListRows,
 		visibleGroups,
@@ -145,6 +149,7 @@ export const computeWorkspaceDerivations = (input: WorkspaceDerivationsInput): W
 		selectedIssueIndex,
 		selectedRepositoryIndex,
 		hasMorePullRequests,
+		pullRequestLoadMoreSlotAvailable,
 		isLoadingMorePullRequests,
 		loadedPullRequestCount,
 		loadingIndicator,
@@ -156,6 +161,7 @@ export const computeWorkspaceDerivations = (input: WorkspaceDerivationsInput): W
 		loadMoreSelected,
 		onSelectLoadMore,
 		hasMoreIssues,
+		issueLoadMoreSlotAvailable,
 		isLoadingMoreIssues,
 		loadedIssueCount,
 		loadMoreIssueRowSelected,
@@ -205,13 +211,14 @@ export const computeWorkspaceDerivations = (input: WorkspaceDerivationsInput): W
 		error: pullRequestError,
 		filterText: visibleFilterText,
 		loadedCount: loadedPullRequestCount,
-		hasMore: hasMorePullRequests,
+		hasMore: pullRequestLoadMoreSlotAvailable,
 		isLoadingMore: isLoadingMorePullRequests,
 		loadingIndicator,
 		onSelectPullRequest: selectPullRequestByUrl,
 		onSelectLoadMore,
 		showTitle: false,
 		showRepositoryGroups: selectedRepository === null,
+		compact: compactPullRequestRows,
 	} as const
 	const issueListProps = {
 		issues,
@@ -223,7 +230,7 @@ export const computeWorkspaceDerivations = (input: WorkspaceDerivationsInput): W
 		showFilterBar: false,
 		isFilterEditing: filterMode,
 		onSelectIssue: setSelectedIssueIndex,
-		hasMore: hasMoreIssues,
+		hasMore: issueLoadMoreSlotAvailable,
 		isLoadingMore: isLoadingMoreIssues,
 		loadedCount: loadedIssueCount,
 		loadingIndicator,
@@ -246,7 +253,6 @@ export const computeWorkspaceDerivations = (input: WorkspaceDerivationsInput): W
 	const issueFilterBarHeight = issueActiveFilterLabel ? ACTIVE_FILTER_BAR_HEIGHT : 0
 	const wideIssueRowsHeight = Math.max(1, wideBodyHeight - issueFilterBarHeight)
 	const narrowIssueRowsHeight = Math.max(1, narrowIssueListHeight - issueFilterBarHeight)
-	const issueLoadMoreSlotAvailable = hasMoreIssues && issues.length > 0
 	const issueVisualLineCount = issueListVisualLineCount(issues, showIssueRepositoryGroups, issueLoadMoreSlotAvailable)
 	const issueListNeedsScroll = issuesStatus === "ready" && issueVisualLineCount > wideIssueRowsHeight
 	const narrowIssueListNeedsScroll = issuesStatus === "ready" && issueVisualLineCount > narrowIssueRowsHeight

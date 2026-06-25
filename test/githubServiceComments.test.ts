@@ -57,6 +57,13 @@ const baseReviewResponse = JSON.stringify({
 const runWith = <A>(effect: Effect.Effect<A, unknown, GitHubService>, layer: Layer.Layer<GitHubService>) =>
 	Effect.runPromise(effect.pipe(Effect.provide(layer)) as Effect.Effect<A>)
 
+const operationCall = (recorder: readonly RecordedCall[]) => {
+	expect(recorder.filter((call) => call.args[0] === "api" && call.args[1] === "user")).toHaveLength(1)
+	const call = recorder.find((call) => !(call.args[0] === "api" && call.args[1] === "user"))
+	if (!call) throw new Error("Expected a GitHub operation after authentication")
+	return call
+}
+
 const repositoryPullRequestListResponse = JSON.stringify({
 	data: {
 		repository: {
@@ -88,6 +95,18 @@ const repositoryPullRequestListResponse = JSON.stringify({
 })
 
 describe("GitHubService list queries", () => {
+	test("shares concurrent authenticated-user lookups", async () => {
+		const recorder: RecordedCall[] = []
+		const layer = GitHubService.layerNoDeps.pipe(Layer.provide(fakeCommandRunner(JSON.stringify({ login: "kit" }), recorder)))
+		const users = await runWith(
+			GitHubService.use((github) => Effect.all([github.getAuthenticatedUser(), github.getAuthenticatedUser(), github.getAuthenticatedUser()], { concurrency: "unbounded" })),
+			layer,
+		)
+
+		expect(users).toEqual(["kit", "kit", "kit"])
+		expect(recorder.filter((call) => call.args[0] === "api" && call.args[1] === "user")).toHaveLength(1)
+	})
+
 	test("repository PR list query omits expensive status checks", async () => {
 		const recorder: RecordedCall[] = []
 		const layer = GitHubService.layerNoDeps.pipe(Layer.provide(fakeCommandRunner(repositoryPullRequestListResponse, recorder)))
@@ -98,10 +117,11 @@ describe("GitHubService list queries", () => {
 
 		expect(page.items).toHaveLength(1)
 		expect(page.items[0]!.checkStatus).toBe("none")
-		const queryArg = recorder[0]!.args.find((arg) => arg.startsWith("query=")) ?? ""
+		const call = operationCall(recorder)
+		const queryArg = call.args.find((arg) => arg.startsWith("query=")) ?? ""
 		expect(queryArg).not.toContain("statusCheckRollup")
 		expect(queryArg).not.toContain("contexts(first: 100)")
-		expect(recorder[0]!.args).toContain("first=1")
+		expect(call.args).toContain("first=1")
 	})
 
 	test("classifies GitHub rate limit errors", () => {
@@ -119,7 +139,7 @@ describe("GitHubService list queries", () => {
 			layer,
 		)
 
-		expect(recorder[0]!.args).toContain("1000")
+		expect(operationCall(recorder).args).toContain("1000")
 	})
 })
 
@@ -135,9 +155,9 @@ describe("GitHubService comment edit/delete", () => {
 		expect(updated._tag).toBe("comment")
 		expect(updated.body).toBe("Updated body")
 		expect(updated.id).toBe("9001")
-		expect(recorder).toHaveLength(1)
-		expect(recorder[0]!.command).toBe("gh")
-		expect(recorder[0]!.args).toEqual(["api", "--method", "PATCH", "repos/owner/repo/issues/comments/9001", "-f", "body=Updated body"])
+		const call = operationCall(recorder)
+		expect(call.command).toBe("gh")
+		expect(call.args).toEqual(["api", "--method", "PATCH", "repos/owner/repo/issues/comments/9001", "-f", "body=Updated body"])
 	})
 
 	test("editReviewComment PATCHes the pulls comments endpoint", async () => {
@@ -150,7 +170,7 @@ describe("GitHubService comment edit/delete", () => {
 
 		expect(updated._tag).toBe("review-comment")
 		expect(updated.body).toBe("Updated review body")
-		expect(recorder[0]!.args).toEqual(["api", "--method", "PATCH", "repos/owner/repo/pulls/comments/7777", "-f", "body=Updated review body"])
+		expect(operationCall(recorder).args).toEqual(["api", "--method", "PATCH", "repos/owner/repo/pulls/comments/7777", "-f", "body=Updated review body"])
 	})
 
 	test("deletePullRequestIssueComment DELETEs the issue comments endpoint", async () => {
@@ -161,8 +181,7 @@ describe("GitHubService comment edit/delete", () => {
 			layer,
 		)
 
-		expect(recorder).toHaveLength(1)
-		expect(recorder[0]!.args).toEqual(["api", "--method", "DELETE", "repos/owner/repo/issues/comments/9001"])
+		expect(operationCall(recorder).args).toEqual(["api", "--method", "DELETE", "repos/owner/repo/issues/comments/9001"])
 	})
 
 	test("deleteReviewComment DELETEs the pulls comments endpoint", async () => {
@@ -173,6 +192,6 @@ describe("GitHubService comment edit/delete", () => {
 			layer,
 		)
 
-		expect(recorder[0]!.args).toEqual(["api", "--method", "DELETE", "repos/owner/repo/pulls/comments/7777"])
+		expect(operationCall(recorder).args).toEqual(["api", "--method", "DELETE", "repos/owner/repo/pulls/comments/7777"])
 	})
 })

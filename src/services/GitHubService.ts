@@ -253,7 +253,11 @@ export class GitHubService extends Context.Service<
 				return parsePullRequest(pullRequest)
 			})
 
-			const getAuthenticatedUser = () => ghJson("getAuthenticatedUser", ViewerSchema, ["api", "user"]).pipe(Effect.map((viewer) => viewer.login))
+			const authenticatedUser = yield* ghJson("getAuthenticatedUser", ViewerSchema, ["api", "user"]).pipe(
+				Effect.map((viewer) => viewer.login),
+				Effect.cachedWithTTL("5 minutes"),
+			)
+			const getAuthenticatedUser = () => authenticatedUser
 
 			const getRepositoryDetails = Effect.fn("GitHubService.getRepositoryDetails")(function* (repository: string) {
 				const repo = repositoryParts(repository)

@@ -121,6 +121,10 @@ behavior.
 - `y`: copy PR metadata
 - `q`: quit
 
+Authored-only pull request views render compact one-line rows because the
+author identity is implied by the active view. Mixed-author views continue to
+show the author and branch metadata row.
+
 Review submission:
 
 - Press `shift-r` to open the review modal.

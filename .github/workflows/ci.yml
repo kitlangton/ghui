@@ -31,4 +31,6 @@ jobs:
 
       - run: bun run test
 
+      - run: bun run test:keymap
+
       - run: bun run package:smoke

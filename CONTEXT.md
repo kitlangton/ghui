@@ -4,7 +4,7 @@ Load-bearing terms used in code, plans, and architecture reviews. When a refacto
 
 ## Item
 
-A PR or an Issue. They share intake, pagination, cache merge semantics, mutation surface (label add/remove, close, comment), and detail hydration. The shared shape lives in `src/domain.ts` (`PullRequestItem`, `IssueItem`, `ItemKind`); the shared cache/load logic is the long-term target of `src/item/`.
+A PR or an Issue. They share intake, pagination, cache merge semantics, mutation surface (label add/remove, close, comment), and detail hydration. The shared shape lives in `src/domain.ts` (`PullRequestItem`, `IssueItem`, `ItemKind`); shared Load and pagination invariants live in `src/item/load.ts`, while the cache-first first-page Queue protocol lives in `src/item/queue.ts`.
 
 Both PR-only fields (diff, merge state, reviews) and Issue-only fields exist, but anywhere the same skeleton applies to both, "Item" is the right name. `useItemMutations` (formerly `usePullRequestMutations`) is the canonical example — it already mutates both kinds.
 
@@ -13,6 +13,10 @@ Both PR-only fields (diff, merge state, reviews) and Issue-only fields exist, bu
 A top-level workspace mode the user navigates between via tabs. Today: **Repo Surface** (browse repositories), **Pull Request Surface**, **Issue Surface**. The active Surface is tracked in `workspaceSurfaceAtom`. Each Surface owns its own atoms reads, loaders, view modes (list/detail/diff/comments), modals' state, and keymap context.
 
 A Surface is not a layout container and not a pure component — it's a *shell* with state + actions + derivations. The JSX in `src/surfaces/` is the rendered view of the shell.
+
+## Workspace Scope
+
+The user's current navigation scope: either **User** or a specific **Repository**. Workspace Scope is owned above Surfaces in `workspaceScopeAtom`; it determines which Surface tabs are reachable and navigation projects it into each Item Surface's View. A Pull Request View or Issue View describes what that Surface loads, but neither owns Workspace Scope.
 
 ## App-shell
 

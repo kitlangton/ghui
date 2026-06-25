@@ -164,7 +164,6 @@ export const useAppShell = ({ systemThemeGeneration }: UseAppShellInput) => {
 		addIssueLabel,
 		removeIssueLabel,
 		toggleDraftStatus,
-		listPullRequestReviewComments,
 		listPullRequestComments,
 		listIssueComments,
 		readWorkspacePreferences,
@@ -173,7 +172,7 @@ export const useAppShell = ({ systemThemeGeneration }: UseAppShellInput) => {
 		prewarmRepositoryDetails,
 		closePullRequest,
 		closeIssue,
-		refreshIssuesForView,
+		refreshIssues,
 		submitPullRequestReview,
 		openUrl,
 		readRepoRollup,
@@ -246,8 +245,6 @@ export const useAppShell = ({ systemThemeGeneration }: UseAppShellInput) => {
 		selectedIndex,
 		setSelectedIndex,
 		setQueueSelection,
-		filterMode,
-		filterQuery,
 		visibleFilterText,
 		activeWorkspaceSurface,
 		detailFullView,
@@ -269,7 +266,6 @@ export const useAppShell = ({ systemThemeGeneration }: UseAppShellInput) => {
 		hasMorePullRequests,
 		loadedPullRequestCount,
 		loadMoreRowSelected,
-		visibleHasMorePullRequests,
 		loadMoreSlotAvailable,
 		pullRequests,
 		visiblePullRequests,
@@ -278,6 +274,7 @@ export const useAppShell = ({ systemThemeGeneration }: UseAppShellInput) => {
 		selectedPullRequest,
 		selectedRepository,
 		pullRequestActiveFilterLabel,
+		compactPullRequestRows,
 		pullRequestListRows,
 		setPullRequestOverrides,
 		setRecentlyCompletedPullRequests,
@@ -294,9 +291,7 @@ export const useAppShell = ({ systemThemeGeneration }: UseAppShellInput) => {
 	const isInitialLoading = !startupLoadComplete && pullRequestStatus === "loading" && pullRequests.length === 0
 
 	const issueSurface = useIssueSurface({
-		selectedRepository,
 		username,
-		visibleFilterText,
 		activeWorkspaceSurface,
 		detailFullView,
 		diffFullView,
@@ -321,6 +316,7 @@ export const useAppShell = ({ systemThemeGeneration }: UseAppShellInput) => {
 		loadedIssueCount,
 		loadMoreIssueRowSelected,
 		issueLoadMoreSlotAvailable,
+		issueFetchInFlight,
 		issueActiveFilterLabel,
 		setIssueOverrides,
 		showIssueRepositoryGroups,
@@ -328,6 +324,9 @@ export const useAppShell = ({ systemThemeGeneration }: UseAppShellInput) => {
 		isLoadingMoreIssues,
 		resetLoadingMoreIssues,
 	} = issueSurface
+	const refreshIssuesIfIdle = () => {
+		if (!issueFetchInFlight && !isLoadingMoreIssues) refreshIssues()
+	}
 
 	const workspaceTabSurfaces: readonly WorkspaceSurface[] = selectedRepository ? repositoryWorkspaceSurfaces : userWorkspaceSurfaces
 	const repo = useRepoSurface({
@@ -370,8 +369,6 @@ export const useAppShell = ({ systemThemeGeneration }: UseAppShellInput) => {
 		contentWidth,
 		changedFilesModalActive,
 		changedFilesQuery: changedFilesModal.query,
-		pullRequestListRows,
-		loadMoreRowSelected,
 	})
 	const {
 		displayedDiffState,
@@ -437,6 +434,7 @@ export const useAppShell = ({ systemThemeGeneration }: UseAppShellInput) => {
 		setNotice,
 		cancelRefreshToast,
 		filterQuery,
+		filterMode,
 		setRecentlyCompletedPullRequests,
 		setActiveWorkspaceSurface,
 		activeWorkspaceSurface,
@@ -476,7 +474,7 @@ export const useAppShell = ({ systemThemeGeneration }: UseAppShellInput) => {
 		flashNotice,
 	})
 	// View-change refetch is now driven by `pullRequestsAtom`'s reactive
-	// dependency on `activeViewAtom`. `pullRequestLoadAtom` reads the in-memory
+	// dependency on `activeViewAtom`. Display derivations read the in-memory
 	// cache first, so the user sees the previous list instantly while the new
 	// view's fetch lands.
 
@@ -502,6 +500,7 @@ export const useAppShell = ({ systemThemeGeneration }: UseAppShellInput) => {
 		issueLoad,
 		currentQueueCacheKey,
 		selectedIndex,
+		persistQueueSelection: !filterMode && filterQuery.length === 0,
 		readRepoRollup,
 		setRepoRollup,
 		prewarmRepositoryDetails,
@@ -604,7 +603,6 @@ export const useAppShell = ({ systemThemeGeneration }: UseAppShellInput) => {
 		setPullRequestDiffCache,
 		setDiffCommentsLoaded,
 		setDiffCommentThreads,
-		listPullRequestReviewComments,
 		flashNotice,
 	})
 
@@ -760,7 +758,7 @@ export const useAppShell = ({ systemThemeGeneration }: UseAppShellInput) => {
 		markPullRequestCompleted,
 		restoreOptimisticPullRequest,
 		refreshPullRequests,
-		refreshIssues: () => refreshIssuesForView(activeIssueView),
+		refreshIssues: refreshIssuesIfIdle,
 		toggleDraftStatus,
 		closePullRequest,
 		closeIssue,
@@ -864,7 +862,7 @@ export const useAppShell = ({ systemThemeGeneration }: UseAppShellInput) => {
 		selectedPullRequest,
 		selectedRepository,
 		refreshPullRequests,
-		refreshIssues: () => refreshIssuesForView(activeIssueView),
+		refreshIssues: refreshIssuesIfIdle,
 		loadMorePullRequests,
 		loadPullRequestDiff,
 		flashNotice,
@@ -912,8 +910,6 @@ export const useAppShell = ({ systemThemeGeneration }: UseAppShellInput) => {
 			visiblePullRequests,
 			issues,
 			repositoryItems,
-			selectedIndex,
-			visibleHasMorePullRequests,
 			loadMoreSlotAvailable,
 			issueLoadMoreSlotAvailable,
 			groupStarts,
@@ -1082,6 +1078,7 @@ export const useAppShell = ({ systemThemeGeneration }: UseAppShellInput) => {
 		pullRequestStatus,
 		pullRequestError,
 		pullRequestActiveFilterLabel,
+		compactPullRequestRows,
 		issueActiveFilterLabel,
 		pullRequestListRows,
 		visibleGroups,
@@ -1094,6 +1091,7 @@ export const useAppShell = ({ systemThemeGeneration }: UseAppShellInput) => {
 		selectedIssueIndex,
 		selectedRepositoryIndex,
 		hasMorePullRequests,
+		pullRequestLoadMoreSlotAvailable: loadMoreSlotAvailable,
 		isLoadingMorePullRequests,
 		loadedPullRequestCount,
 		loadingIndicator,
@@ -1104,16 +1102,15 @@ export const useAppShell = ({ systemThemeGeneration }: UseAppShellInput) => {
 		setSelectedRepositoryIndex,
 		loadMoreSelected: loadMoreRowSelected,
 		onSelectLoadMore: () => {
-			setSelectedIndex(visiblePullRequests.length)
-			loadMorePullRequests()
+			if (loadMorePullRequests()) setSelectedIndex(visiblePullRequests.length)
 		},
 		hasMoreIssues,
+		issueLoadMoreSlotAvailable,
 		isLoadingMoreIssues,
 		loadedIssueCount,
 		loadMoreIssueRowSelected,
 		onSelectLoadMoreIssues: () => {
-			setSelectedIssueIndex(issues.length)
-			loadMoreIssues()
+			if (loadMoreIssues()) setSelectedIssueIndex(issues.length)
 		},
 		diffFilePanelDividerColumn: diffFilePanelVisible ? diffFilePanelEffectiveWidth : null,
 	})

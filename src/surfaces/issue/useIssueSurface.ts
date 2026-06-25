@@ -1,26 +1,34 @@
 import { useAtom, useAtomSet, useAtomValue } from "@effect/atom-react"
 import type { ScrollBoxRenderable } from "@opentui/core"
+import { Cause } from "effect"
+import * as AsyncResult from "effect/unstable/reactivity/AsyncResult"
 import type { MutableRefObject } from "react"
 import type { IssueItem, LoadStatus } from "../../domain.js"
+import { errorMessage } from "../../errors.js"
 import type { IssueView } from "../../issueViews.js"
 import { issueViewCacheKey } from "../../issueViews.js"
 import type { IssueLoad } from "../../issueLoad.js"
-import { useIssueListDerivations } from "../../hooks/useIssueListDerivations.js"
 import { useIssuesLoadMore } from "../../hooks/useIssuesLoadMore.js"
 import {
 	activeIssueViewAtom,
+	allIssuesAtom,
 	hasMoreIssuesAtom,
+	issueListAtom,
+	issueLoadMoreSlotAvailableAtom,
+	issueFetchInFlightAtom,
+	issueOverridesAtom,
 	issueQueueLoadCacheAtom,
-	issuesForView,
+	issuesAtom,
 	issueViewRepository,
+	loadMoreIssueRowSelectedAtom,
 	loadedIssueCountAtom,
 	resolveIssueLoad,
+	selectedIssueAtom,
+	showIssueRepositoryGroupsAtom,
 } from "../../ui/issues/atoms.js"
 import { useMemo } from "react"
-import { issueOverridesAtom } from "../../ui/pullRequests/atoms.js"
+import { issueListRowIndex } from "../../ui/IssueList.js"
 import { selectedIssueIndexAtom } from "../../ui/listSelection/atoms.js"
-// `issueOverridesAtom` currently lives next to PR atoms; a future
-// refactor should colocate it with the rest of the issue atoms.
 import { useClampedIndex } from "../../ui/useClampedIndex.js"
 import { useScrollFollowSelected } from "../../ui/useScrollFollowSelected.js"
 import { useScrollPersistence } from "../../ui/useScrollPersistence.js"
@@ -29,9 +37,7 @@ import type { WorkspaceSurface } from "../../workspaceSurfaces.js"
 type SetState<T> = (next: T | ((prev: T) => T)) => void
 
 export interface UseIssueSurfaceInput {
-	readonly selectedRepository: string | null
 	readonly username: string | null
-	readonly visibleFilterText: string
 	readonly activeWorkspaceSurface: WorkspaceSurface
 	readonly detailFullView: boolean
 	readonly diffFullView: boolean
@@ -59,11 +65,11 @@ export interface IssueSurfaceShell {
 	readonly loadedIssueCount: number
 	readonly loadMoreIssueRowSelected: boolean
 	readonly issueLoadMoreSlotAvailable: boolean
+	readonly issueFetchInFlight: boolean
 	readonly setIssueQueueLoadCache: SetState<Partial<Record<string, IssueLoad>>>
 	readonly currentIssueCacheKey: string
 	readonly issueAuthorFilterActive: boolean
 	readonly issueActiveFilterLabel: string | null
-	readonly issueOverrides: Readonly<Record<string, IssueItem>>
 	readonly setIssueOverrides: SetState<Readonly<Record<string, IssueItem>>>
 	readonly selectedIssueRepository: string | null
 	readonly showIssueRepositoryGroups: boolean
@@ -80,49 +86,34 @@ export interface IssueSurfaceShell {
 // Item-Surface shell when the PR Surface lands and we collapse shared
 // view-mode state.
 export const useIssueSurface = (input: UseIssueSurfaceInput): IssueSurfaceShell => {
-	const {
-		selectedRepository,
-		username,
-		visibleFilterText,
-		activeWorkspaceSurface,
-		detailFullView,
-		diffFullView,
-		commentsViewActive,
-		refreshGenerationRef,
-		flashNotice,
-		issueListScrollRef,
-		issueListScrollPersistedRef,
-	} = input
+	const { username, activeWorkspaceSurface, detailFullView, diffFullView, commentsViewActive, refreshGenerationRef, flashNotice, issueListScrollRef, issueListScrollPersistedRef } =
+		input
 
 	const [activeIssueView, setActiveIssueView] = useAtom(activeIssueViewAtom)
-	const currentIssuesAtom = useMemo(() => issuesForView(activeIssueView), [activeIssueView])
-	const issuesResult = useAtomValue(currentIssuesAtom)
+	const issuesResult = useAtomValue(issuesAtom)
 	const issueQueueLoadCache = useAtomValue(issueQueueLoadCacheAtom)
 	const hasMoreIssues = useAtomValue(hasMoreIssuesAtom)
 	const loadedIssueCount = useAtomValue(loadedIssueCountAtom)
 	const setIssueQueueLoadCache = useAtomSet(issueQueueLoadCacheAtom)
 	const [selectedIssueIndex, setSelectedIssueIndex] = useAtom(selectedIssueIndexAtom)
-	const [issueOverrides, setIssueOverrides] = useAtom(issueOverridesAtom)
+	const setIssueOverrides = useAtomSet(issueOverridesAtom)
+	const allIssues = useAtomValue(allIssuesAtom)
+	const issues = useAtomValue(issueListAtom)
+	const selectedIssue = useAtomValue(selectedIssueAtom)
+	const loadMoreIssueRowSelected = useAtomValue(loadMoreIssueRowSelectedAtom)
+	const issueLoadMoreSlotAvailable = useAtomValue(issueLoadMoreSlotAvailableAtom)
+	const issueFetchInFlight = useAtomValue(issueFetchInFlightAtom)
+	const showIssueRepositoryGroups = useAtomValue(showIssueRepositoryGroupsAtom)
 
 	const issueLoad = useMemo(() => resolveIssueLoad(activeIssueView, issueQueueLoadCache, issuesResult), [activeIssueView, issueQueueLoadCache, issuesResult])
 
 	const selectedIssueRepository = issueViewRepository(activeIssueView)
 	const issueAuthorFilterActive = selectedIssueRepository !== null && activeIssueView._tag === "Queue" && activeIssueView.mode === "authored"
 	const issueActiveFilterLabel = issueAuthorFilterActive ? "author:@me" : null
-	const showIssueRepositoryGroups = selectedRepository === null
 	const rawIssues: readonly IssueItem[] = issueLoad?.data ?? []
-
-	const { allIssues, issues, issuesStatus, issuesError, selectedIssue, selectedIssueRowIndex, loadMoreIssueRowSelected, issueLoadMoreSlotAvailable } = useIssueListDerivations({
-		rawIssues,
-		issueOverrides,
-		showIssueRepositoryGroups,
-		activeWorkspaceSurface,
-		visibleFilterText,
-		selectedRepository,
-		issuesResult,
-		selectedIssueIndex,
-		hasMoreIssues,
-	})
+	const issuesStatus: LoadStatus = issuesResult.waiting && rawIssues.length === 0 ? "loading" : AsyncResult.isFailure(issuesResult) && rawIssues.length === 0 ? "error" : "ready"
+	const issuesError = AsyncResult.isFailure(issuesResult) ? errorMessage(Cause.squash(issuesResult.cause)) : null
+	const selectedIssueRowIndex = issueListRowIndex(issues, selectedIssueIndex, showIssueRepositoryGroups, loadMoreIssueRowSelected)
 
 	const currentIssueCacheKey = issueViewCacheKey(activeIssueView)
 	const { loadMoreIssues, isLoadingMoreIssues, resetLoadingMoreIssues } = useIssuesLoadMore({
@@ -130,6 +121,7 @@ export const useIssueSurface = (input: UseIssueSurfaceInput): IssueSurfaceShell 
 		currentIssueCacheKey,
 		issueLoad,
 		hasMoreIssues,
+		issueFetchInFlight,
 		username,
 		refreshGenerationRef,
 		flashNotice,
@@ -160,11 +152,11 @@ export const useIssueSurface = (input: UseIssueSurfaceInput): IssueSurfaceShell 
 		loadedIssueCount,
 		loadMoreIssueRowSelected,
 		issueLoadMoreSlotAvailable,
+		issueFetchInFlight,
 		setIssueQueueLoadCache,
 		currentIssueCacheKey,
 		issueAuthorFilterActive,
 		issueActiveFilterLabel,
-		issueOverrides,
 		setIssueOverrides,
 		selectedIssueRepository,
 		showIssueRepositoryGroups,

@@ -1,17 +1,19 @@
-import { useAtomSet } from "@effect/atom-react"
-import { type MutableRefObject, useRef, useState } from "react"
+import { useAtom, useAtomSet } from "@effect/atom-react"
+import { type MutableRefObject, useRef } from "react"
 import { config } from "../../config.js"
 import { errorMessage } from "../../errors.js"
+import { itemQueueCacheViewer } from "../../item/queue.js"
 import type { PullRequestLoad } from "../../pullRequestLoad.js"
 import { type PullRequestView, viewToListInput } from "../../pullRequestViews.js"
 import { pullRequestPageSize } from "../../services/runtime.js"
-import { cacheViewerFor, listOpenPullRequestPageAtom, nextLoadAfterPage, writeQueueCacheAtom } from "./atoms.js"
+import { listOpenPullRequestPageAtom, loadingMoreKeyAtom, nextLoadAfterPage, writeQueueCacheAtom } from "./atoms.js"
 
 export interface UseLoadMoreInput {
 	readonly activeView: PullRequestView
 	readonly currentQueueCacheKey: string
 	readonly pullRequestLoad: PullRequestLoad | null
 	readonly hasMorePullRequests: boolean
+	readonly pullRequestFetchInFlight: boolean
 	readonly username: string | null
 	readonly refreshGenerationRef: MutableRefObject<number>
 	readonly flashNotice: (message: string) => void
@@ -63,6 +65,7 @@ export const useLoadMore = ({
 	currentQueueCacheKey,
 	pullRequestLoad,
 	hasMorePullRequests,
+	pullRequestFetchInFlight,
 	username,
 	refreshGenerationRef,
 	flashNotice,
@@ -73,11 +76,12 @@ export const useLoadMore = ({
 	const inFlightKeyRef = useRef<string | null>(null)
 	// Component-local loading flag mirrors the ref so the UI re-renders when
 	// loading state changes. The ref is the source of truth for the guard.
-	const [loadingMoreKey, setLoadingMoreKey] = useState<string | null>(null)
+	const [loadingMoreKey, setLoadingMoreKey] = useAtom(loadingMoreKeyAtom)
 	const isLoadingMorePullRequests = loadingMoreKey === currentQueueCacheKey
 
 	const loadMorePullRequests = (): boolean => {
 		if (inFlightKeyRef.current !== null) return false
+		if (pullRequestFetchInFlight) return false
 		if (!pullRequestLoad || !hasMorePullRequests || !pullRequestLoad.endCursor) return false
 		const remaining = config.prFetchLimit - pullRequestLoad.data.length
 		if (remaining <= 0) return false
@@ -108,7 +112,7 @@ export const useLoadMore = ({
 					return { ...current, [cacheKey]: persistedLoad }
 				})
 				if (!persistedLoad) return
-				const viewer = cacheViewerFor(activeView, username)
+				const viewer = itemQueueCacheViewer(activeView, username)
 				if (viewer) void writeQueueCache({ viewer, load: persistedLoad }).catch(() => {})
 			})
 			.catch((error) => {

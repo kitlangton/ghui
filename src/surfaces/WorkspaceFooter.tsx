@@ -23,7 +23,6 @@ export interface WorkspaceFooterProps {
 	readonly canCycleScopeFilter: boolean
 	readonly canOpenDiff: boolean
 	readonly canOpenComments: boolean
-	readonly hasComments: boolean
 	readonly hasError: boolean
 	readonly isLoading: boolean
 	readonly loadingIndicator: string
@@ -55,7 +54,6 @@ export const WorkspaceFooter = ({ footerNotice, ...hints }: WorkspaceFooterProps
 				canCycleScopeFilter={hints.canCycleScopeFilter}
 				canOpenDiff={hints.canOpenDiff}
 				canOpenComments={hints.canOpenComments}
-				hasComments={hints.hasComments}
 				hasError={hints.hasError}
 				isLoading={hints.isLoading}
 				loadingIndicator={hints.loadingIndicator}

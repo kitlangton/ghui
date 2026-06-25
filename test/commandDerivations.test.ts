@@ -22,3 +22,24 @@ describe("PR command derivations", () => {
 		expect(stdout).toBe("Pull request surface is not active.")
 	})
 })
+
+describe("Issue command derivations", () => {
+	test("disables closing an already closed issue", async () => {
+		const probe = `
+			import * as AtomRegistry from "effect/unstable/reactivity/AtomRegistry"
+			import { noOpenIssueReasonAtom } from "./src/commands/derivations.ts"
+			import { activeIssueViewAtom, issueQueueLoadCacheAtom } from "./src/ui/issues/atoms.ts"
+			import { workspaceSurfaceAtom } from "./src/workspace/atoms.ts"
+			import { issueViewCacheKey } from "./src/issueViews.ts"
+			const registry = AtomRegistry.make()
+			const view = { _tag: "Queue", mode: "authored", repository: null }
+			const issue = { repository: "owner/repo", author: "kit", number: 1, state: "closed", title: "Closed", body: "", labels: [], commentCount: 0, createdAt: new Date(), updatedAt: new Date(), url: "1" }
+			registry.set(activeIssueViewAtom, view)
+			registry.set(issueQueueLoadCacheAtom, { [issueViewCacheKey(view)]: { view, data: [issue], fetchedAt: new Date(), endCursor: null, hasNextPage: false } })
+			registry.set(workspaceSurfaceAtom, "issues")
+			console.log(registry.get(noOpenIssueReasonAtom))
+		`
+		const stdout = await runIsolatedProbe(probe)
+		expect(stdout).toBe("Issue is not open.")
+	})
+})

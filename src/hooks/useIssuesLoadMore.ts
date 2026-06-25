@@ -35,6 +35,8 @@ const LOAD_MORE_TIMEOUT_MS = 15_000
  *     same-tick triggers can't race.
  *   - `refreshGenerationRef` drops responses from views the user has
  *     navigated away from.
+ *   - A per-invocation token prevents an old A request from clearing a newer
+ *     A request after A → B → A navigation.
  *   - 15s timeout surfaces a hanging GraphQL response as a flash notice
  *     instead of wedging the spinner.
  */
@@ -51,19 +53,21 @@ export const useIssuesLoadMore = ({
 }: UseIssuesLoadMoreInput): UseIssuesLoadMoreResult => {
 	const loadIssuePage = useAtomSet(listIssuePageAtom, { mode: "promise" })
 	const writeIssueQueue = useAtomSet(writeIssueQueueAtom, { mode: "promise" })
-	const inFlightKeyRef = useRef<string | null>(null)
+	const inFlightRef = useRef<{ readonly key: string; readonly id: number } | null>(null)
+	const requestIdRef = useRef(0)
 	const [loadingMoreKey, setLoadingMoreKey] = useAtom(loadingMoreIssueKeyAtom)
 	const isLoadingMoreIssues = loadingMoreKey === currentIssueCacheKey
 
 	const loadMoreIssues = (): boolean => {
-		if (inFlightKeyRef.current !== null) return false
+		if (inFlightRef.current !== null) return false
 		if (issueFetchInFlight) return false
 		if (!issueLoad || !hasMoreIssues || !issueLoad.endCursor) return false
 		const remaining = config.prFetchLimit - issueLoad.data.length
 		if (remaining <= 0) return false
 		const cacheKey = currentIssueCacheKey
 		const generation = refreshGenerationRef.current
-		inFlightKeyRef.current = cacheKey
+		const request = { key: cacheKey, id: ++requestIdRef.current }
+		inFlightRef.current = request
 		setLoadingMoreKey(cacheKey)
 		const fetchPromise = loadIssuePage(issueViewToListInput(activeIssueView, issueLoad.endCursor, Math.min(pullRequestPageSize, remaining)))
 		let timeoutId: ReturnType<typeof globalThis.setTimeout> | null = null
@@ -90,14 +94,15 @@ export const useIssuesLoadMore = ({
 			})
 			.finally(() => {
 				if (timeoutId !== null) globalThis.clearTimeout(timeoutId)
-				if (inFlightKeyRef.current === cacheKey) inFlightKeyRef.current = null
-				setLoadingMoreKey((current) => (current === cacheKey ? null : current))
+				if (inFlightRef.current !== request) return
+				inFlightRef.current = null
+				setLoadingMoreKey((current) => (current === request.key ? null : current))
 			})
 		return true
 	}
 
 	const resetLoadingMoreIssues = () => {
-		inFlightKeyRef.current = null
+		inFlightRef.current = null
 		setLoadingMoreKey(null)
 	}
 

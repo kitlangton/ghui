@@ -39,7 +39,13 @@ export const resolveItemLoad = <View, Item>(
 
 export const appendItemPage = <Item>(existing: readonly Item[], incoming: readonly Item[], keyOf: ItemKey<Item>, mergeIncoming: MergeIncomingItems<Item>): readonly Item[] => {
 	const seen = new Set(existing.map(keyOf))
-	return [...existing, ...mergeIncoming(incoming, existing).filter((item) => !seen.has(keyOf(item)))]
+	const appended = mergeIncoming(incoming, existing).filter((item) => {
+		const key = keyOf(item)
+		if (seen.has(key)) return false
+		seen.add(key)
+		return true
+	})
+	return [...existing, ...appended]
 }
 
 export const freshItemLoad = <View, Item>(

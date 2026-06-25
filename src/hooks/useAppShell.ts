@@ -354,22 +354,13 @@ export const useAppShell = ({ systemThemeGeneration }: UseAppShellInput) => {
 	const pullRequestComments = useAtomValue(pullRequestCommentsAtom)
 	const selectedDiffKey = useAtomValue(selectedDiffKeyAtom)
 	const selectedDiffState = useAtomValue(selectedDiffStateAtom)
-	const {
-		selectedCommentSubject,
-		selectedCommentKey,
-		selectedItemLabels,
-		selectedComments,
-		selectedCommentsStatus,
-		selectedCommentCount,
-		effectiveDiffRenderView,
-		readyDiffFiles,
-		changedFileResults,
-	} = useSelectionDerivations({
-		diffRenderView,
-		contentWidth,
-		changedFilesModalActive,
-		changedFilesQuery: changedFilesModal.query,
-	})
+	const { selectedCommentSubject, selectedCommentKey, selectedItemLabels, selectedComments, selectedCommentsStatus, effectiveDiffRenderView, readyDiffFiles, changedFileResults } =
+		useSelectionDerivations({
+			diffRenderView,
+			contentWidth,
+			changedFilesModalActive,
+			changedFilesQuery: changedFilesModal.query,
+		})
 	const {
 		displayedDiffState,
 		stackedDiffFiles,
@@ -572,6 +563,8 @@ export const useAppShell = ({ systemThemeGeneration }: UseAppShellInput) => {
 		pullRequestStatus,
 		issuesStatus,
 		isLoadingMorePullRequests,
+		issueFetchInFlight,
+		isLoadingMoreIssues,
 		activeWorkspaceSurface,
 		selectedCommentsStatus,
 		selectedDiffState,
@@ -1145,13 +1138,13 @@ export const useAppShell = ({ systemThemeGeneration }: UseAppShellInput) => {
 		selectedOrderedComment,
 		username,
 		selectedCommentsLength: selectedComments.length,
-		selectedCommentCount,
 		selectedCommentSubject,
 		activeWorkspaceSurface,
 		selectedRepositoryItem,
 		selectedRepository,
 		selectedPullRequest,
 		pullRequestStatus,
+		issuesStatus,
 		isActiveSurfaceLoading,
 		closeModal,
 		pullRequestStateModal,

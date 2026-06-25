@@ -1,15 +1,10 @@
-import * as AsyncResult from "effect/unstable/reactivity/AsyncResult"
 import { useEffect } from "react"
 import type { PullRequestItem } from "../domain.js"
 import type { CloseModalState, LabelModalState, MergeModalState, PullRequestStateModalState, SubmitReviewModalState } from "../ui/modals/types.js"
 import type { PullRequestDiffState } from "../ui/diff.js"
+import type { DetailHydrationState } from "../ui/pullRequests/useDetailHydration.js"
 import { SPINNER_FRAMES } from "../ui/spinner.js"
 import { useSpinnerFrame } from "../ui/useSpinnerFrame.js"
-
-interface DetailHydrationState {
-	readonly _tag: "Error" | "Loading" | "Ready"
-	readonly message?: string
-}
 
 interface PullRequestLoadShape {
 	readonly fetchedAt?: Date | null
@@ -27,6 +22,8 @@ export interface UseLoadingStatusInput {
 	readonly pullRequestStatus: "loading" | "ready" | "error"
 	readonly issuesStatus: "loading" | "ready" | "error"
 	readonly isLoadingMorePullRequests: boolean
+	readonly issueFetchInFlight: boolean
+	readonly isLoadingMoreIssues: boolean
 	readonly activeWorkspaceSurface: "pullRequests" | "issues" | "repos"
 	readonly selectedCommentsStatus: "idle" | "loading" | "ready"
 	readonly selectedDiffState: PullRequestDiffState | undefined
@@ -52,8 +49,6 @@ export interface LoadingStatus {
 	readonly loadingIndicator: string
 }
 
-void AsyncResult
-
 /**
  * Derives the four cross-cutting "is something loading?" booleans plus
  * the spinner frame the footer and headers consult. Also pumps the
@@ -70,6 +65,8 @@ export const useLoadingStatus = ({
 	pullRequestStatus,
 	issuesStatus,
 	isLoadingMorePullRequests,
+	issueFetchInFlight,
+	isLoadingMoreIssues,
 	activeWorkspaceSurface,
 	selectedCommentsStatus,
 	selectedDiffState,
@@ -90,11 +87,12 @@ export const useLoadingStatus = ({
 	const isRefreshingPullRequests = pullRequestResult.waiting && pullRequestLoad !== null
 	const isActiveSurfaceLoading =
 		(activeWorkspaceSurface === "pullRequests" && (pullRequestStatus === "loading" || isRefreshingPullRequests || isHydratingPullRequestDetails || isLoadingMorePullRequests)) ||
-		(activeWorkspaceSurface === "issues" && issuesStatus === "loading")
+		(activeWorkspaceSurface === "issues" && (issuesStatus === "loading" || issueFetchInFlight || isLoadingMoreIssues))
 	const hasActiveLoadingIndicator =
 		pullRequestResult.waiting ||
 		isHydratingPullRequestDetails ||
 		isLoadingMorePullRequests ||
+		(activeWorkspaceSurface === "issues" && (issueFetchInFlight || isLoadingMoreIssues)) ||
 		selectedCommentsStatus === "loading" ||
 		labelModal.loading ||
 		closeModal.running ||

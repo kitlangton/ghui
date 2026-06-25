@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test"
 import * as AsyncResult from "effect/unstable/reactivity/AsyncResult"
+import { itemQueryCacheKeyHasRepository } from "../src/item.ts"
 import { appendItemPage, freshItemLoad, nextItemLoadAfterPage, resolveItemLoad, trimItemLoadCache, type ItemLoad } from "../src/item/load.ts"
 
 interface Item {
@@ -22,6 +23,12 @@ describe("Item Load", () => {
 		const appended = appendItemPage([item("1", "hydrated")], [item("1"), item("2")], (entry) => entry.id, mergeDetail)
 
 		expect(appended).toEqual([item("1", "hydrated"), item("2")])
+	})
+
+	test("deduplicates repeated Items within an incoming page", () => {
+		const appended = appendItemPage([], [item("1"), item("1"), item("2")], (entry) => entry.id, mergeDetail)
+
+		expect(appended).toEqual([item("1"), item("2")])
 	})
 
 	test("builds a fresh load and enforces the Item limit", () => {
@@ -56,5 +63,12 @@ describe("Item Load", () => {
 		const cache = { user: 0, "repo:first": 1, "repo:second": 2, "repo:third": 3 }
 
 		expect(trimItemLoadCache(cache, (key) => key.startsWith("repo:"), 2)).toEqual({ user: 0, "repo:second": 2, "repo:third": 3 })
+	})
+
+	test("classifies repository-scoped cache keys in every queue mode", () => {
+		expect(itemQueryCacheKeyHasRepository("pullRequest:all:owner/repo")).toBe(true)
+		expect(itemQueryCacheKeyHasRepository("pullRequest:authored:owner/repo")).toBe(true)
+		expect(itemQueryCacheKeyHasRepository("issue:assigned:owner/repo")).toBe(true)
+		expect(itemQueryCacheKeyHasRepository("issue:authored:_")).toBe(false)
 	})
 })

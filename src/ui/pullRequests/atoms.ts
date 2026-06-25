@@ -4,7 +4,7 @@ import * as Atom from "effect/unstable/reactivity/Atom"
 import { config } from "../../config.js"
 import type { LoadStatus, PullRequestItem, PullRequestLabel, PullRequestMergeAction, PullRequestMergeMethod, RepositoryDetails, RepositoryMergeMethods } from "../../domain.js"
 import { devLog } from "../../devLog.js"
-import { type ItemListInput, searchQualifier } from "../../item.js"
+import { itemQueryCacheKeyHasRepository, type ItemListInput, searchQualifier } from "../../item.js"
 import { resolveItemLoad, trimItemLoadCache } from "../../item/load.js"
 import { loadItemQueue } from "../../item/queue.js"
 import { freshPullRequestLoad, mergePullRequestDetail } from "../../pullRequestCache.js"
@@ -48,7 +48,7 @@ export const pullRequestDetailKey = (pullRequest: PullRequestItem) => `${pullReq
 // don't need to know where it lives.
 
 const trimQueueLoadCache = (cache: Partial<Record<string, PullRequestLoad>>) => {
-	return trimItemLoadCache(cache, (key) => key.startsWith("pullRequest:all:") && !key.endsWith(":_"), MAX_REPOSITORY_CACHE_ENTRIES)
+	return trimItemLoadCache(cache, itemQueryCacheKeyHasRepository, MAX_REPOSITORY_CACHE_ENTRIES)
 }
 
 // === View / queue state atoms ===

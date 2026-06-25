@@ -192,4 +192,43 @@ describe("item view atoms", () => {
 		const stdout = await runIsolatedProbe(probe)
 		expect(stdout).toBe("2|2|2")
 	})
+
+	test("the issue load-more row does not leave the last issue selected", async () => {
+		const probe = `
+			import * as AtomRegistry from "effect/unstable/reactivity/AtomRegistry"
+			import { activeIssueViewAtom, issueQueueLoadCacheAtom, selectedIssueAtom } from "./src/ui/issues/atoms.ts"
+			import { selectedIssueIndexAtom } from "./src/ui/listSelection/atoms.ts"
+			import { workspaceSurfaceAtom } from "./src/workspace/atoms.ts"
+			import { issueViewCacheKey } from "./src/issueViews.ts"
+			const registry = AtomRegistry.make()
+			const view = { _tag: "Queue", mode: "authored", repository: null }
+			const issue = { repository: "owner/repo", author: "kit", number: 1, state: "open", title: "Issue", body: "", labels: [], commentCount: 0, createdAt: new Date(), updatedAt: new Date(), url: "1" }
+			registry.set(issueQueueLoadCacheAtom, { [issueViewCacheKey(view)]: { view, data: [issue], fetchedAt: new Date(), endCursor: "next", hasNextPage: true } })
+			registry.set(activeIssueViewAtom, view)
+			registry.set(workspaceSurfaceAtom, "issues")
+			registry.set(selectedIssueIndexAtom, 1)
+			console.log(registry.get(selectedIssueAtom) === null)
+		`
+		const stdout = await runIsolatedProbe(probe)
+		expect(stdout).toBe("true")
+	})
+
+	test("an authoritative issue refresh removes a closed optimistic override", async () => {
+		const probe = `
+			import * as AtomRegistry from "effect/unstable/reactivity/AtomRegistry"
+			import { activeIssueViewAtom, issueListAtom, issueOverridesAtom, issueQueueLoadCacheAtom } from "./src/ui/issues/atoms.ts"
+			import { issueViewCacheKey } from "./src/issueViews.ts"
+			const registry = AtomRegistry.make()
+			const view = { _tag: "Queue", mode: "authored", repository: null }
+			const issue = { repository: "owner/repo", author: "kit", number: 1, state: "open", title: "Issue", body: "", labels: [], commentCount: 0, createdAt: new Date(), updatedAt: new Date(), url: "1" }
+			registry.set(activeIssueViewAtom, view)
+			registry.set(issueQueueLoadCacheAtom, { [issueViewCacheKey(view)]: { view, data: [issue], fetchedAt: new Date(), endCursor: null, hasNextPage: false } })
+			registry.set(issueOverridesAtom, { [issue.url]: { ...issue, state: "closed" } })
+			const optimistic = registry.get(issueListAtom).map((item) => item.state).join(",")
+			registry.set(issueQueueLoadCacheAtom, { [issueViewCacheKey(view)]: { view, data: [], fetchedAt: new Date(), endCursor: null, hasNextPage: false } })
+			console.log(optimistic + "|" + registry.get(issueListAtom).length)
+		`
+		const stdout = await runIsolatedProbe(probe)
+		expect(stdout).toBe("closed|0")
+	})
 })

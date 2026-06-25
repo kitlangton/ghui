@@ -21,13 +21,13 @@ export interface ComputeFooterPropsInput {
 	readonly selectedOrderedComment: PullRequestComment | null
 	readonly username: string | null
 	readonly selectedCommentsLength: number
-	readonly selectedCommentCount: number
 	readonly selectedCommentSubject: IssueItem | PullRequestItem | null
 	readonly activeWorkspaceSurface: WorkspaceSurface
 	readonly selectedRepositoryItem: RepositoryListItem | null
 	readonly selectedRepository: string | null
 	readonly selectedPullRequest: PullRequestItem | null
 	readonly pullRequestStatus: LoadStatus
+	readonly issuesStatus: LoadStatus
 	readonly isActiveSurfaceLoading: boolean
 	readonly closeModal: CloseModalState
 	readonly pullRequestStateModal: PullRequestStateModalState
@@ -63,8 +63,8 @@ export const computeFooterProps = (input: ComputeFooterPropsInput): WorkspaceFoo
 	canCycleScopeFilter: input.selectedRepository !== null && (input.activeWorkspaceSurface === "pullRequests" || input.activeWorkspaceSurface === "issues"),
 	canOpenDiff: input.activeWorkspaceSurface === "pullRequests" && input.selectedPullRequest !== null,
 	canOpenComments: input.selectedCommentSubject !== null,
-	hasComments: input.selectedCommentCount > 0,
-	hasError: input.pullRequestStatus === "error",
+	hasError:
+		(input.activeWorkspaceSurface === "pullRequests" && input.pullRequestStatus === "error") || (input.activeWorkspaceSurface === "issues" && input.issuesStatus === "error"),
 	isLoading: input.isActiveSurfaceLoading || input.closeModal.running || input.pullRequestStateModal.running || input.mergeModal.running || input.submitReviewModal.running,
 	loadingIndicator: input.loadingIndicator,
 	retryProgress: input.retryProgress,

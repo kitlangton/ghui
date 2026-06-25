@@ -52,8 +52,8 @@ const LOAD_MORE_TIMEOUT_MS = 15_000
  *
  * Generation guard via the shared `refreshGenerationRef`: if a refresh or
  * view switch happens mid-flight, the response is silently dropped. The
- * `.finally` clears the loading flag iff this fetch is still the one we
- * care about (`current === cacheKey`).
+ * `.finally` clears the loading flag only while this exact invocation still
+ * owns it, so an old A request cannot clear a newer A request after A → B → A.
  *
  * Timeout: a 15s `Promise.race` surfaces a hanging fetch as a flash notice
  * + cleared spinner. The underlying Effect isn't cancelled (no AbortSignal
@@ -73,21 +73,23 @@ export const useLoadMore = ({
 }: UseLoadMoreInput): UseLoadMoreResult => {
 	const loadPullRequestPage = useAtomSet(listOpenPullRequestPageAtom, { mode: "promise" })
 	const writeQueueCache = useAtomSet(writeQueueCacheAtom, { mode: "promise" })
-	const inFlightKeyRef = useRef<string | null>(null)
+	const inFlightRef = useRef<{ readonly key: string; readonly id: number } | null>(null)
+	const requestIdRef = useRef(0)
 	// Component-local loading flag mirrors the ref so the UI re-renders when
 	// loading state changes. The ref is the source of truth for the guard.
 	const [loadingMoreKey, setLoadingMoreKey] = useAtom(loadingMoreKeyAtom)
 	const isLoadingMorePullRequests = loadingMoreKey === currentQueueCacheKey
 
 	const loadMorePullRequests = (): boolean => {
-		if (inFlightKeyRef.current !== null) return false
+		if (inFlightRef.current !== null) return false
 		if (pullRequestFetchInFlight) return false
 		if (!pullRequestLoad || !hasMorePullRequests || !pullRequestLoad.endCursor) return false
 		const remaining = config.prFetchLimit - pullRequestLoad.data.length
 		if (remaining <= 0) return false
 		const cacheKey = currentQueueCacheKey
 		const generation = refreshGenerationRef.current
-		inFlightKeyRef.current = cacheKey
+		const request = { key: cacheKey, id: ++requestIdRef.current }
+		inFlightRef.current = request
 		setLoadingMoreKey(cacheKey)
 		const fetchPromise = loadPullRequestPage(viewToListInput(activeView, pullRequestLoad.endCursor, Math.min(pullRequestPageSize, remaining)))
 		let timeoutId: ReturnType<typeof globalThis.setTimeout> | null = null
@@ -120,14 +122,15 @@ export const useLoadMore = ({
 			})
 			.finally(() => {
 				if (timeoutId !== null) globalThis.clearTimeout(timeoutId)
-				if (inFlightKeyRef.current === cacheKey) inFlightKeyRef.current = null
-				setLoadingMoreKey((current) => (current === cacheKey ? null : current))
+				if (inFlightRef.current !== request) return
+				inFlightRef.current = null
+				setLoadingMoreKey((current) => (current === request.key ? null : current))
 			})
 		return true
 	}
 
 	const resetLoadingMore = () => {
-		inFlightKeyRef.current = null
+		inFlightRef.current = null
 		setLoadingMoreKey(null)
 	}
 

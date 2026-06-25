@@ -65,16 +65,6 @@ export const selectedOrderedCommentAtom = Atom.make((get): PullRequestComment | 
 
 export const selectedItemLabelsAtom = Atom.make((get) => get(selectedCommentSubjectAtom)?.labels ?? [])
 
-// `commentCount` differs from `comments.length` for issues — GitHub returns a
-// count on the issue object that may exceed our locally-loaded comment array
-// (e.g. before comments are loaded). For PRs they coincide.
-export const selectedCommentCountAtom = Atom.make((get) => {
-	const surface = get(workspaceSurfaceAtom)
-	const localCount = get(selectedCommentsAtom).length
-	if (surface !== "issues") return localCount
-	return Math.max(get(selectedIssueAtom)?.commentCount ?? 0, localCount)
-})
-
 // === Data-fetching atoms ===
 export const listPullRequestCommentsAtom = githubRuntime.fn<{ readonly repository: string; readonly number: number }>()((input) =>
 	GitHubService.use((github) => github.listPullRequestComments(input.repository, input.number)),

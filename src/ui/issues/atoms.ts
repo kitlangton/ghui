@@ -3,7 +3,7 @@ import * as AsyncResult from "effect/unstable/reactivity/AsyncResult"
 import * as Atom from "effect/unstable/reactivity/Atom"
 import { config } from "../../config.js"
 import type { IssueItem } from "../../domain.js"
-import type { ItemListInput } from "../../item.js"
+import { itemQueryCacheKeyHasRepository, type ItemListInput } from "../../item.js"
 import { resolveItemLoad, trimItemLoadCache } from "../../item/load.js"
 import { loadItemQueue } from "../../item/queue.js"
 import type { IssueLoad } from "../../issueLoad.js"
@@ -31,11 +31,11 @@ export const issueOverridesAtom = Atom.make<Record<string, IssueItem>>({}).pipe(
 // the network request resolves.
 export const issueQueueLoadCacheAtom = Atom.make<Partial<Record<string, IssueLoad>>>({}).pipe(Atom.keepAlive)
 
-// Cap of repo-scoped "all" entries; user-scoped queues stay forever.
+// Cap repository-scoped entries across every mode; user-scoped queues stay forever.
 // Mirrors the PR-side `trimQueueLoadCache` shape so behaviour is consistent.
 const MAX_ISSUE_REPOSITORY_CACHE_ENTRIES = 8
 const trimIssueQueueLoadCache = (cache: Partial<Record<string, IssueLoad>>) => {
-	return trimItemLoadCache(cache, (key) => key.startsWith("issue:all:") && !key.endsWith(":_"), MAX_ISSUE_REPOSITORY_CACHE_ENTRIES)
+	return trimItemLoadCache(cache, itemQueryCacheKeyHasRepository, MAX_ISSUE_REPOSITORY_CACHE_ENTRIES)
 }
 
 export const issuesAtom = githubRuntime.atom(
@@ -74,13 +74,11 @@ export const allIssuesAtom = Atom.make((get): readonly IssueItem[] => {
 	const overrides = get(issueOverridesAtom)
 	const scope = get(selectedRepositoryAtom)
 	const source = (load?.data ?? []).filter((issue) => scope === null || issue.repository === scope)
-	const seen = new Set<string>()
 	const mapped = source.map((issue) => {
-		seen.add(issue.url)
-		return overrides[issue.url] ?? issue
+		const override = overrides[issue.url]
+		return override && override.updatedAt >= issue.updatedAt ? override : issue
 	})
-	const orphans = Object.values(overrides).filter((issue) => (scope === null || issue.repository === scope) && !seen.has(issue.url) && issue.state === "closed")
-	const merged = [...mapped, ...orphans].sort((left, right) => right.updatedAt.getTime() - left.updatedAt.getTime())
+	const merged = mapped.sort((left, right) => right.updatedAt.getTime() - left.updatedAt.getTime())
 	return orderIssuesForDisplay(merged, get(showIssueRepositoryGroupsAtom))
 })
 
@@ -99,9 +97,7 @@ export const issueListAtom = Atom.make((get): readonly IssueItem[] => {
 
 export const selectedIssueAtom = Atom.make((get): IssueItem | null => {
 	const issues = get(issueListAtom)
-	if (issues.length === 0) return null
-	const index = Math.max(0, Math.min(get(selectedIssueIndexAtom), issues.length - 1))
-	return issues[index] ?? null
+	return issues[get(selectedIssueIndexAtom)] ?? null
 })
 
 export const listIssuePageAtom = githubRuntime.fn<ItemListInput<"issue">>()((input) => GitHubService.use((github) => github.listIssuePage(input)))

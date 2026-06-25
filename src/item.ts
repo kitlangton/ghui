@@ -106,6 +106,8 @@ export const itemQueryCacheKey = (kind: ItemKind, query: ItemQuery): string => {
 	return `${kind}:${query.mode}:${repo}`
 }
 
+export const itemQueryCacheKeyHasRepository = (key: string): boolean => key.split(":").at(-1) !== "_"
+
 export const pullRequestQueryToListInput = (query: PullRequestQuery, cursor: string | null, pageSize: number): ItemListInput<"pullRequest"> => ({
 	kind: "pullRequest",
 	mode: query.mode,

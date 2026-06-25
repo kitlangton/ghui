@@ -30,7 +30,6 @@ interface HintsContext {
 	readonly canCycleScopeFilter: boolean
 	readonly canOpenDiff: boolean
 	readonly canOpenComments: boolean
-	readonly hasComments: boolean
 	readonly hasError: boolean
 	readonly isLoading: boolean
 	readonly loadingIndicator: string
@@ -113,7 +112,7 @@ const defaultHints = (ctx: HintsContext): readonly HintItem[] => {
 		{ key: "x", label: "remove", when: ctx.canRemoveRepository },
 		{ key: "f", label: "filter", when: ctx.canCycleScopeFilter },
 		{ key: "enter", label: "details", when: ctx.canOpenDetails },
-		{ key: "c", label: "comments", when: ctx.canOpenComments && ctx.hasComments },
+		{ key: "c", label: "comments", when: ctx.canOpenComments },
 		{ key: "d", label: "diff", when: ctx.canOpenDiff },
 		{ key: "ctrl-p", label: "commands" },
 	]

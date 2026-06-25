@@ -2,15 +2,7 @@ import { useAtomValue } from "@effect/atom-react"
 import { useMemo } from "react"
 import type { IssueItem, PullRequestComment, PullRequestItem, PullRequestLabel } from "../domain.js"
 import type { DetailCommentsStatus } from "../ui/DetailsPane.js"
-import {
-	commentsRowCountAtom,
-	selectedCommentCountAtom,
-	selectedCommentKeyAtom,
-	selectedCommentsAtom,
-	selectedCommentsStatusAtom,
-	selectedCommentSubjectAtom,
-	selectedItemLabelsAtom,
-} from "../ui/comments/atoms.js"
+import { selectedCommentKeyAtom, selectedCommentsAtom, selectedCommentsStatusAtom, selectedCommentSubjectAtom, selectedItemLabelsAtom } from "../ui/comments/atoms.js"
 import type { DiffFilePatch, DiffView } from "../ui/diff.js"
 import { readyDiffFilesAtom } from "../ui/diff/atoms.js"
 import { filterChangedFiles } from "../ui/modals/shared.js"
@@ -28,8 +20,6 @@ export interface SelectionDerivations {
 	readonly selectedItemLabels: readonly PullRequestLabel[]
 	readonly selectedComments: readonly PullRequestComment[]
 	readonly selectedCommentsStatus: DetailCommentsStatus
-	readonly selectedCommentCount: number
-	readonly commentsRowCount: number
 	readonly effectiveDiffRenderView: DiffView
 	readonly readyDiffFiles: readonly DiffFilePatch[]
 	readonly changedFileResults: ReturnType<typeof filterChangedFiles>
@@ -46,8 +36,6 @@ export const useSelectionDerivations = ({ diffRenderView, contentWidth, changedF
 	const selectedItemLabels = useAtomValue(selectedItemLabelsAtom)
 	const selectedComments = useAtomValue(selectedCommentsAtom)
 	const selectedCommentsStatus = useAtomValue(selectedCommentsStatusAtom)
-	const selectedCommentCount = useAtomValue(selectedCommentCountAtom)
-	const commentsRowCount = useAtomValue(commentsRowCountAtom)
 	const readyDiffFiles = useAtomValue(readyDiffFilesAtom)
 
 	const effectiveDiffRenderView: DiffView = contentWidth >= 100 ? diffRenderView : "unified"
@@ -61,8 +49,6 @@ export const useSelectionDerivations = ({ diffRenderView, contentWidth, changedF
 		selectedItemLabels,
 		selectedComments,
 		selectedCommentsStatus,
-		selectedCommentCount,
-		commentsRowCount,
 		effectiveDiffRenderView,
 		readyDiffFiles,
 		changedFileResults,

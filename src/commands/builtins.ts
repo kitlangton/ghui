@@ -34,6 +34,8 @@ import {
 	filterClearDisabledReasonAtom,
 	filterTitleAtom,
 	issueSelectedReasonAtom,
+	issueSurfaceReasonAtom,
+	noOpenIssueReasonAtom,
 	loadMoreDisabledReasonAtom,
 	loadMoreSubtitleAtom,
 	noOpenPullRequestReasonAtom,
@@ -291,10 +293,10 @@ export const globalCommands: readonly CommandDefinition[] = [
 		subtitle: selectedIssueLabelAtom,
 		shortcut: "x",
 		keywords: ["close", "resolve"],
-		disabledReason: issueSelectedReasonAtom,
+		disabledReason: noOpenIssueReasonAtom,
 		run: Effect.gen(function* () {
 			const issue = yield* Atom.get(selectedIssueAtom)
-			if (!issue) return
+			if (!issue || issue.state !== "open") return
 			yield* Atom.set(
 				activeModalAtom,
 				Modal.Close({
@@ -515,6 +517,7 @@ export const globalCommands: readonly CommandDefinition[] = [
 		scope: "Global",
 		subtitle: "Fetch the latest issue queue from GitHub",
 		shortcut: "r",
+		disabledReason: issueSurfaceReasonAtom,
 		keywords: ["reload", "sync"],
 		run: Effect.sync(() => invokeHandoff("refreshIssues")),
 	}),

@@ -59,21 +59,21 @@
 		"packages/*"
 	],
 	"dependencies": {
-		"@effect/atom-react": "4.0.0-beta.85",
-		"@effect/sql-sqlite-bun": "4.0.0-beta.85",
-		"@opentui/core": "0.2.15",
-		"@opentui/react": "0.2.15",
-		"effect": "4.0.0-beta.85",
-		"react": "19.2.6",
+		"@effect/atom-react": "4.0.0-beta.90",
+		"@effect/sql-sqlite-bun": "4.0.0-beta.90",
+		"@opentui/core": "0.4.2",
+		"@opentui/react": "0.4.2",
+		"effect": "4.0.0-beta.90",
+		"react": "19.2.7",
 		"scheduler": "0.27.0"
 	},
 	"devDependencies": {
-		"@ghui/keymap": "workspace:*",
 		"@effect/language-service": "0.86.2",
+		"@ghui/keymap": "workspace:*",
 		"@types/bun": "1.3.14",
-		"@types/react": "19.2.15",
-		"oxfmt": "0.52.0",
-		"oxlint": "1.67.0",
+		"@types/react": "19.2.17",
+		"oxfmt": "0.56.0",
+		"oxlint": "1.71.0",
 		"typescript": "6.0.3"
 	}
 }

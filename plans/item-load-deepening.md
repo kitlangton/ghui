@@ -33,4 +33,4 @@ Pull Request and Issue queues share the same Load shape and most cache-first pag
 
 ## Status
 
-In progress. Shared Load invariants and the cache-first first-page Queue protocol landed 2026-06-04. Per-kind runtime atom families and load-more hooks remain separate.
+In progress. Shared Load invariants and the cache-first first-page Queue protocol landed 2026-06-04. Repository cache retention, pseudo-row selection, incoming-page deduplication, and pagination invocation ownership were aligned on 2026-06-25. Per-kind runtime atom families and load-more hooks remain separate.

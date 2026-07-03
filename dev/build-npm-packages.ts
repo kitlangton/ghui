@@ -65,7 +65,7 @@ const buildBinaryPackage = async (target: ReleaseTarget) => {
 	if (reuseReleaseBinary && (await Bun.file(releaseBinaryPath).exists())) {
 		await cp(releaseBinaryPath, binaryPath)
 	} else {
-		run(["bun", "build", "--compile", "--bytecode", "--format=esm", `--target=${target.bunTarget}`, `--outfile=${binaryPath}`, "src/standalone.ts"])
+		run(["bun", "build", "--compile", "--bytecode", "--minify", "--format=esm", `--target=${target.bunTarget}`, `--outfile=${binaryPath}`, "src/standalone.ts"])
 	}
 	await chmod(binaryPath, 0o755)
 	await cp(join(root, "LICENSE"), join(packageDir, "LICENSE"))

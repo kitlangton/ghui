@@ -30,6 +30,9 @@ export interface ItemListInput<K extends ItemKind = ItemKind> {
 	readonly repository: string | null
 	readonly cursor: string | null
 	readonly pageSize: number
+	// When set, replaces the mode qualifier with a verbatim GitHub search string.
+	// `is:pr`/`is:issue` and `repo:` are still prepended automatically.
+	readonly rawQualifier?: string
 }
 
 // One page of items returned by the service seam, regardless of kind.
@@ -66,11 +69,17 @@ const modeQualifier = (mode: ItemListMode): string | null => {
 
 // Build the GitHub search-query string for a given list input.
 //
-// Always restricts to open items in non-archived repositories, sorted by most
-// recently updated. Throws `IllegalQueryError` for `mode: "all"` with no
-// repository — that combination means "every PR/issue on GitHub" and is never
-// intentional.
+// When `rawQualifier` is set the caller's string is used verbatim; only
+// `is:pr`/`is:issue` and `repo:` are prepended. This path is exclusively for
+// user-defined custom filters and is always called with a non-null repository.
+//
+// For built-in modes the string is fully composed here (open, non-archived,
+// sort by updated). Throws `IllegalQueryError` for `mode: "all"` with no
+// repository — that combination means "every PR/issue on GitHub".
 export const searchQualifier = (input: ItemListInput): string => {
+	if (input.rawQualifier !== undefined) {
+		return `${kindQualifier(input.kind)} repo:${input.repository} ${input.rawQualifier}`.trimEnd()
+	}
 	if (input.mode === "all" && input.repository === null) {
 		throw new IllegalQueryError(`mode "all" requires a repository; got null for kind=${input.kind}`)
 	}
@@ -83,17 +92,20 @@ export const searchQualifier = (input: ItemListInput): string => {
 }
 
 // Client-side query value. `textFilter` is local fuzzy-match and never reaches
-// the service seam.
+// the service seam. `rawQualifier` is set only for custom-filter views and is
+// forwarded to `ItemListInput` so `searchQualifier` uses it verbatim.
 export interface PullRequestQuery {
 	readonly mode: ItemListMode
 	readonly repository: string | null
 	readonly textFilter: string
+	readonly rawQualifier?: string
 }
 
 export interface IssueQuery {
 	readonly mode: IssueListMode
 	readonly repository: string | null
 	readonly textFilter: string
+	readonly rawQualifier?: string
 }
 
 export type ItemQuery = PullRequestQuery | IssueQuery
@@ -114,6 +126,7 @@ export const pullRequestQueryToListInput = (query: PullRequestQuery, cursor: str
 	repository: query.repository,
 	cursor,
 	pageSize,
+	...(query.rawQualifier !== undefined ? { rawQualifier: query.rawQualifier } : {}),
 })
 
 export const issueQueryToListInput = (query: IssueQuery, cursor: string | null, pageSize: number): ItemListInput<"issue"> => ({
@@ -122,4 +135,5 @@ export const issueQueryToListInput = (query: IssueQuery, cursor: string | null, 
 	repository: query.repository,
 	cursor,
 	pageSize,
+	...(query.rawQualifier !== undefined ? { rawQualifier: query.rawQualifier } : {}),
 })

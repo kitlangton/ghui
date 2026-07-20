@@ -6,30 +6,46 @@ import type { FilterModalState } from "./types.js"
 
 export interface FilterOption {
 	readonly label: string
-	readonly value: ScopeFilter
+	readonly value: ScopeFilter | string
 	readonly description: string
+	readonly customQueue?: { readonly name: string; readonly query: string }
 }
 
-export const filterOptions: readonly FilterOption[] = [
+const builtInFilterOptions: readonly FilterOption[] = [
 	{ label: "all", value: "all", description: "show all items in this view" },
 	{ label: "author:@me", value: "mine", description: "authored by me" },
 ]
 
+export const buildFilterOptions = (customQueues: readonly { readonly name: string; readonly query: string }[]): readonly FilterOption[] => [
+	...builtInFilterOptions,
+	...customQueues.map(({ name, query }) => ({
+		label: name,
+		value: `custom:${name}`,
+		description: query,
+		customQueue: { name, query },
+	})),
+]
+
+// Kept for callers that don't have custom queues available.
+export const filterOptions = builtInFilterOptions
+
 export const FilterModal = ({
 	state,
+	options = builtInFilterOptions,
 	modalWidth,
 	modalHeight,
 	offsetLeft,
 	offsetTop,
 }: {
 	readonly state: FilterModalState
+	readonly options?: readonly FilterOption[]
 	readonly modalWidth: number
 	readonly modalHeight: number
 	readonly offsetLeft: number
 	readonly offsetTop: number
 }) => {
 	const title = state.surface === "issues" ? "Filter Issues" : "Filter Pull Requests"
-	const selectedIndex = Math.max(0, Math.min(state.selectedIndex, filterOptions.length - 1))
+	const selectedIndex = Math.max(0, Math.min(state.selectedIndex, options.length - 1))
 	const { rowWidth, bodyHeight } = standardModalDims(modalWidth, modalHeight)
 	return (
 		<StandardModal
@@ -53,7 +69,7 @@ export const FilterModal = ({
 				/>
 			}
 		>
-			{filterOptions.map((option, index) => {
+			{options.map((option, index) => {
 				const selected = index === selectedIndex
 				const descriptionWidth = Math.max(1, rowWidth - option.label.length - 4)
 				return (
@@ -68,7 +84,7 @@ export const FilterModal = ({
 					</TextLine>
 				)
 			})}
-			<Filler rows={Math.max(0, bodyHeight - filterOptions.length)} prefix="filter-modal" />
+			<Filler rows={Math.max(0, bodyHeight - options.length)} prefix="filter-modal" />
 		</StandardModal>
 	)
 }

@@ -12,6 +12,7 @@ import { freshPullRequestLoad, mergePullRequestDetail } from "../../pullRequestC
 export { nextLoadAfterPage } from "../../pullRequestCache.js"
 import type { PullRequestLoad } from "../../pullRequestLoad.js"
 import { activePullRequestViews, initialPullRequestView, type PullRequestView, viewCacheKey, viewRepository, viewToListInput } from "../../pullRequestViews.js"
+import { loadStoredCustomQueues, type CustomQueueConfig } from "../../themeStore.js"
 import { CacheService } from "../../services/CacheService.js"
 import { GitHubService } from "../../services/GitHubService.js"
 import { githubRuntime, pullRequestPageSize } from "../../services/runtime.js"
@@ -53,6 +54,9 @@ export const retryProgressAtom = Atom.make<RetryProgress>(initialRetryProgress).
 export const activeViewAtom = Atom.make<PullRequestView>(initialPullRequestView(null)).pipe(Atom.keepAlive)
 export const queueLoadCacheAtom = Atom.make<Partial<Record<string, PullRequestLoad>>>({}).pipe(Atom.keepAlive)
 export const queueSelectionAtom = Atom.make<Partial<Record<string, number>>>({}).pipe(Atom.keepAlive)
+export const customQueuesAtom = Atom.make<readonly CustomQueueConfig[]>(
+	await Effect.runPromise(loadStoredCustomQueues),
+).pipe(Atom.keepAlive)
 
 // === Data-fetching atoms ===
 //
@@ -245,7 +249,7 @@ export const pullRequestStatusAtom = Atom.make((get): LoadStatus => {
 	return "ready"
 })
 
-export const activeViewsAtom = Atom.make((get) => activePullRequestViews(get(activeViewAtom)))
+export const activeViewsAtom = Atom.make((get) => activePullRequestViews(get(activeViewAtom), get(customQueuesAtom)))
 export const loadedPullRequestCountAtom = Atom.make((get) => cachedPullRequestLoad(get)?.data.length ?? 0)
 export const hasMorePullRequestsAtom = Atom.make((get) => {
 	const load = cachedPullRequestLoad(get)

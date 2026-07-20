@@ -1,8 +1,9 @@
 import { devLog } from "../../devLog.js"
 import { type IssueView, issueViewEquals } from "../../issueViews.js"
 import type { PullRequestView } from "../../pullRequestViews.js"
+import type { CustomQueueConfig } from "../../themeStore.js"
 import type { WorkspaceSurface } from "../../workspaceSurfaces.js"
-import { filterOptions } from "../modals/FilterModal.js"
+import { buildFilterOptions } from "../modals/FilterModal.js"
 import type { FilterModalState } from "../modals/types.js"
 
 // Duplicated in App.tsx, useMergeFlow, and useThemeModal — small enough to
@@ -15,6 +16,7 @@ export interface UseFilterModalInput {
 	readonly activeIssueView: IssueView
 	readonly selectedRepository: string | null
 	readonly filterModal: FilterModalState
+	readonly customQueues: readonly CustomQueueConfig[]
 	readonly setFilterModal: (next: FilterModalState | ((prev: FilterModalState) => FilterModalState)) => void
 	readonly switchViewTo: (view: PullRequestView) => void
 	readonly setActiveIssueView: (view: IssueView) => void
@@ -48,6 +50,7 @@ export const useFilterModal = ({
 	activeIssueView,
 	selectedRepository,
 	filterModal,
+	customQueues,
 	setFilterModal,
 	switchViewTo,
 	setActiveIssueView,
@@ -56,39 +59,43 @@ export const useFilterModal = ({
 	resetLoadingMoreIssues,
 	bumpRefreshGeneration,
 }: UseFilterModalInput): UseFilterModalResult => {
+	const options = buildFilterOptions(customQueues)
+
+	const activeFilterValue = (): string => {
+		const view = activeWorkspaceSurface === "pullRequests" ? activeView : activeIssueView
+		if (view._tag === "CustomQueue") return `custom:${view.name}`
+		if (view._tag === "Queue" && view.mode === "authored") return "mine"
+		return "all"
+	}
+
 	const openFilterModal = () => {
 		if (!selectedRepository || (activeWorkspaceSurface !== "pullRequests" && activeWorkspaceSurface !== "issues")) return
-		const isMine =
-			activeWorkspaceSurface === "pullRequests"
-				? activeView._tag === "Queue" && activeView.mode === "authored"
-				: activeIssueView._tag === "Queue" && activeIssueView.mode === "authored"
+		const currentValue = activeFilterValue()
 		setFilterModal({
 			surface: activeWorkspaceSurface,
-			selectedIndex: Math.max(
-				0,
-				filterOptions.findIndex((option) => option.value === (isMine ? "mine" : "all")),
-			),
+			selectedIndex: Math.max(0, options.findIndex((option) => option.value === currentValue)),
 		})
 	}
 
 	const moveFilterSelection = (delta: -1 | 1) => {
-		setFilterModal((current) => ({ ...current, selectedIndex: wrapIndex(current.selectedIndex + delta, filterOptions.length) }))
+		setFilterModal((current) => ({ ...current, selectedIndex: wrapIndex(current.selectedIndex + delta, options.length) }))
 	}
 
 	const applySelectedFilter = () => {
-		const option = filterOptions[filterModal.selectedIndex]
+		const option = options[filterModal.selectedIndex]
 		devLog("applySelectedFilter", { option, surface: filterModal.surface, selectedRepository, activeView, activeIssueView })
-		if (!option) return
-		if (filterModal.surface === "pullRequests" && selectedRepository) {
+		if (!option || !selectedRepository) return
+
+		if (option.customQueue) {
+			const { name, query } = option.customQueue
+			switchViewTo({ _tag: "CustomQueue", name, query, repository: selectedRepository })
+			// Issue view is synced automatically via issueViewForPullRequestView in switchViewTo.
+		} else if (filterModal.surface === "pullRequests") {
 			switchViewTo(option.value === "mine" ? { _tag: "Queue", mode: "authored", repository: selectedRepository } : { _tag: "Repository", repository: selectedRepository })
-		} else if (filterModal.surface === "issues" && selectedRepository) {
+		} else if (filterModal.surface === "issues") {
 			const nextView: IssueView =
 				option.value === "mine" ? { _tag: "Queue", mode: "authored", repository: selectedRepository } : { _tag: "Repository", repository: selectedRepository }
 			if (!issueViewEquals(nextView, activeIssueView)) {
-				// Mirror the resets `switchViewTo` does for PR-side filter
-				// changes. Without these, the previous queue's load-more
-				// state can land on the new view and stale selection sticks
-				// past the visible row count.
 				bumpRefreshGeneration()
 				setSelectedIssueIndex(0)
 				resetLoadingMoreIssues()

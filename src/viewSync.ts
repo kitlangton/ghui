@@ -16,6 +16,7 @@ import type { PullRequestView } from "./pullRequestViews.js"
 // would skip the sync and leave the issue view stuck on a stale value.
 export const issueViewForPullRequestView = (view: PullRequestView): IssueView => {
 	if (view._tag === "Repository") return { _tag: "Repository", repository: view.repository }
+	if (view._tag === "CustomQueue") return { _tag: "CustomQueue", name: view.name, query: view.query, repository: view.repository }
 	if (view.repository === null) return { _tag: "Queue", mode: "authored", repository: null }
 	return { _tag: "Repository", repository: view.repository }
 }

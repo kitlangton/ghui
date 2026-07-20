@@ -92,6 +92,29 @@ Scrollable panes hide their scrollbar rails by default. Set `showScrollbars`
 to `true` to display them while retaining the same keyboard and mouse scrolling
 behavior.
 
+### Custom filters
+
+Define repo-scoped PR and issue filters that appear as additional queue tabs
+when browsing a repository:
+
+```json
+{
+	"customQueues": [
+		{ "name": "needs review", "query": "review-requested:@me is:open" },
+		{ "name": "my bugs", "query": "author:@me label:bug is:open" }
+	]
+}
+```
+
+Each entry requires a `name` (the tab label) and a `query` (a raw GitHub
+search string). When a custom filter tab is selected, ghui queries:
+
+- **Pull Requests tab**: `is:pr repo:<current-repo> <query>`
+- **Issues tab**: `is:issue repo:<current-repo> <query>`
+
+Custom filter tabs only appear when you are browsing a specific repository.
+Nothing is appended automatically beyond `is:pr`/`is:issue` and `repo:`.
+
 ### Open in editor
 
 Press `e` on a pull request (in the list, detail, or diff view) to hand it off

@@ -27,6 +27,11 @@ const configDirectory = () => {
 
 export const configPath = () => join(configDirectory(), "config.json")
 
+const launchThemeOverride = (): ThemeId | null => {
+	const theme = process.env.GHUI_THEME?.trim()
+	return isThemeId(theme) ? theme : null
+}
+
 const parseConfig = (text: string): StoredConfig => {
 	const value = JSON.parse(text) as unknown
 	return value && typeof value === "object" ? value : {}
@@ -52,7 +57,10 @@ export const loadStoredThemeId: Effect.Effect<ThemeId> = Effect.catchCause(
 )
 
 export const loadStoredThemeConfig: Effect.Effect<ThemeConfig> = Effect.catchCause(
-	Effect.tryPromise(async () => normalizeThemeConfig(await readStoredConfig())),
+	Effect.tryPromise(async () => {
+		const override = launchThemeOverride()
+		return override ? { mode: "fixed", theme: override } : normalizeThemeConfig(await readStoredConfig())
+	}),
 	() => Effect.succeed(normalizeThemeConfig({})),
 )
 

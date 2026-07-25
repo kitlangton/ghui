@@ -61,6 +61,7 @@ bun run dev
 
 - `GHUI_PR_FETCH_LIMIT`: max PRs fetched, defaults to `200`
 - `GHUI_RUN_FETCH_LIMIT`: max workflow runs fetched per PR, defaults to `20`
+- `GHUI_THEME`: valid theme ID to use for this launch without changing saved preferences
 
 Example:
 

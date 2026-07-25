@@ -3,9 +3,10 @@ import { mkdtemp, rm, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { Effect } from "effect"
-import { loadStoredEditorConfig, loadStoredShowScrollbars, loadStoredSystemThemeAutoReload } from "../src/themeStore.js"
+import { loadStoredEditorConfig, loadStoredShowScrollbars, loadStoredSystemThemeAutoReload, loadStoredThemeConfig } from "../src/themeStore.js"
 
 const originalConfigDir = process.env.GHUI_CONFIG_DIR
+const originalTheme = process.env.GHUI_THEME
 const tempDirs: string[] = []
 
 const restoreConfigDir = () => {
@@ -16,8 +17,17 @@ const restoreConfigDir = () => {
 	}
 }
 
+const restoreTheme = () => {
+	if (originalTheme === undefined) {
+		delete process.env.GHUI_THEME
+	} else {
+		process.env.GHUI_THEME = originalTheme
+	}
+}
+
 afterEach(async () => {
 	restoreConfigDir()
+	restoreTheme()
 	await Promise.all(tempDirs.map((dir) => rm(dir, { recursive: true, force: true })))
 	tempDirs.length = 0
 })
@@ -75,6 +85,24 @@ describe("loadStoredShowScrollbars", () => {
 		await useTempConfig('{"showScrollbars":"true"}')
 
 		expect(await loadShowScrollbars()).toBe(false)
+	})
+})
+
+const loadThemeConfig = () => Effect.runPromise(loadStoredThemeConfig)
+
+describe("loadStoredThemeConfig", () => {
+	test("uses a valid launch theme instead of the persisted theme", async () => {
+		await useTempConfig('{"theme":"dracula","themeMode":"fixed"}')
+		process.env.GHUI_THEME = "system"
+
+		expect(await loadThemeConfig()).toEqual({ mode: "fixed", theme: "system" })
+	})
+
+	test("ignores an invalid launch theme", async () => {
+		await useTempConfig('{"theme":"dracula","themeMode":"fixed"}')
+		process.env.GHUI_THEME = "not-a-theme"
+
+		expect(await loadThemeConfig()).toEqual({ mode: "fixed", theme: "dracula" })
 	})
 })
 

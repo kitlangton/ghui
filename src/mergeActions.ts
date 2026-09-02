@@ -105,7 +105,7 @@ export const mergeKinds: readonly MergeKindDefinition[] = Object.values(mergeKin
 
 export const availableMergeKinds = (info: PullRequestMergeInfo | null): readonly MergeKindDefinition[] => {
 	if (!info) return []
-	return mergeKinds.filter((kind) => kind.isAvailable(info))
+	return mergeKinds.filter((kind) => kind.isAvailable(info)).map((kind) => getMergeKindDefinition(kind.kind, info.mergeQueueEnabled))
 }
 
 export const visibleMergeKinds = (info: PullRequestMergeInfo | null, allowed: RepositoryMergeMethods | null, selected: PullRequestMergeMethod): readonly MergeKindDefinition[] => {
@@ -126,14 +126,27 @@ export const mergeKindRowTitle = (kind: MergeKindDefinition, method: PullRequest
 	return `Mark ready & ${baseTitle.charAt(0).toLowerCase()}${baseTitle.slice(1)}`
 }
 
-export const getMergeKindDefinition = (kind: PullRequestMergeKind): MergeKindDefinition => mergeKindDefinitions[kind]
+export const getMergeKindDefinition = (kind: PullRequestMergeKind, mergeQueueEnabled: boolean): MergeKindDefinition => {
+	const definition = mergeKindDefinitions[kind]
+	if (!mergeQueueEnabled || kind === "disable-auto") return definition
+	if (kind === "admin") return { ...definition, description: () => "Bypass the merge queue and merge directly with --admin." }
+	return {
+		...definition,
+		title: () => (kind === "now" ? "Add to merge queue" : "Enable merge queue when ready"),
+		description: () => "Queue when requirements pass; GitHub chooses the merge method.",
+		pastTense: () => "Requested merge queue for",
+		refreshOnSuccess: true,
+	}
+}
 
 export const mergeActionCliArgs = (action: PullRequestMergeAction): readonly string[] => {
 	if (action.kind === "disable-auto") return ["--disable-auto"]
 	const methodFlag = methodCopy[action.method].cliFlag
-	if (action.kind === "now") return [methodFlag, "--delete-branch"]
-	if (action.kind === "auto") return [methodFlag, "--auto", "--delete-branch"]
-	return [methodFlag, "--admin", "--delete-branch"]
+	// gh rejects branch deletion for queue targets, even with --admin.
+	const deleteBranch = action.mergeQueueEnabled ? [] : ["--delete-branch"]
+	if (action.kind === "now") return [methodFlag, ...deleteBranch]
+	if (action.kind === "auto") return [methodFlag, "--auto", ...deleteBranch]
+	return [methodFlag, "--admin", ...deleteBranch]
 }
 
 export const mergeInfoFromPullRequest = (pullRequest: PullRequestItem): PullRequestMergeInfo => ({
@@ -148,4 +161,5 @@ export const mergeInfoFromPullRequest = (pullRequest: PullRequestItem): PullRequ
 	checkSummary: pullRequest.checkSummary,
 	autoMergeEnabled: pullRequest.autoMergeEnabled,
 	viewerCanMergeAsAdmin: false,
+	mergeQueueEnabled: false,
 })

@@ -299,7 +299,7 @@ export const parseRunDetails = (details: RawWorkflowRunDetails): WorkflowRunDeta
 
 type RawMergeInfo = Schema.Schema.Type<typeof MergeInfoResponseSchema>
 
-export const parsePullRequestMergeInfo = (repository: string, info: RawMergeInfo, viewerCanMergeAsAdmin: boolean): PullRequestMergeInfo => {
+export const parsePullRequestMergeInfo = (repository: string, info: RawMergeInfo, viewerCanMergeAsAdmin: boolean, mergeQueueEnabled: boolean): PullRequestMergeInfo => {
 	const checkInfo = getCheckInfoFromContexts(info.statusCheckRollup)
 	return {
 		repository,
@@ -313,6 +313,7 @@ export const parsePullRequestMergeInfo = (repository: string, info: RawMergeInfo
 		checkSummary: checkInfo.checkSummary,
 		autoMergeEnabled: info.autoMergeRequest !== null,
 		viewerCanMergeAsAdmin,
+		mergeQueueEnabled,
 	}
 }
 

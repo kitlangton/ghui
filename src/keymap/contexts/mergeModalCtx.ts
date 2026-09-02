@@ -12,7 +12,7 @@ export interface BuildMergeModalCtxInput {
 }
 
 export const buildMergeModalCtx = ({ mergeModal, cancelOrCloseMergeModal, confirmMergeAction, cycleMergeMethod, moveMergeSelection }: BuildMergeModalCtxInput): MergeModalCtx => ({
-	availableActionCount: visibleMergeKinds(mergeModal.info, mergeModal.allowedMethods, mergeModal.selectedMethod).length,
+	availableActionCount: mergeModal.error ? 0 : visibleMergeKinds(mergeModal.info, mergeModal.allowedMethods, mergeModal.selectedMethod).length,
 	multipleMethodsAllowed: mergeModal.allowedMethods ? allowedMergeMethodList(mergeModal.allowedMethods).length > 1 : false,
 	inConfirmMode: mergeModal.pendingConfirm !== null,
 	closeOrBackOut: cancelOrCloseMergeModal,

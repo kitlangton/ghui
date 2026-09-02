@@ -14,6 +14,7 @@ const cleanInfo: PullRequestMergeInfo = {
 	checkSummary: "checks 5/5",
 	autoMergeEnabled: false,
 	viewerCanMergeAsAdmin: false,
+	mergeQueueEnabled: false,
 }
 
 describe("mergeKinds ordering", () => {
@@ -106,23 +107,23 @@ describe("mergeActionCliArgs", () => {
 	const action = (a: PullRequestMergeAction) => mergeActionCliArgs(a)
 
 	test("squash + now uses --squash --delete-branch", () => {
-		expect(action({ kind: "now", method: "squash" })).toEqual(["--squash", "--delete-branch"])
+		expect(action({ kind: "now", method: "squash", mergeQueueEnabled: false })).toEqual(["--squash", "--delete-branch"])
 	})
 
 	test("merge + now uses --merge --delete-branch", () => {
-		expect(action({ kind: "now", method: "merge" })).toEqual(["--merge", "--delete-branch"])
+		expect(action({ kind: "now", method: "merge", mergeQueueEnabled: false })).toEqual(["--merge", "--delete-branch"])
 	})
 
 	test("rebase + now uses --rebase --delete-branch", () => {
-		expect(action({ kind: "now", method: "rebase" })).toEqual(["--rebase", "--delete-branch"])
+		expect(action({ kind: "now", method: "rebase", mergeQueueEnabled: false })).toEqual(["--rebase", "--delete-branch"])
 	})
 
 	test("auto + rebase uses --rebase --auto --delete-branch", () => {
-		expect(action({ kind: "auto", method: "rebase" })).toEqual(["--rebase", "--auto", "--delete-branch"])
+		expect(action({ kind: "auto", method: "rebase", mergeQueueEnabled: false })).toEqual(["--rebase", "--auto", "--delete-branch"])
 	})
 
 	test("admin + merge uses --merge --admin --delete-branch", () => {
-		expect(action({ kind: "admin", method: "merge" })).toEqual(["--merge", "--admin", "--delete-branch"])
+		expect(action({ kind: "admin", method: "merge", mergeQueueEnabled: false })).toEqual(["--merge", "--admin", "--delete-branch"])
 	})
 
 	test("disable-auto ignores method and uses --disable-auto", () => {

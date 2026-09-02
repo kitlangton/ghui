@@ -131,17 +131,18 @@ export const useMergeFlow = ({
 		const { repository, number } = info
 		const targetPullRequest = pullRequests.find((pullRequest) => pullRequest.repository === repository && pullRequest.number === number)
 		const previousPullRequest = targetPullRequest ?? null
+		const queueRequest = info.mergeQueueEnabled && (kindDef.kind === "now" || kindDef.kind === "auto")
 
 		if (targetPullRequest && markReady) {
 			updatePullRequest(targetPullRequest.url, (pullRequest) => (pullRequest.reviewStatus === "draft" ? { ...pullRequest, reviewStatus: "none" } : pullRequest))
 		}
-		if (targetPullRequest && kindDef.optimisticAutoMergeEnabled !== undefined) {
+		if (targetPullRequest && !queueRequest && kindDef.optimisticAutoMergeEnabled !== undefined) {
 			updatePullRequest(targetPullRequest.url, (pullRequest) => ({ ...pullRequest, autoMergeEnabled: kindDef.optimisticAutoMergeEnabled! }))
 		}
-		if (targetPullRequest && kindDef.optimisticState === "merged") markPullRequestCompleted(targetPullRequest, "merged")
+		if (targetPullRequest && !queueRequest && kindDef.optimisticState === "merged") markPullRequestCompleted(targetPullRequest, "merged")
 
 		const kind = kindDef.kind
-		const action: PullRequestMergeAction = kind === "disable-auto" ? { kind } : { kind, method }
+		const action: PullRequestMergeAction = kind === "disable-auto" ? { kind } : { kind, method, mergeQueueEnabled: info.mergeQueueEnabled }
 		const pastTense = kindDef.pastTense(method)
 
 		closeActiveModal()
@@ -169,7 +170,7 @@ export const useMergeFlow = ({
 			.catch((error) => {
 				if (markReady && markedReady) {
 					refreshPullRequests(`Merge failed for #${number}`)
-				} else if (previousPullRequest) {
+				} else if (previousPullRequest && (!queueRequest || markReady)) {
 					restoreOptimisticPullRequest(previousPullRequest)
 				}
 				flashNotice(errorMessage(error))
@@ -177,12 +178,12 @@ export const useMergeFlow = ({
 	}
 
 	const confirmMergeAction = () => {
-		if (!mergeModal.info || !mergeModal.allowedMethods || mergeModal.loading || mergeModal.running) return
+		if (!mergeModal.info || !mergeModal.allowedMethods || mergeModal.loading || mergeModal.running || mergeModal.error) return
 
 		// Second confirm: enter while pending executes the queued action with mark-ready.
 		if (mergeModal.pendingConfirm) {
 			const pending = mergeModal.pendingConfirm
-			const kindDef = getMergeKindDefinition(pending.kind)
+			const kindDef = getMergeKindDefinition(pending.kind, mergeModal.info.mergeQueueEnabled)
 			executeMergeAction(kindDef, pending.method, mergeModal.info, /* markReady = */ true)
 			return
 		}

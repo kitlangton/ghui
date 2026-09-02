@@ -154,7 +154,7 @@ export const MergeInfoResponseSchema = Schema.Struct({
 export const PullRequestAdminMergeResponseSchema = Schema.Struct({
 	data: Schema.Struct({
 		repository: Schema.Struct({
-			pullRequest: Schema.NullOr(Schema.Struct({ viewerCanMergeAsAdmin: Schema.Boolean })),
+			pullRequest: Schema.NullOr(Schema.Struct({ viewerCanMergeAsAdmin: Schema.Boolean, mergeQueue: Schema.NullOr(Schema.Struct({ id: Schema.String })) })),
 		}),
 	}),
 })

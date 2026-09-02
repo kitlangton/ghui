@@ -359,11 +359,16 @@ export class GitHubService extends Context.Service<
 							"-F",
 							`number=${number}`,
 							"-f",
-							"query=query($owner: String!, $name: String!, $number: Int!) { repository(owner: $owner, name: $name) { pullRequest(number: $number) { viewerCanMergeAsAdmin } } }",
+							"query=query($owner: String!, $name: String!, $number: Int!) { repository(owner: $owner, name: $name) { pullRequest(number: $number) { viewerCanMergeAsAdmin mergeQueue { id } } } }",
 						])
 					: null
 
-				return parsePullRequestMergeInfo(repository, info, adminInfo?.data.repository.pullRequest?.viewerCanMergeAsAdmin ?? false)
+				return parsePullRequestMergeInfo(
+					repository,
+					info,
+					adminInfo?.data.repository.pullRequest?.viewerCanMergeAsAdmin ?? false,
+					Boolean(adminInfo?.data.repository.pullRequest?.mergeQueue),
+				)
 			})
 
 			const getRepositoryMergeMethods = Effect.fn("GitHubService.getRepositoryMergeMethods")(function* (repository: string) {

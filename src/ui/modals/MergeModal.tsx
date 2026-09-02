@@ -84,7 +84,7 @@ export const MergeModal = ({
 		if (state.error) return renderCenteredMessage(state.error, colors.error)
 		if (isLoading) return renderCenteredMessage(`${loadingIndicator} ${state.loading ? "Loading merge status" : "Loading merge methods"}`, colors.muted)
 		if (state.pendingConfirm && state.info) {
-			const kindDef = getMergeKindDefinition(state.pendingConfirm.kind)
+			const kindDef = getMergeKindDefinition(state.pendingConfirm.kind, state.info.mergeQueueEnabled)
 			const action = kindDef.title(state.pendingConfirm.method)
 			const lowered = action.charAt(0).toLowerCase() + action.slice(1)
 			return renderCenteredLines([

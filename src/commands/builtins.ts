@@ -18,6 +18,7 @@ import { initialCommandPaletteState, initialCommentModalState, initialOpenReposi
 import { noticeAtom } from "../ui/notice/atoms.js"
 import type { PullRequestUserQueueMode } from "../domain.js"
 import { pullRequestQueueModes } from "../domain.js"
+import { issueMetadataText, pullRequestMetadataText } from "../ui/pullRequests.js"
 import { labelCacheAtom, selectedPullRequestAtom } from "../ui/pullRequests/atoms.js"
 import { selectedRepositoryAtom, workspaceSurfaceAtom, workspaceTabSurfacesAtom } from "../workspace/atoms.js"
 import { type WorkspaceSurface, workspaceSurfaceLabels, workspaceSurfaces } from "../workspaceSurfaces.js"
@@ -524,7 +525,7 @@ export const globalCommands: readonly CommandDefinition[] = [
 		run: Effect.gen(function* () {
 			const pr = yield* Atom.get(selectedPullRequestAtom)
 			if (!pr) return
-			const text = `${pr.repository}#${pr.number} ${pr.title}\n${pr.url}`
+			const text = pullRequestMetadataText(pr)
 			yield* Clipboard.use((clipboard) => clipboard.copy(text)).pipe(
 				Effect.tap(() => Atom.set(noticeAtom, "Pull request metadata copied")),
 				Effect.catch(flashErrorEffect),
@@ -542,7 +543,7 @@ export const globalCommands: readonly CommandDefinition[] = [
 		run: Effect.gen(function* () {
 			const issue = yield* Atom.get(selectedIssueAtom)
 			if (!issue) return
-			const text = `${issue.repository}#${issue.number} ${issue.title}\n${issue.url}`
+			const text = issueMetadataText(issue)
 			yield* Clipboard.use((clipboard) => clipboard.copy(text)).pipe(
 				Effect.tap(() => Atom.set(noticeAtom, "Issue metadata copied")),
 				Effect.catch(flashErrorEffect),

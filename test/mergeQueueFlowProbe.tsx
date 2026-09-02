@@ -1,10 +1,13 @@
 import { RegistryContext } from "@effect/atom-react"
+import { createDispatcher, parseKey } from "@ghui/keymap"
 import { createTestRenderer } from "@opentui/core/testing"
 import { createRoot } from "@opentui/react"
 import { Effect, Layer } from "effect"
 import * as AtomRegistry from "effect/unstable/reactivity/AtomRegistry"
 import { act, useState } from "react"
 import { visibleMergeKinds } from "../src/mergeActions.ts"
+import { buildMergeModalCtx } from "../src/keymap/contexts/mergeModalCtx.ts"
+import { mergeModalKeymap } from "../src/keymap/mergeModal.ts"
 import { CommandError } from "../src/services/CommandRunner.ts"
 import { GitHubService } from "../src/services/GitHubService.ts"
 import { githubRuntime } from "../src/services/runtime.ts"
@@ -23,7 +26,15 @@ const deferred = () => {
 	return { promise, resolve }
 }
 
-export const probeMergeFlow = async (options: { queueEnabled: boolean; kind: "now" | "auto" | "admin"; isDraft?: boolean; pendingChecks?: boolean; fail?: boolean }) => {
+export const probeMergeFlow = async (options: {
+	queueEnabled: boolean
+	kind: "now" | "auto" | "admin"
+	isDraft?: boolean
+	pendingChecks?: boolean
+	fail?: boolean
+	lookupFailure?: boolean
+	directConfirm?: boolean
+}) => {
 	// @ts-expect-error -- React's act environment flag is intentionally global.
 	globalThis.IS_REACT_ACT_ENVIRONMENT = true
 	const started = deferred()
@@ -45,6 +56,11 @@ export const probeMergeFlow = async (options: { queueEnabled: boolean; kind: "no
 	let restored = 0
 	let flow: UseMergeFlowResult | undefined
 	let modal: MergeModalState | undefined
+	const pressEnter = () => {
+		if (!flow || !modal) throw new Error("Merge flow failed to mount")
+		const context = buildMergeModalCtx({ mergeModal: modal, ...flow })
+		return createDispatcher(mergeModalKeymap, () => context).dispatch(parseKey("return")).kind
+	}
 	const Harness = () => {
 		const [state, setState] = useState<MergeModalState>({
 			repository: null,
@@ -99,22 +115,50 @@ export const probeMergeFlow = async (options: { queueEnabled: boolean; kind: "no
 			flow?.openMergeModal()
 			await Effect.runPromise(
 				Effect.all([
-					AtomRegistry.getResult(registry, getPullRequestMergeInfoAtom, { suspendOnWaiting: true }),
+					AtomRegistry.getResult(registry, getPullRequestMergeInfoAtom, { suspendOnWaiting: true }).pipe(Effect.result),
 					AtomRegistry.getResult(registry, getRepositoryMergeMethodsAtom, { suspendOnWaiting: true }),
 				]),
 			)
 		})
 		if (!flow || !modal) throw new Error("Merge flow failed to mount")
+		if (options.lookupFailure) {
+			await setup.renderOnce()
+			const errorFrame = setup.captureCharFrame()
+			const context = buildMergeModalCtx({ mergeModal: modal, ...flow })
+			const callsBeforeConfirm = calls.length
+			let dispatch = "direct"
+			await act(async () => {
+				if (options.directConfirm) flow?.confirmMergeAction()
+				else dispatch = pressEnter()
+			})
+			return {
+				error: modal.error,
+				loading: modal.loading,
+				availableActionCount: context.availableActionCount,
+				dispatch,
+				confirmationCalls: calls.slice(callsBeforeConfirm),
+				state: pr.state,
+				reviewStatus: pr.reviewStatus,
+				autoMergeEnabled: pr.autoMergeEnabled,
+				pendingConfirm: modal.pendingConfirm,
+				errorFrame,
+			}
+		}
+		if (modal.error) throw new Error(modal.error)
 		const kindIndex = visibleMergeKinds(modal.info, modal.allowedMethods, modal.selectedMethod).findIndex((kind) => kind.kind === options.kind)
 		if (kindIndex < 0) throw new Error(`Missing merge action: ${options.kind}`)
 		for (let index = 0; index < kindIndex; index++) act(() => flow?.moveMergeSelection(1))
 		await setup.renderOnce()
 		const modalFrame = setup.captureCharFrame()
 		let firstConfirmMutations: string[][] = []
-		act(() => flow?.confirmMergeAction())
+		act(() => {
+			pressEnter()
+		})
 		if (options.isDraft) {
 			firstConfirmMutations = calls.filter((call) => call[1] === "pr" && call[2] !== "view")
-			act(() => flow?.confirmMergeAction())
+			act(() => {
+				pressEnter()
+			})
 		}
 		const pendingState = pr.state
 		const autoMergeEnabled = pr.autoMergeEnabled

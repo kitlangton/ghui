@@ -33,6 +33,7 @@ export interface MergeQueueFixtureOptions {
 	readonly queueEnabled: boolean
 	readonly isDraft?: boolean
 	readonly pendingChecks?: boolean
+	readonly lookupFailure?: boolean
 	readonly mergeResult?: Effect.Effect<void, CommandError>
 }
 
@@ -59,6 +60,9 @@ export const mergeQueueCommandLayer = (options: MergeQueueFixtureOptions, calls:
 			},
 			runSchema: (schema, command, args) => {
 				calls.push([command, ...args])
+				if (options.lookupFailure && args[0] === "api" && args[1] === "graphql") {
+					return Effect.fail(new CommandError({ command, args: [...args], detail: "Fixture queue lookup denied", cause: "fixture" }))
+				}
 				const response =
 					args[0] === "pr" && args[1] === "view"
 						? {

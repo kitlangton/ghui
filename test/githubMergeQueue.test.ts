@@ -51,6 +51,29 @@ describe("GitHubService merge queue", () => {
 })
 
 describe("production merge flow", () => {
+	for (const directConfirm of [false, true]) {
+		for (const isDraft of [false, true]) {
+			test(`failed queue lookup blocks ${directConfirm ? "direct confirmation" : "Enter"} for ${isDraft ? "draft" : "ready"} PRs`, async () => {
+				const stdout = await runIsolatedProbe(`
+					import { probeMergeFlow } from "./test/mergeQueueFlowProbe.tsx"
+					console.log(JSON.stringify(await probeMergeFlow(${JSON.stringify({ queueEnabled: true, kind: "auto", lookupFailure: true, directConfirm, isDraft })})))
+				`)
+				const result = JSON.parse(stdout)
+				expect(result.error).toBe("Fixture queue lookup denied")
+				expect(result.loading).toBe(false)
+				expect(result.errorFrame).toContain(result.error)
+				expect(result.errorFrame).not.toContain("Enable auto-merge")
+				expect(result.confirmationCalls).toEqual([])
+				expect(result.pendingConfirm).toBeNull()
+				expect(result.availableActionCount).toBe(0)
+				if (!directConfirm) expect(result.dispatch).toBe("disabled")
+				expect(result.state).toBe("open")
+				expect(result.reviewStatus).toBe(isDraft ? "draft" : "approved")
+				expect(result.autoMergeEnabled).toBe(false)
+			})
+		}
+	}
+
 	for (const queueEnabled of [false, true]) {
 		for (const kind of ["now", "auto", "admin"] as const) {
 			test(`${queueEnabled ? "queue" : "ordinary"} ${kind} keeps truthful pending and successful state`, async () => {

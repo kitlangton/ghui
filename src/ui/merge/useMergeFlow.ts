@@ -178,7 +178,7 @@ export const useMergeFlow = ({
 	}
 
 	const confirmMergeAction = () => {
-		if (!mergeModal.info || !mergeModal.allowedMethods || mergeModal.loading || mergeModal.running) return
+		if (!mergeModal.info || !mergeModal.allowedMethods || mergeModal.loading || mergeModal.running || mergeModal.error) return
 
 		// Second confirm: enter while pending executes the queued action with mark-ready.
 		if (mergeModal.pendingConfirm) {

@@ -3,6 +3,8 @@ export type ThemeId =
 	| "ghui"
 	| "tokyo-night"
 	| "catppuccin"
+	| "catppuccin-frappe"
+	| "catppuccin-macchiato"
 	| "catppuccin-latte"
 	| "rose-pine"
 	| "rose-pine-dawn"
@@ -408,6 +410,86 @@ const catppuccinColors: ColorPalette = {
 		lineNumberBg: "#181825",
 		addedLineNumberBg: "#203524",
 		removedLineNumberBg: "#36232f",
+	},
+}
+
+const catppuccinFrappeColors: ColorPalette = {
+	background: "#303446",
+	modalBackground: "#414559",
+	text: "#c6d0f5",
+	muted: "#838ba7",
+	separator: "#626880",
+	accent: "#ca9ee6",
+	link: "#8caaee",
+	inlineCode: "#f4b8e4",
+	error: "#e78284",
+	selectedBg: "#51576d",
+	selectedText: "#f5e0dc",
+	count: "#ef9f76",
+	status: {
+		draft: "#e5c890",
+		approved: "#a6d189",
+		changes: "#e78284",
+		review: "#8caaee",
+		none: "#838ba7",
+		passing: "#a6d189",
+		pending: "#e5c890",
+		failing: "#e78284",
+	},
+	repos: {
+		opencode: "#8caaee",
+		"effect-smol": "#a6d189",
+		"opencode-console": "#f4b8e4",
+		opencontrol: "#ef9f76",
+		default: "#99d1db",
+	},
+	diff: {
+		addedBg: "#273830",
+		removedBg: "#3c252a",
+		contextBg: "transparent",
+		lineNumberBg: "#292c3c",
+		addedLineNumberBg: "#23332a",
+		removedLineNumberBg: "#362127",
+	},
+}
+
+const catppuccinMacchiatoColors: ColorPalette = {
+	background: "#24273a",
+	modalBackground: "#363a4f",
+	text: "#cad3f5",
+	muted: "#8087a2",
+	separator: "#494d64",
+	accent: "#c6a0f6",
+	link: "#8aadf4",
+	inlineCode: "#f5bde6",
+	error: "#ed8796",
+	selectedBg: "#45475a",
+	selectedText: "#f5e0dc",
+	count: "#f5a97f",
+	status: {
+		draft: "#eed49f",
+		approved: "#a6da95",
+		changes: "#ed8796",
+		review: "#8aadf4",
+		none: "#8087a2",
+		passing: "#a6da95",
+		pending: "#eed49f",
+		failing: "#ed8796",
+	},
+	repos: {
+		opencode: "#8aadf4",
+		"effect-smol": "#a6da95",
+		"opencode-console": "#f5bde6",
+		opencontrol: "#f5a97f",
+		default: "#91d7e3",
+	},
+	diff: {
+		addedBg: "#1e3028",
+		removedBg: "#351f28",
+		contextBg: "transparent",
+		lineNumberBg: "#1e2030",
+		addedLineNumberBg: "#1a2c23",
+		removedLineNumberBg: "#2e1b23",
 	},
 }
 
@@ -1300,6 +1382,8 @@ export const themeDefinitions: readonly ThemeDefinition[] = [
 	{ id: "ghui", name: "GHUI", description: "Warm parchment accents on a deep slate background", tone: "dark", colors: ghuiColors },
 	{ id: "tokyo-night", name: "Tokyo Night", description: "Cool indigo surfaces with neon editor accents", tone: "dark", colors: tokyoNightColors },
 	{ id: "catppuccin", name: "Catppuccin", description: "Mocha lavender, peach, and soft pastel contrast", tone: "dark", colors: catppuccinColors },
+	{ id: "catppuccin-frappe", name: "Catppuccin Frappé", description: "Medium-dark pastel with soft lavender tones", tone: "dark", colors: catppuccinFrappeColors },
+	{ id: "catppuccin-macchiato", name: "Catppuccin Macchiato", description: "Dark surfaces with vibrant lavender accents", tone: "dark", colors: catppuccinMacchiatoColors },
 	{ id: "catppuccin-latte", name: "Catppuccin Latte", description: "Light frothy cream with pastel lavender and peach", tone: "light", colors: catppuccinLatteColors },
 	{ id: "rose-pine", name: "Rose Pine", description: "Muted rose, pine, and gold on dusky violet", tone: "dark", colors: rosePineColors },
 	{ id: "rose-pine-dawn", name: "Rose Pine Dawn", description: "Soft morning light with rose and sage accents", tone: "light", colors: rosePineDawnColors },
@@ -1327,6 +1411,8 @@ export const themeDefinitions: readonly ThemeDefinition[] = [
 
 const pairedThemeIds: Partial<Record<ThemeId, ThemeId>> = {
 	catppuccin: "catppuccin-latte",
+	"catppuccin-frappe": "catppuccin-latte",
+	"catppuccin-macchiato": "catppuccin-latte",
 	"catppuccin-latte": "catppuccin",
 	"rose-pine": "rose-pine-dawn",
 	"rose-pine-dawn": "rose-pine",

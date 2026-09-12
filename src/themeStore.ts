@@ -16,6 +16,25 @@ interface StoredConfig {
 	readonly showScrollbars?: unknown
 	readonly editorCommand?: unknown
 	readonly repoPaths?: unknown
+	readonly customQueues?: unknown
+}
+
+export interface CustomQueueConfig {
+	readonly name: string
+	readonly query: string
+}
+
+const parseCustomQueues = (value: unknown): readonly CustomQueueConfig[] => {
+	if (!Array.isArray(value)) return []
+	return value.filter(
+		(item): item is CustomQueueConfig =>
+			!!item &&
+			typeof item === "object" &&
+			typeof (item as Record<string, unknown>).name === "string" &&
+			((item as Record<string, unknown>).name as string).length > 0 &&
+			typeof (item as Record<string, unknown>).query === "string" &&
+			((item as Record<string, unknown>).query as string).length > 0,
+	)
 }
 
 const configDirectory = () => {
@@ -98,6 +117,14 @@ export const loadStoredEditorConfig: Effect.Effect<StoredEditorConfig> = Effect.
 		return { editorCommand, repoPaths: parseRepoPaths(config.repoPaths) }
 	}),
 	() => Effect.succeed({ editorCommand: null, repoPaths: {} } satisfies StoredEditorConfig),
+)
+
+export const loadStoredCustomQueues: Effect.Effect<readonly CustomQueueConfig[]> = Effect.catchCause(
+	Effect.tryPromise(async () => {
+		const config = await readStoredConfig()
+		return parseCustomQueues(config.customQueues)
+	}),
+	() => Effect.succeed([]),
 )
 
 export const saveStoredThemeId = (theme: ThemeId): Effect.Effect<void> =>

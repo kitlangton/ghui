@@ -92,6 +92,7 @@ const CachedPullRequestItemSchema = Schema.Struct({
 const CachedPullRequestViewSchema = Schema.Union([
 	Schema.Struct({ _tag: Schema.tag("Queue"), mode: Schema.Literals(pullRequestQueueModes), repository: Schema.NullOr(Schema.String) }),
 	Schema.Struct({ _tag: Schema.tag("Repository"), repository: Schema.String }),
+	Schema.Struct({ _tag: Schema.tag("CustomQueue"), name: Schema.String, query: Schema.String, repository: Schema.String }),
 ])
 
 // IssueView's Queue mode excludes "all" — that mode is reserved for the
@@ -102,6 +103,7 @@ const issueQueueModes = ["authored", "assigned", "mentioned"] as const
 const CachedIssueViewSchema = Schema.Union([
 	Schema.Struct({ _tag: Schema.tag("Queue"), mode: Schema.Literals(issueQueueModes), repository: Schema.NullOr(Schema.String) }),
 	Schema.Struct({ _tag: Schema.tag("Repository"), repository: Schema.String }),
+	Schema.Struct({ _tag: Schema.tag("CustomQueue"), name: Schema.String, query: Schema.String, repository: Schema.String }),
 ])
 
 const issueStates = ["open", "closed"] as const

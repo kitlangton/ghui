@@ -3,6 +3,9 @@ import type { ThemeTone } from "./ui/colors.js"
 export type SystemAppearance = ThemeTone
 
 const runCommand = async (command: readonly [string, ...string[]]) => {
+	if (typeof Bun === "undefined" || !Bun.spawn) {
+		return ""
+	}
 	const [cmd, ...args] = command
 	const proc = Bun.spawn([cmd, ...args], {
 		stdout: "pipe",

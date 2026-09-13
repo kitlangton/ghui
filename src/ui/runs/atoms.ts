@@ -1,6 +1,7 @@
 import * as Atom from "effect/unstable/reactivity/Atom"
 import { GitHubService } from "../../services/GitHubService.js"
 import { githubRuntime } from "../../services/runtime.js"
+import { atomFamily } from "../atomFamily.js"
 
 // === UI state ===
 
@@ -38,12 +39,12 @@ const parseRunDetailKey = (key: string): { repository: string; runId: number } =
 
 // === Data families ===
 
-export const pullRequestRunsFor = Atom.family((key: string) => {
+export const pullRequestRunsFor = atomFamily((key: string) => {
 	const { repository, headSha } = parseRunsKey(key)
 	return githubRuntime.atom(GitHubService.use((github) => github.listWorkflowRunsForCommit(repository, headSha))).pipe(Atom.setIdleTTL(0))
 })
 
-export const workflowRunDetailsFor = Atom.family((key: string) => {
+export const workflowRunDetailsFor = atomFamily((key: string) => {
 	const { repository, runId } = parseRunDetailKey(key)
 	return githubRuntime.atom(GitHubService.use((github) => github.getWorkflowRunDetails(repository, runId))).pipe(Atom.setIdleTTL(0))
 })

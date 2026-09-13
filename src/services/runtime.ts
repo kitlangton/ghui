@@ -9,6 +9,7 @@ import { Clipboard } from "./Clipboard.js"
 import { EditorOpener } from "./EditorOpener.js"
 import { CommandRunner } from "./CommandRunner.js"
 import { GitHubService } from "./GitHubService.js"
+import { MockGitHubService } from "./MockGitHubService.js"
 
 const parseOptionalPositiveInt = (value: string | undefined, fallback: number | null) => {
 	if (value === undefined) return fallback
@@ -44,7 +45,7 @@ export const pullRequestPageSize = Math.min(100, parseOptionalPositiveInt(proces
 
 const githubServiceLayer =
 	mockPrCount !== null
-		? (await import("./MockGitHubService.js")).MockGitHubService.layer({
+		? MockGitHubService.layer({
 				prCount: mockPrCount,
 				repoCount: parseOptionalPositiveInt(process.env.GHUI_MOCK_REPO_COUNT, 4) ?? 4,
 				repository: mockRepository,

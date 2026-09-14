@@ -95,3 +95,42 @@ export const flattenRunRows = (run: WorkflowRunDetails): readonly RunDetailRow[]
 
 // Indices of failure rows, for n/p navigation.
 export const failureRowIndices = (rows: readonly RunDetailRow[]): readonly number[] => rows.flatMap((row, index) => (isFailureKind(row.glyphKind) ? [index] : []))
+
+// === Job log ===
+
+// `gh run view --job <id> --log` prints `job\tstep\t<ISO timestamp> <text>` per
+// line. Current gh (2.98) can no longer name the step ("UNKNOWN STEP"), so a step
+// is selected by its time window instead: step times from `--json jobs` are
+// second-resolution and line up with the log timestamps.
+// Lines logged in a boundary second land in both adjacent steps; acceptable.
+const LOG_TIMESTAMP = /^\uFEFF?(\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d)(?:\.\d+)?Z ?/
+// gh prints ESC as the two characters `^[`; raw ESC is also handled. Built via
+// fromCharCode because a literal control char trips no-control-regex.
+const ANSI = new RegExp(`(?:${String.fromCharCode(27)}|\\^\\[)\\[[0-9;]*[A-Za-z]`, "g")
+
+export interface LogWindow {
+	readonly startedAt: Date | null
+	readonly completedAt: Date | null
+}
+
+export const parseJobLog = (raw: string, step: LogWindow | null): readonly string[] => {
+	// Compare at whole seconds: log stamps are truncated to seconds below, and step
+	// times may carry milliseconds (mock fixtures do).
+	const seconds = (date: Date) => Math.floor(date.getTime() / 1000) * 1000
+	const from = step ? (step.startedAt ? seconds(step.startedAt) : Number.POSITIVE_INFINITY) : Number.NEGATIVE_INFINITY
+	const to = step?.completedAt ? seconds(step.completedAt) + 1000 : Number.POSITIVE_INFINITY
+	const lines: string[] = []
+	for (const line of raw.split("\n")) {
+		const first = line.indexOf("\t")
+		const second = first === -1 ? -1 : line.indexOf("\t", first + 1)
+		if (second === -1) continue
+		const text = line.slice(second + 1)
+		const stamp = LOG_TIMESTAMP.exec(text)
+		if (step) {
+			const at = stamp ? Date.parse(`${stamp[1]}Z`) : Number.NaN
+			if (!(at >= from && at < to)) continue
+		}
+		lines.push((stamp ? text.slice(stamp[0].length) : text).replace(ANSI, "").replaceAll("\t", "  "))
+	}
+	return lines
+}

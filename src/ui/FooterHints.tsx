@@ -20,6 +20,7 @@ interface HintsContext {
 	readonly diffRangeActive: boolean
 	readonly runsFullView: boolean
 	readonly runsInDetail: boolean
+	readonly runsInLog: boolean
 	readonly commentsViewActive: boolean
 	readonly commentsViewOnRealComment: boolean
 	readonly commentsViewCanEditSelected: boolean
@@ -97,22 +98,29 @@ const commentsViewHints = (ctx: HintsContext): readonly HintItem[] => [
 ]
 
 const runsViewHints = (ctx: HintsContext): readonly HintItem[] =>
-	ctx.runsInDetail
+	ctx.runsInLog
 		? [
 				{ key: "esc", label: "back" },
-				{ key: "↑↓", label: "steps" },
-				{ key: "enter", label: "open log" },
-				{ key: "n/p", label: "failure" },
-				{ key: "o", label: "run" },
-				{ key: "r", label: "refresh" },
-			]
-		: [
-				{ key: "esc", label: "back" },
-				{ key: "↑↓", label: "runs" },
-				{ key: "enter", label: "open run" },
+				{ key: "↑↓", label: "scroll" },
+				{ key: "ctrl-d/u/f/b", label: "page" },
 				{ key: "o", label: "browser" },
-				{ key: "r", label: "refresh" },
 			]
+		: ctx.runsInDetail
+			? [
+					{ key: "esc", label: "back" },
+					{ key: "↑↓", label: "steps" },
+					{ key: "enter", label: "open log" },
+					{ key: "n/p", label: "failure" },
+					{ key: "o", label: "run" },
+					{ key: "r", label: "refresh" },
+				]
+			: [
+					{ key: "esc", label: "back" },
+					{ key: "↑↓", label: "runs" },
+					{ key: "enter", label: "open run" },
+					{ key: "o", label: "browser" },
+					{ key: "r", label: "refresh" },
+				]
 
 const defaultHints = (ctx: HintsContext): readonly HintItem[] => {
 	const retrying = ctx.retryProgress._tag === "Retrying"

@@ -14,7 +14,7 @@ import type {
 import type { ItemListInput } from "../item.js"
 import { mergeInfoFromPullRequest } from "../mergeActions.js"
 import { mockAuthor, mockBody, mockIssueTitle, mockLabels, mockPullRequestBranch, mockPullRequestTitle } from "./mockData.js"
-import { mockWorkflowRunDetails, mockWorkflowRuns } from "./mockRuns.js"
+import { mockJobLog, mockWorkflowRunDetails, mockWorkflowRuns } from "./mockRuns.js"
 import { GitHubService } from "./GitHubService.js"
 import { loadMockFixtureSnapshot } from "./mockFixtures.js"
 
@@ -304,6 +304,7 @@ export const MockGitHubService = {
 					const first = mockWorkflowRuns(repository, firstSha)[0]
 					return Effect.succeed(mockWorkflowRunDetails(repository, firstSha, first?.id ?? runId) ?? { ...(first ?? ({} as never)), jobs: [] })
 				},
+				getWorkflowJobLog: (_repository, jobId) => Effect.succeed(mockJobLog(jobId)),
 				listPullRequestReviewComments: (repository, number) => Effect.succeed(reviewComments(repository, number)),
 				listPullRequestComments: (repository, number) => Effect.succeed(pullRequestComments(repository, number)),
 				listIssueComments: (repository, number) => Effect.succeed(issueComments(repository, number)),

@@ -1,4 +1,4 @@
-import { TextAttributes, type ScrollBoxRenderable } from "@opentui/core"
+import { type MouseEvent, type ScrollBoxRenderable, TextAttributes } from "@opentui/core"
 import { useEffect, useRef } from "react"
 import type { PullRequestItem, WorkflowRun, WorkflowRunDetails } from "../../domain.js"
 import { colors } from "../colors.js"
@@ -60,6 +60,12 @@ export interface RunsPaneProps {
 	readonly runsSelection: number
 	readonly detailSelection: number
 	readonly detailRows: readonly RunDetailRow[]
+	readonly inLog: boolean
+	readonly logState: ResultState<string> | null
+	readonly logLines: readonly string[]
+	readonly logScroll: number
+	readonly logTitle: string
+	readonly onLogScroll: (delta: number) => void
 	readonly onSelectRow: (index: number) => void
 	readonly onActivateRow: (index: number) => void
 	readonly contentWidth: number
@@ -176,6 +182,21 @@ const RunDetail = ({
 	)
 }
 
+const logLineColor = (line: string): string => {
+	if (line.startsWith("##[error]")) return colors.error
+	if (line.startsWith("##[warning]")) return colors.status.pending
+	if (line.startsWith("##[group]") || line.startsWith("##[endgroup]")) return colors.accent
+	return colors.text
+}
+
+const JobLog = ({ lines, scroll, height }: { lines: readonly string[]; scroll: number; height: number }) => (
+	<box flexDirection="column">
+		{lines.slice(scroll, scroll + height).map((line, index) => (
+			<PlainLine key={scroll + index} text={` ${line}`} fg={logLineColor(line)} />
+		))}
+	</box>
+)
+
 export const PullRequestRunsPane = ({
 	pullRequest,
 	inDetail,
@@ -184,6 +205,12 @@ export const PullRequestRunsPane = ({
 	runsSelection,
 	detailSelection,
 	detailRows,
+	inLog,
+	logState,
+	logLines,
+	logScroll,
+	logTitle,
+	onLogScroll,
 	onSelectRow,
 	onActivateRow,
 	contentWidth,
@@ -202,15 +229,17 @@ export const PullRequestRunsPane = ({
 	const headerRight =
 		inDetail && detailState?.status === "ready" ? `${detailState.value.event} → ${detailState.value.headBranch}` : `${pullRequest.headRefName} → ${pullRequest.baseRefName}`
 
-	const subline =
-		inDetail && detailState?.status === "ready"
+	const subline = inLog
+		? logTitle
+		: inDetail && detailState?.status === "ready"
 			? `${detailState.value.headSha.slice(0, 7)} · ${pullRequest.author}`
 			: `runs for ${pullRequest.headRefOid.slice(0, 7)} · ${pullRequest.author}`
 
 	// Every row is height 1, so row offset === selection index. Keep the focused
 	// row inside the viewport on keyboard moves (j/k, ctrl-d/u, gg/G) — matching
 	// the diff/comments panes.
-	const rowCount = inDetail ? detailRows.length : runsState.status === "ready" ? runsState.value.length : 0
+	// The log view windows its own lines (`logScroll`), so it never needs the scrollbox.
+	const rowCount = inLog ? 0 : inDetail ? detailRows.length : runsState.status === "ready" ? runsState.value.length : 0
 	const selection = inDetail ? detailSelection : runsSelection
 	const needsScroll = rowCount > bodyHeight
 	const scrollboxRef = useRef<ScrollBoxRenderable | null>(null)
@@ -225,7 +254,24 @@ export const PullRequestRunsPane = ({
 		else if (bottom > viewportTop + bodyHeight) scrollbox.scrollTo({ x: 0, y: Math.max(0, bottom - bodyHeight) })
 	}, [selection, needsScroll, bodyHeight, rowCount])
 
+	// Wheel over the log: the log windows its own lines, so translate wheel
+	// events into `logScroll` moves (same pattern as the command palette).
+	const handleLogMouseScroll = (event: MouseEvent) => {
+		if (!inLog || !event.scroll) return
+		const delta = Math.max(1, Math.ceil(event.scroll.delta))
+		const direction = event.scroll.direction === "down" || event.scroll.direction === "right" ? 1 : -1
+		onLogScroll(direction * delta)
+		event.preventDefault()
+		event.stopPropagation()
+	}
+
 	const body = (() => {
+		if (inLog) {
+			if (!logState || logState.status === "loading") return centeredMessage(`${loadingIndicator} Loading log`, colors.muted, contentWidth, bodyHeight, "log-loading")
+			if (logState.status === "error") return centeredMessage(logState.message, colors.error, contentWidth, bodyHeight, "log-error")
+			if (logLines.length === 0) return centeredMessage("No log output", colors.muted, contentWidth, bodyHeight, "log-empty")
+			return <JobLog lines={logLines} scroll={logScroll} height={bodyHeight} />
+		}
 		if (!inDetail) {
 			if (runsState.status === "loading") return centeredMessage(`${loadingIndicator} Loading runs`, colors.muted, contentWidth, bodyHeight, "runs-loading")
 			if (runsState.status === "error") return centeredMessage(runsState.message, colors.error, contentWidth, bodyHeight, "runs-error")
@@ -248,7 +294,7 @@ export const PullRequestRunsPane = ({
 				</TextLine>
 			</PaddedRow>
 			<Divider width={paneWidth} />
-			<box height={bodyHeight} flexDirection="column">
+			<box height={bodyHeight} flexDirection="column" {...(inLog ? { onMouseScroll: handleLogMouseScroll } : {})}>
 				{needsScroll ? (
 					<scrollbox ref={scrollboxRef} focusable={false} flexGrow={1} verticalScrollbarOptions={{ visible: showScrollbar }}>
 						{body}

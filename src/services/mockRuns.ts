@@ -174,3 +174,26 @@ export const mockWorkflowRuns = (repository: string, headSha: string): readonly 
 
 export const mockWorkflowRunDetails = (repository: string, headSha: string, runIdValue: number): WorkflowRunDetails | null =>
 	runsForCommit(repository, headSha).find((run) => run.id === runIdValue) ?? null
+
+const formatSeconds = (step: { startedAt: Date | null; completedAt: Date | null }) =>
+	step.startedAt && step.completedAt ? `${Math.round((step.completedAt.getTime() - step.startedAt.getTime()) / 1000)}s` : "?"
+
+// Raw `gh run view --job <id> --log` text for a job built above: `job\tstep\t<ISO> <line>`.
+export const mockJobLog = (jobId: number): string => {
+	for (const runs of cache.values()) {
+		for (const run of runs) {
+			const job = run.jobs.find((candidate) => candidate.id === jobId)
+			if (!job) continue
+			const stamp = (date: Date | null) => (date ?? new Date()).toISOString()
+			return job.steps
+				.flatMap((step) => {
+					const prefix = `${job.name}\t${step.name}\t${stamp(step.startedAt)} `
+					const body = [`##[group]Run ${step.name}`, `+ ${step.name.toLowerCase().replace(/\s+/g, "-")}`, "##[endgroup]", `done in ${formatSeconds(step)}`]
+					if (step.conclusion === "failure") body.push("##[error]Process completed with exit code 1.")
+					return body.map((line) => prefix + line)
+				})
+				.join("\n")
+		}
+	}
+	return ""
+}

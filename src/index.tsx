@@ -12,20 +12,11 @@ import { loadStoredSystemThemeAutoReload } from "./themeStore.js"
 import { colors, setSystemThemeColors } from "./ui/colors.js"
 import { LoadingLogoPane } from "./ui/LoadingLogo.js"
 import { SPINNER_INTERVAL_MS } from "./ui/spinner.js"
+import { syntaxParsers } from "./ui/syntaxParsers.js"
 
 process.env.OTUI_USE_ALTERNATE_SCREEN = "true"
 
-const addGhUiParsers = () =>
-	addDefaultParsers([
-		{
-			filetype: "bash",
-			aliases: ["sh", "shell", "zsh", "ksh"],
-			wasm: "https://github.com/tree-sitter/tree-sitter-bash/releases/download/v0.25.1/tree-sitter-bash.wasm",
-			queries: {
-				highlights: ["https://raw.githubusercontent.com/tree-sitter/tree-sitter-bash/v0.25.1/queries/highlights.scm"],
-			},
-		},
-	])
+const addGhUiParsers = () => addDefaultParsers(syntaxParsers)
 
 const FOCUS_REPORTING_ENABLE = "\x1b[?1004h"
 const FOCUS_REPORTING_DISABLE = "\x1b[?1004l"

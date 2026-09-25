@@ -29,7 +29,7 @@ describe("GitHubService merge queue", () => {
 						"42",
 						"--repo",
 						"example/queue-demo",
-						`--${method}`,
+						...(queueEnabled && kind !== "admin" ? [] : [`--${method}`]),
 						...(kind === "now" ? [] : [`--${kind}`]),
 						...(queueEnabled ? [] : ["--delete-branch"]),
 					])

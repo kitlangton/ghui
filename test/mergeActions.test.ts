@@ -126,6 +126,17 @@ describe("mergeActionCliArgs", () => {
 		expect(action({ kind: "admin", method: "merge", mergeQueueEnabled: false })).toEqual(["--merge", "--admin", "--delete-branch"])
 	})
 
+	test("queue targets let the merge queue choose the method for now and auto", () => {
+		for (const method of ["squash", "merge", "rebase"] as const) {
+			expect(action({ kind: "now", method, mergeQueueEnabled: true })).toEqual([])
+			expect(action({ kind: "auto", method, mergeQueueEnabled: true })).toEqual(["--auto"])
+		}
+	})
+
+	test("queue admin bypass keeps the explicit method without --delete-branch", () => {
+		expect(action({ kind: "admin", method: "squash", mergeQueueEnabled: true })).toEqual(["--squash", "--admin"])
+	})
+
 	test("disable-auto ignores method and uses --disable-auto", () => {
 		expect(action({ kind: "disable-auto" })).toEqual(["--disable-auto"])
 	})

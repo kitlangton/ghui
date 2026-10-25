@@ -56,6 +56,16 @@ export const mergeQueueCommandLayer = (options: MergeQueueFixtureOptions, calls:
 						}),
 					)
 				}
+				if (options.queueEnabled && !args.includes("--admin") && args.some((arg) => arg === "--squash" || arg === "--merge" || arg === "--rebase")) {
+					return Effect.fail(
+						new CommandError({
+							command,
+							args: [...args],
+							detail: "! The merge strategy for main is set by the merge queue",
+							cause: "gh merge-queue method fixture",
+						}),
+					)
+				}
 				return (options.mergeResult ?? Effect.void).pipe(Effect.as({ stdout: "", stderr: "", exitCode: 0 }))
 			},
 			runSchema: (schema, command, args) => {

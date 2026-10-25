@@ -144,9 +144,11 @@ export const mergeActionCliArgs = (action: PullRequestMergeAction): readonly str
 	const methodFlag = methodCopy[action.method].cliFlag
 	// gh rejects branch deletion for queue targets, even with --admin.
 	const deleteBranch = action.mergeQueueEnabled ? [] : ["--delete-branch"]
-	if (action.kind === "now") return [methodFlag, ...deleteBranch]
-	if (action.kind === "auto") return [methodFlag, "--auto", ...deleteBranch]
-	return [methodFlag, "--admin", ...deleteBranch]
+	if (action.kind === "admin") return [methodFlag, "--admin", ...deleteBranch]
+	// The merge queue owns the merge method; only an admin bypass picks one.
+	const method = action.mergeQueueEnabled ? [] : [methodFlag]
+	if (action.kind === "now") return [...method, ...deleteBranch]
+	return [...method, "--auto", ...deleteBranch]
 }
 
 export const mergeInfoFromPullRequest = (pullRequest: PullRequestItem): PullRequestMergeInfo => ({

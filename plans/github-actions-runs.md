@@ -120,6 +120,8 @@ failure navigation (`n`/`p`), inline step expansion, `o` open-in-browser, and `r
 refresh. Built as a PR view mode peer of the diff view (`runsFullViewAtom`,
 `runsView` keymap, `PullRequestRunsPane`), `gh`-backed via
 `listWorkflowRunsForCommit` / `getWorkflowRunDetails` / `getWorkflowRunLog`, with
-mock fixtures. Follow-ups: on-demand full step-log fetch + scroll, `↻` re-run /
-`x` cancel, live auto-refresh, and an optional repo-wide Actions surface reusing
-this run-detail rendering.
+mock fixtures. With `runLogView: "inline"` in config.json, `enter` on a job/step
+opens its log inline (`getWorkflowJobLog` → `gh run view --job <id> --log`,
+filtered per step by time window, scrollable); the default still opens GitHub. Follow-ups: `↻`
+re-run / `x` cancel, live auto-refresh, and an optional repo-wide Actions surface
+reusing this run-detail rendering.

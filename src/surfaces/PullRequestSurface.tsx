@@ -183,6 +183,12 @@ export const PullRequestSurface = (props: PullRequestSurfaceProps) => {
 				runsSelection={runsView.runsSelection}
 				detailSelection={runsView.detailSelection}
 				detailRows={runsView.detailRows}
+				inLog={runsView.inLog}
+				logState={runsView.logState}
+				logLines={runsView.logLines}
+				logScroll={runsView.logScroll}
+				logTitle={runsView.logTitle}
+				onLogScroll={runsView.scrollLog}
 				onSelectRow={runsView.selectRow}
 				onActivateRow={runsView.activateRow}
 				contentWidth={fullscreenContentWidth}

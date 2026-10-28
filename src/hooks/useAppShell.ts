@@ -1164,6 +1164,7 @@ export const useAppShell = ({ systemThemeGeneration }: UseAppShellInput) => {
 		diffCommentRangeActive,
 		runsFullView,
 		runsInDetail: runsView.inDetail,
+		runsInLog: runsView.inLog,
 		commentsViewActive,
 		selectedCommentsStatus,
 		selectedOrderedComment,

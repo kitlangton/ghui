@@ -92,6 +92,7 @@ export class GitHubService extends Context.Service<
 		readonly getPullRequestDiff: (repository: string, number: number) => Effect.Effect<string, GitHubError>
 		readonly listWorkflowRunsForCommit: (repository: string, headSha: string) => Effect.Effect<readonly WorkflowRun[], GitHubError>
 		readonly getWorkflowRunDetails: (repository: string, runId: number) => Effect.Effect<WorkflowRunDetails, GitHubError>
+		readonly getWorkflowJobLog: (repository: string, jobId: number) => Effect.Effect<string, GitHubError>
 		readonly listPullRequestReviewComments: (repository: string, number: number) => Effect.Effect<readonly PullRequestReviewComment[], GitHubError>
 		readonly listPullRequestComments: (repository: string, number: number) => Effect.Effect<readonly PullRequestComment[], GitHubError>
 		readonly listIssueComments: (repository: string, number: number) => Effect.Effect<readonly PullRequestComment[], GitHubError>
@@ -315,6 +316,16 @@ export class GitHubService extends Context.Service<
 					Effect.map(parseRunDetails),
 				)
 
+			// Plain text, not JSON: one `job\tstep\t<timestamp> <line>` row per log line.
+			// Parsed in the UI (`parseJobLog`). Fails while the job is still running.
+			const getWorkflowJobLog = (repository: string, jobId: number) => {
+				const args = ["run", "view", "--repo", repository, "--job", String(jobId), "--log"]
+				return command.run("gh", args).pipe(
+					Effect.withSpan("GitHubService.getWorkflowJobLog", { attributes: githubApiAttributes("getWorkflowJobLog", args) }),
+					Effect.map((result) => result.stdout),
+				)
+			}
+
 			const listPullRequestReviewComments = (repository: string, number: number) =>
 				ghJson("listPullRequestReviewComments", CommentsResponseSchema, ["api", "--paginate", "--slurp", `repos/${repository}/pulls/${number}/comments`]).pipe(
 					Effect.map(parsePullRequestComments),
@@ -502,6 +513,7 @@ export class GitHubService extends Context.Service<
 				getPullRequestDiff,
 				listWorkflowRunsForCommit,
 				getWorkflowRunDetails,
+				getWorkflowJobLog,
 				listPullRequestReviewComments,
 				listPullRequestComments,
 				listIssueComments,

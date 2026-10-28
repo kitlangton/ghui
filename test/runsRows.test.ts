@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test"
 import type { RunJob, WorkflowRunDetails } from "../src/domain.js"
-import { conclusionLabel, failureRowIndices, flattenRunRows, formatDuration, runGlyph, runGlyphKind } from "../src/ui/runs/runsRows.js"
+import { conclusionLabel, failureRowIndices, flattenRunRows, formatDuration, parseJobLog, runGlyph, runGlyphKind } from "../src/ui/runs/runsRows.js"
 
 const date = (iso: string) => new Date(iso)
 
@@ -103,5 +103,27 @@ describe("flattenRunRows", () => {
 		const rows = flattenRunRows(run)
 		// indices: 0 job:lint, 1 step, 2 job:test (failure), 3 step install, 4 step run test (failure)
 		expect(failureRowIndices(rows)).toEqual([2, 4])
+	})
+})
+
+describe("parseJobLog", () => {
+	const raw = [
+		"build\tUNKNOWN STEP\t\uFEFF2026-01-01T00:00:00.0000000Z ##[group]Runner",
+		"build\tUNKNOWN STEP\t2026-01-01T00:00:01.5000000Z \x1b[32mok\x1b[0m\t^[[36;1mdone^[[0m",
+		"build\tUNKNOWN STEP\t2026-01-01T00:00:03Z ##[error]Process completed with exit code 1.",
+		"",
+	].join("\n")
+	const setup = { startedAt: date("2026-01-01T00:00:00Z"), completedAt: date("2026-01-01T00:00:01Z") }
+	const tests = { startedAt: date("2026-01-01T00:00:02Z"), completedAt: null }
+
+	test("selects a step by time window, strips BOM, timestamps and ANSI", () => {
+		expect(parseJobLog(raw, setup)).toEqual(["##[group]Runner", "ok  done"])
+		expect(parseJobLog(raw, tests)).toEqual(["##[error]Process completed with exit code 1."])
+		expect(parseJobLog(raw, { startedAt: null, completedAt: null })).toEqual([])
+	})
+
+	test("null step keeps the whole job", () => {
+		expect(parseJobLog(raw, null)).toHaveLength(3)
+		expect(parseJobLog("", null)).toEqual([])
 	})
 })

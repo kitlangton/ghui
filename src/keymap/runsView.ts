@@ -27,6 +27,8 @@ export const runsViewKeymap = Runs(
 
 	{ id: "runs.half-up", title: "Half page up", keys: ["pageup", "ctrl+u"], run: (s) => s.moveSelection(-s.halfPage) },
 	{ id: "runs.half-down", title: "Half page down", keys: ["pagedown", "ctrl+d"], run: (s) => s.moveSelection(s.halfPage) },
+	{ id: "runs.page-up", title: "Page up", keys: ["ctrl+b"], run: (s) => s.moveSelection(-2 * s.halfPage) },
+	{ id: "runs.page-down", title: "Page down", keys: ["ctrl+f"], run: (s) => s.moveSelection(2 * s.halfPage) },
 
 	...countedVerticalBindings<RunsViewCtx>((s, delta) => s.moveSelection(delta)),
 

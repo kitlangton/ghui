@@ -3,7 +3,7 @@ import { mkdtemp, rm, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { Effect } from "effect"
-import { loadStoredEditorConfig, loadStoredShowScrollbars, loadStoredSystemThemeAutoReload } from "../src/themeStore.js"
+import { loadStoredEditorConfig, loadStoredRunLogView, loadStoredShowScrollbars, loadStoredSystemThemeAutoReload } from "../src/themeStore.js"
 
 const originalConfigDir = process.env.GHUI_CONFIG_DIR
 const tempDirs: string[] = []
@@ -31,6 +31,27 @@ const useTempConfig = async (content?: string) => {
 
 const loadSystemThemeAutoReload = () => Effect.runPromise(loadStoredSystemThemeAutoReload)
 const loadShowScrollbars = () => Effect.runPromise(loadStoredShowScrollbars)
+const loadRunLogView = () => Effect.runPromise(loadStoredRunLogView)
+
+describe("loadStoredRunLogView", () => {
+	test("defaults to browser", async () => {
+		await useTempConfig()
+
+		expect(await loadRunLogView()).toBe("browser")
+	})
+
+	test("reads the inline setting", async () => {
+		await useTempConfig('{"runLogView":"inline"}')
+
+		expect(await loadRunLogView()).toBe("inline")
+	})
+
+	test("falls back to browser for unknown values", async () => {
+		await useTempConfig('{"runLogView":"popup"}')
+
+		expect(await loadRunLogView()).toBe("browser")
+	})
+})
 
 describe("loadStoredSystemThemeAutoReload", () => {
 	test("defaults to disabled", async () => {

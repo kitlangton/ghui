@@ -14,6 +14,7 @@ interface StoredConfig {
 	readonly diffWhitespaceMode?: unknown
 	readonly systemThemeAutoReload?: unknown
 	readonly showScrollbars?: unknown
+	readonly runLogView?: unknown
 	readonly editorCommand?: unknown
 	readonly repoPaths?: unknown
 }
@@ -78,6 +79,18 @@ export const loadStoredShowScrollbars: Effect.Effect<boolean> = Effect.catchCaus
 		return typeof config.showScrollbars === "boolean" ? config.showScrollbars : false
 	}),
 	() => Effect.succeed(false),
+)
+
+// Where `enter` on a workflow job/step opens its log: in the browser (default,
+// unchanged from before inline logs existed) or inside ghui.
+export type RunLogView = "inline" | "browser"
+
+export const loadStoredRunLogView: Effect.Effect<RunLogView> = Effect.catchCause(
+	Effect.tryPromise(async () => {
+		const config = await readStoredConfig()
+		return config.runLogView === "inline" ? "inline" : "browser"
+	}),
+	() => Effect.succeed("browser" satisfies RunLogView),
 )
 
 export interface StoredEditorConfig {

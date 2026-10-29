@@ -1,6 +1,7 @@
 import type { AppCommand } from "../commands.js"
 import type { PullRequestLabel, PullRequestReviewComment } from "../domain.js"
 import { CommandPalette } from "../ui/CommandPalette.js"
+import type { FilterOption } from "../ui/modals/FilterModal.js"
 import {
 	ChangedFilesModal,
 	type ChangedFileSearchResult,
@@ -47,6 +48,7 @@ export interface WorkspaceModalsProps {
 	// When the docked diff-file panel is rendering the picker inline, the
 	// modal must stand down so both presentations don't fight for the screen.
 	readonly suppressChangedFilesModal: boolean
+	readonly filterOptions: readonly FilterOption[]
 }
 
 const layoutToProps = (layout: ModalLayout) => ({
@@ -80,7 +82,7 @@ export const WorkspaceModals = (props: WorkspaceModalsProps) =>
 			props.suppressChangedFilesModal ? null : (
 				<ChangedFilesModal state={state} results={props.changedFileResults} totalCount={props.readyDiffFileCount} {...layoutToProps(props.layouts.ChangedFiles)} />
 			),
-		Filter: (state) => <FilterModal state={state} {...layoutToProps(props.layouts.Filter)} />,
+		Filter: (state) => <FilterModal state={state} options={props.filterOptions} {...layoutToProps(props.layouts.Filter)} />,
 		SubmitReview: (state) => <SubmitReviewModal state={state} {...layoutToProps(props.layouts.SubmitReview)} />,
 		Theme: (state) => <ThemeModal state={state} {...layoutToProps(props.layouts.Theme)} />,
 		OpenRepository: (state) => <OpenRepositoryModal state={state} {...layoutToProps(props.layouts.OpenRepository)} />,

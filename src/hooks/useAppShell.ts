@@ -23,7 +23,7 @@ import { selectedIndexAtom } from "../ui/listSelection/atoms.js"
 import { noticeAtom } from "../ui/notice/atoms.js"
 import { useFlashNotice } from "../ui/notice/useFlashNotice.js"
 import { useCommentMutations } from "../ui/comments/useCommentMutations.js"
-import { pullRequestDetailKey, queueSelectionAtom, usernameAtom } from "../ui/pullRequests/atoms.js"
+import { customQueuesAtom, pullRequestDetailKey, queueSelectionAtom, usernameAtom } from "../ui/pullRequests/atoms.js"
 
 import { useGitHubActions } from "./useGitHubActions.js"
 import { useImperativeActions } from "./useImperativeActions.js"
@@ -58,6 +58,7 @@ import { showScrollbarsAtom, themeIdAtom } from "../ui/theme/atoms.js"
 import { useThemeModal } from "../ui/theme/useThemeModal.js"
 import { useMergeFlow } from "../ui/merge/useMergeFlow.js"
 import { initialCommentModalState, submitReviewOptions } from "../ui/modals.js"
+import { buildFilterOptions } from "../ui/modals/FilterModal.js"
 import { useClampedIndex } from "../ui/useClampedIndex.js"
 import { useCommandHandoffs } from "./useCommandHandoffs.js"
 import { useDiffCommentDerivations } from "./useDiffCommentDerivations.js"
@@ -168,6 +169,7 @@ export const useAppShell = ({ systemThemeGeneration }: UseAppShellInput) => {
 	const [startupLoadComplete, setStartupLoadComplete] = useState(false)
 	const [homeCrumbHovered, setHomeCrumbHovered] = useState(false)
 	const usernameResult = useAtomValue(usernameAtom)
+	const customQueues = useAtomValue(customQueuesAtom)
 	const {
 		addPullRequestLabel,
 		removePullRequestLabel,
@@ -468,6 +470,7 @@ export const useAppShell = ({ systemThemeGeneration }: UseAppShellInput) => {
 		activeIssueView,
 		selectedRepository,
 		filterModal,
+		customQueues,
 		setFilterModal,
 		switchViewTo,
 		setActiveIssueView,
@@ -1275,6 +1278,7 @@ export const useAppShell = ({ systemThemeGeneration }: UseAppShellInput) => {
 			onCommentChange: setCommentEditorValue,
 			onCommentSubmit: submitCommentModal,
 			layouts: modalLayouts,
+			filterOptions: buildFilterOptions(customQueues),
 			// Picker takes over the docked panel when visible; suppressing the
 			// modal here keeps both presentations from rendering at once.
 			suppressChangedFilesModal: diffFilePanelVisible,

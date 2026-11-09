@@ -26,6 +26,7 @@ export type ThemeId =
 	| "palenight"
 	| "opencode"
 	| "cursor"
+	| "solitude"
 
 export type ThemeTone = "dark" | "light"
 
@@ -1295,6 +1296,46 @@ const cursorColors: ColorPalette = {
 	},
 }
 
+const solitudeColors: ColorPalette = {
+	background: "#101315",
+	modalBackground: "#0c0e10",
+	text: "#cacccc",
+	muted: "#4b4e55",
+	separator: "#343d41",
+	accent: "#798186",
+	link: "#a5aeb4",
+	inlineCode: "#cbc2be",
+	error: "#de6145",
+	selectedBg: "#343d41",
+	selectedText: "#d9dbdc",
+	count: "#aeaeae",
+	status: {
+		draft: "#c9c2b4",
+		approved: "#9fa5a9",
+		changes: "#de6145",
+		review: "#798186",
+		none: "#4b4e55",
+		passing: "#9fa5a9",
+		pending: "#c9c2b4",
+		failing: "#de6145",
+	},
+	repos: {
+		opencode: "#798186",
+		"effect-smol": "#9fa5a9",
+		"opencode-console": "#aeaeae",
+		opencontrol: "#c9c2b4",
+		default: "#a5aeb4",
+	},
+	diff: {
+		addedBg: "#1d2724",
+		removedBg: "#2f201d",
+		contextBg: "transparent",
+		lineNumberBg: "#0c0e10",
+		addedLineNumberBg: "#18221f",
+		removedLineNumberBg: "#281c19",
+	},
+}
+
 export const themeDefinitions: readonly ThemeDefinition[] = [
 	{ id: "system", name: "System", description: "Use the terminal foreground, background, and ANSI palette", tone: "dark", colors: systemColors },
 	{ id: "ghui", name: "GHUI", description: "Warm parchment accents on a deep slate background", tone: "dark", colors: ghuiColors },
@@ -1323,6 +1364,7 @@ export const themeDefinitions: readonly ThemeDefinition[] = [
 	{ id: "palenight", name: "Palenight", description: "Material-inspired purple-blue with soft lavender tones", tone: "dark", colors: palenightColors },
 	{ id: "opencode", name: "OpenCode", description: "Charcoal panels with peach, violet, and blue highlights", tone: "dark", colors: opencodeColors },
 	{ id: "cursor", name: "Cursor", description: "Deep charcoal base with Anysphere's signature bright blue accents", tone: "dark", colors: cursorColors },
+	{ id: "solitude", name: "Solitude", description: "Restrained monochrome palette with cool gray accents", tone: "dark", colors: solitudeColors },
 ] as const
 
 const pairedThemeIds: Partial<Record<ThemeId, ThemeId>> = {

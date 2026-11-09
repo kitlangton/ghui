@@ -181,8 +181,8 @@ export const MockGitHubService = {
 				})
 			: items.map((item) => ({ ...item, author: username }))
 		const issues = fixture ? fixture.issues : buildMockIssues(options)
-		const fixturePullRequestsByKey = new Map(fixture?.pullRequests.map((item) => [`${item.repository}#${item.number}`, item]))
-		const fixtureIssuesByKey = new Map(fixture?.issues.map((item) => [`${item.repository}#${item.number}`, item]))
+		const fixturePullRequestsByKey = new Map(fixture ? fixture.pullRequests.map((item) => [`${item.repository}#${item.number}`, item]) : [])
+		const fixtureIssuesByKey = new Map(fixture ? fixture.issues.map((item) => [`${item.repository}#${item.number}`, item]) : [])
 		const pullRequestSource = (mode: PullRequestQueueMode, repository: string | null) => (mode === "repository" || repository ? items : userItems)
 
 		// Map the new `ItemListMode` onto the legacy `PullRequestQueueMode` filter

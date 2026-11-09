@@ -10,6 +10,7 @@ export const parseGitRemoteUrl = (url: string): string | null => {
 }
 
 export const detectCurrentGitHubRepository = (): string | null => {
+	if (typeof Bun === "undefined" || !Bun.spawnSync) return null
 	const remotes = Bun.spawnSync({ cmd: ["git", "remote"], stdout: "pipe", stderr: "pipe" })
 	if (remotes.exitCode !== 0) return null
 	const names = remotes.stdout

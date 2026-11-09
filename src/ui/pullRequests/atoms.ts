@@ -1,6 +1,7 @@
 import { Effect } from "effect"
 import * as AsyncResult from "effect/unstable/reactivity/AsyncResult"
 import * as Atom from "effect/unstable/reactivity/Atom"
+import { atomFamily } from "../atomFamily.js"
 import { config } from "../../config.js"
 import type { LoadStatus, PullRequestItem, PullRequestLabel, PullRequestMergeAction, PullRequestMergeMethod, RepositoryDetails, RepositoryMergeMethods } from "../../domain.js"
 import { devLog } from "../../devLog.js"
@@ -160,7 +161,7 @@ const applyCompletedPullRequestDetail = (completed: Readonly<Record<string, Pull
 // requested member until it settles. This keeps concurrent detail requests
 // isolated by key; a singleton `runtime.fn` would be latest-wins and let one PR
 // invocation interrupt another.
-export const pullRequestDetailsForRevision = Atom.family((revisionKey: string) =>
+export const pullRequestDetailsForRevision = atomFamily((revisionKey: string) =>
 	githubRuntime
 		.atom(
 			Effect.gen(function* () {

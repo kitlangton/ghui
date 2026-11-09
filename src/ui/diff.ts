@@ -608,7 +608,8 @@ export const scrollTopForVisibleLine = (currentTop: number, viewportHeight: numb
 
 const estimatedWrappedLineCount = (text: string, width: number, wrapMode: DiffWrapMode) => {
 	if (wrapMode === "none") return 1
-	return Math.max(1, Math.ceil(Bun.stringWidth(text) / Math.max(1, width)))
+	const widthVal = typeof Bun !== "undefined" && typeof Bun.stringWidth === "function" ? Bun.stringWidth(text) : text.length
+	return Math.max(1, Math.ceil(widthVal / Math.max(1, width)))
 }
 
 const patchLineNumberGutterWidth = (lines: readonly string[]) => {

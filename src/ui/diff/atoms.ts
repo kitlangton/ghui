@@ -5,6 +5,7 @@ import { loadStoredDiffWhitespaceMode } from "../../themeStore.js"
 import { GitHubService } from "../../services/GitHubService.js"
 import { githubRuntime } from "../../services/runtime.js"
 import { parsePullRequestRevisionAtomKey, selectedPullRequestAtom } from "../pullRequests/atoms.js"
+import { atomFamily } from "../atomFamily.js"
 import {
 	type DiffFilePatch,
 	type DiffView,
@@ -42,12 +43,12 @@ export const pullRequestDiffCacheAtom = Atom.make<Record<string, PullRequestDiff
 
 // Diff and review-comment requests are keyed by PR revision so concurrent
 // HOME prefetches have distinct Effect lifetimes and result channels.
-export const pullRequestDiffForRevision = Atom.family((revisionKey: string) => {
+export const pullRequestDiffForRevision = atomFamily((revisionKey: string) => {
 	const { repository, number } = parsePullRequestRevisionAtomKey(revisionKey, "diff")
 	return githubRuntime.atom(GitHubService.use((github) => github.getPullRequestDiff(repository, number))).pipe(Atom.setIdleTTL(0))
 })
 
-export const pullRequestReviewCommentsForRevision = Atom.family((revisionKey: string) => {
+export const pullRequestReviewCommentsForRevision = atomFamily((revisionKey: string) => {
 	const { repository, number } = parsePullRequestRevisionAtomKey(revisionKey, "review comments")
 	return githubRuntime.atom(GitHubService.use((github) => github.listPullRequestReviewComments(repository, number))).pipe(Atom.setIdleTTL(0))
 })

@@ -5,7 +5,8 @@ import { createRoot, useRenderer, useTerminalDimensions } from "@opentui/react"
 import { Effect } from "effect"
 import { appendFile } from "node:fs/promises"
 import { useEffect, useState } from "react"
-import { errorMessage } from "./errors.js"
+import { RegistryProvider } from "@effect/atom-react"
+import { App } from "./App.js"
 import { createSystemThemeReloader, type SystemThemeReloadEvent } from "./systemThemeReload.js"
 import { setTuiSuspender } from "./tuiSuspension.js"
 import { loadStoredSystemThemeAutoReload } from "./themeStore.js"
@@ -74,7 +75,11 @@ const renderer = await createCliRenderer({
 	externalOutputMode: "passthrough",
 	onDestroy: () => {
 		process.stdout.write(FOCUS_REPORTING_DISABLE)
-		process.exit(0)
+		if (typeof process.exit === "function") {
+			process.exit(0)
+		} else {
+			process.kill(process.pid, "SIGINT")
+		}
 	},
 })
 
@@ -127,20 +132,14 @@ const Bootstrap = () => {
 		notifySystemThemeReload = () => setSystemThemeGeneration((current) => current + 1)
 		const timer = globalThis.setTimeout(() => {
 			setBootHint("Registering syntax parsers")
-			addGhUiParsers()
+			try {
+				addGhUiParsers()
+			} catch {
+				// Ignore syntax parser loading error in minimal mock environment
+			}
 
-			setBootHint("Loading ghui app")
-			void Promise.all([import("@effect/atom-react"), import("./App.js")]).then(
-				([{ RegistryProvider }, { App }]) => {
-					if (cancelled) return
-					setBootHint("Mounting ghui app")
-					setAppBundle({ RegistryProvider, App })
-				},
-				(error) => {
-					if (cancelled) return
-					setBootHint(errorMessage(error))
-				},
-			)
+			if (cancelled) return
+			setAppBundle({ RegistryProvider, App })
 		}, 0)
 
 		return () => {

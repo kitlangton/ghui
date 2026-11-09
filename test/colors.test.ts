@@ -16,8 +16,13 @@ describe("filterThemeDefinitions", () => {
 	})
 
 	test("filters only within the selected tone", () => {
-		expect(filterThemeDefinitions("catppuccin", "dark").map((theme) => theme.id)).toEqual(["catppuccin"])
+		expect(filterThemeDefinitions("catppuccin", "dark").map((theme) => theme.id)).toEqual(["catppuccin", "catppuccin-frappe", "catppuccin-macchiato"])
 		expect(filterThemeDefinitions("catppuccin", "light").map((theme) => theme.id)).toEqual(["catppuccin-latte"])
+	})
+
+	test("includes catppuccin frappe and macchiato in dark list", () => {
+		expect(filterThemeDefinitions("frappe", "dark").map((theme) => theme.id)).toEqual(["catppuccin-frappe"])
+		expect(filterThemeDefinitions("macchiato", "dark").map((theme) => theme.id)).toEqual(["catppuccin-macchiato"])
 	})
 
 	test("includes new ayu themes in correct tone lists", () => {
@@ -46,6 +51,11 @@ describe("themeToneForThemeId", () => {
 		expect(themeToneForThemeId("github-dark-dimmed")).toBe("dark")
 		expect(themeToneForThemeId("palenight")).toBe("dark")
 	})
+
+	test("identifies catppuccin frappe and macchiato as dark tones", () => {
+		expect(themeToneForThemeId("catppuccin-frappe")).toBe("dark")
+		expect(themeToneForThemeId("catppuccin-macchiato")).toBe("dark")
+	})
 })
 
 describe("pairedThemeId", () => {
@@ -59,6 +69,11 @@ describe("pairedThemeId", () => {
 		expect(pairedThemeId("ayu", "light")).toBe("ayu-light")
 		expect(pairedThemeId("ayu-mirage", "light")).toBe("ayu-light")
 		expect(pairedThemeId("ayu-light", "dark")).toBe("ayu")
+	})
+
+	test("pairs catppuccin frappe and macchiato with latte", () => {
+		expect(pairedThemeId("catppuccin-frappe", "light")).toBe("catppuccin-latte")
+		expect(pairedThemeId("catppuccin-macchiato", "light")).toBe("catppuccin-latte")
 	})
 
 	test("returns null for unpaired dark themes", () => {

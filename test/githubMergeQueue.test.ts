@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test"
 import { Effect, Layer } from "effect"
 import { pullRequestMergeMethods } from "../src/domain.ts"
+import { resolveMergeAction } from "../src/mergeActions.ts"
 import { GitHubService } from "../src/services/GitHubService.ts"
 import { mergeQueueCommandLayer } from "./fixtures/mergeQueue.ts"
 import { runIsolatedProbe } from "./isolatedProbe.ts"
@@ -16,12 +17,18 @@ describe("GitHubService merge queue", () => {
 						GitHubService.use((github) =>
 							Effect.gen(function* () {
 								const info = yield* github.getPullRequestMergeInfo("example/queue-demo", 42)
-								yield* github.mergePullRequest(info.repository, info.number, { kind, method, mergeQueueEnabled: info.mergeQueueEnabled })
+								yield* github.mergePullRequest(info.repository, info.number, resolveMergeAction(kind, method, info))
 								expect(info.mergeQueueEnabled).toBe(queueEnabled)
 							}),
 						).pipe(Effect.provide(layer)),
 					)
+					expect(calls.find((call) => call[1] === "api" && call[2] === "graphql")?.find((arg) => arg.startsWith("query="))).toContain("mergeQueue { id }")
 					const mergeCall = calls.find((call) => call[1] === "pr" && call[2] === "merge")
+					if (queueEnabled && kind === "now") {
+						expect(mergeCall).toBeUndefined()
+						expect(calls.at(-1)).toContain("head=fixture-head")
+						return
+					}
 					expect(mergeCall).toEqual([
 						"gh",
 						"pr",
@@ -33,7 +40,6 @@ describe("GitHubService merge queue", () => {
 						...(kind === "now" ? [] : [`--${kind}`]),
 						...(queueEnabled ? [] : ["--delete-branch"]),
 					])
-					expect(calls.find((call) => call[1] === "api" && call[2] === "graphql")?.find((arg) => arg.startsWith("query="))).toContain("mergeQueue { id }")
 				})
 			}
 		}
@@ -87,7 +93,11 @@ describe("production merge flow", () => {
 				expect(result.finalState).toBe(result.pendingState)
 				expect(result.autoMergeEnabled).toBe(!queueEnabled && kind === "auto")
 				expect(result.completed).toEqual(queueRequest || kind === "auto" ? [] : ["merged"])
-				expect(result.refreshes).toEqual(queueRequest ? ["Requested merge queue for #42"] : kind === "auto" ? [] : [`${kind === "admin" ? "Admin merged" : "Merged"} #42`])
+				const expectedRefreshes: string[] = []
+				if (queueRequest) expectedRefreshes.push("Requested merge queue for #42")
+				if (!queueRequest && kind === "now") expectedRefreshes.push("Merged #42")
+				if (kind === "admin") expectedRefreshes.push("Admin merged #42")
+				expect(result.refreshes).toEqual(expectedRefreshes)
 				expect(result.notices).toEqual(!queueEnabled && kind === "auto" ? ["Enabled auto-merge #42"] : [])
 				expect(result.restored).toBe(0)
 				if (queueRequest) expect(result.modalFrame).toContain("Add to merge queue")
@@ -130,7 +140,7 @@ describe("production merge flow", () => {
 		`)
 		const result = JSON.parse(stdout)
 		expect(result.firstConfirmMutations).toEqual([])
-		expect(result.mutations.map((call: string[]) => call[2])).toEqual(["ready", "merge"])
+		expect(result.mutations.map((call: string[]) => call[2])).toEqual(["ready", "graphql"])
 		expect(result.completed).toEqual([])
 		expect(result.refreshes).toEqual(["Requested merge queue for #42"])
 		expect(result.finalState).toBe("open")

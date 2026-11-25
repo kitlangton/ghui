@@ -56,7 +56,13 @@ export const pullRequestMergeKinds = ["now", "auto", "admin", "disable-auto"] as
 export type PullRequestMergeKind = (typeof pullRequestMergeKinds)[number]
 export type PullRequestMergeMethodKind = Exclude<PullRequestMergeKind, "disable-auto">
 
+export interface MergeQueueTarget {
+	readonly pullRequestId: string
+	readonly expectedHeadOid: string
+}
+
 export type PullRequestMergeAction =
+	| ({ readonly kind: "enqueue" } & MergeQueueTarget)
 	| {
 			readonly kind: PullRequestMergeMethodKind
 			readonly method: PullRequestMergeMethod
@@ -254,6 +260,8 @@ export interface PullRequestMergeInfo {
 	readonly checkStatus: CheckRollupStatus
 	readonly checkSummary: string | null
 	readonly autoMergeEnabled: boolean
+	readonly queueTarget: MergeQueueTarget | null
+	readonly autoMergeAllowed: boolean
 	readonly viewerCanMergeAsAdmin: boolean
 	readonly mergeQueueEnabled: boolean
 }

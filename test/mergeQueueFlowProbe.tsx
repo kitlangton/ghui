@@ -155,7 +155,7 @@ export const probeMergeFlow = async (options: {
 			pressEnter()
 		})
 		if (options.isDraft) {
-			firstConfirmMutations = calls.filter((call) => call[1] === "pr" && call[2] !== "view")
+			firstConfirmMutations = calls.filter((call) => (call[1] === "pr" && call[2] !== "view") || call.some((arg) => arg.startsWith("query=mutation")))
 			act(() => {
 				pressEnter()
 			})
@@ -180,7 +180,7 @@ export const probeMergeFlow = async (options: {
 			restored,
 			modalFrame,
 			firstConfirmMutations,
-			mutations: calls.filter((call) => call[1] === "pr" && call[2] !== "view"),
+			mutations: calls.filter((call) => (call[1] === "pr" && call[2] !== "view") || call.some((arg) => arg.startsWith("query=mutation"))),
 		}
 	} finally {
 		release.resolve()

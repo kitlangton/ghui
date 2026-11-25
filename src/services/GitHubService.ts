@@ -359,15 +359,17 @@ export class GitHubService extends Context.Service<
 							"-F",
 							`number=${number}`,
 							"-f",
-							"query=query($owner: String!, $name: String!, $number: Int!) { repository(owner: $owner, name: $name) { pullRequest(number: $number) { viewerCanMergeAsAdmin mergeQueue { id } } } }",
+							"query=query($owner: String!, $name: String!, $number: Int!) { repository(owner: $owner, name: $name) { autoMergeAllowed pullRequest(number: $number) { id headRefOid viewerCanMergeAsAdmin mergeQueue { id } } } }",
 						])
 					: null
 
+				const pr = adminInfo?.data.repository.pullRequest
 				return parsePullRequestMergeInfo(
 					repository,
 					info,
 					adminInfo?.data.repository.pullRequest?.viewerCanMergeAsAdmin ?? false,
-					Boolean(adminInfo?.data.repository.pullRequest?.mergeQueue),
+					pr?.mergeQueue ? { pullRequestId: pr.id, expectedHeadOid: pr.headRefOid } : null,
+					adminInfo?.data.repository.autoMergeAllowed ?? false,
 				)
 			})
 
@@ -382,8 +384,21 @@ export class GitHubService extends Context.Service<
 				return parseRepositoryMergeMethods(response)
 			})
 
-			const mergePullRequest = (repository: string, number: number, action: PullRequestMergeAction) =>
-				ghVoid("mergePullRequest", ["pr", "merge", String(number), "--repo", repository, ...mergeActionCliArgs(action)])
+			const mergePullRequest = (repository: string, number: number, action: PullRequestMergeAction) => {
+				if (action.kind === "enqueue") {
+					return ghVoid("enqueuePullRequest", [
+						"api",
+						"graphql",
+						"-f",
+						"query=mutation($id: ID!, $head: GitObjectID!) { enqueuePullRequest(input: { pullRequestId: $id, expectedHeadOid: $head }) { mergeQueueEntry { id } } }",
+						"-f",
+						`id=${action.pullRequestId}`,
+						"-f",
+						`head=${action.expectedHeadOid}`,
+					])
+				}
+				return ghVoid("mergePullRequest", ["pr", "merge", String(number), "--repo", repository, ...mergeActionCliArgs(action)])
+			}
 
 			const closePullRequest = (repository: string, number: number) => ghVoid("closePullRequest", ["pr", "close", String(number), "--repo", repository])
 

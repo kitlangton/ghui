@@ -1,9 +1,9 @@
 import { RegistryContext, useAtomSet } from "@effect/atom-react"
 import { useContext } from "react"
-import { allowedMergeMethodList, type PullRequestItem, type PullRequestMergeAction, type PullRequestMergeMethod, type RepositoryMergeMethods } from "../../domain.js"
+import { allowedMergeMethodList, type PullRequestItem, type PullRequestMergeMethod, type RepositoryMergeMethods } from "../../domain.js"
 import { pullRequestMergeMethods } from "../../domain.js"
 import { errorMessage } from "../../errors.js"
-import { getMergeKindDefinition, mergeInfoFromPullRequest, requiresMarkReady, visibleMergeKinds } from "../../mergeActions.js"
+import { getMergeKindDefinition, mergeInfoFromPullRequest, requiresMarkReady, resolveMergeAction, visibleMergeKinds } from "../../mergeActions.js"
 import type { MergeModalState } from "../modals.js"
 import {
 	getPullRequestMergeInfoAtom,
@@ -141,8 +141,7 @@ export const useMergeFlow = ({
 		}
 		if (targetPullRequest && !queueRequest && kindDef.optimisticState === "merged") markPullRequestCompleted(targetPullRequest, "merged")
 
-		const kind = kindDef.kind
-		const action: PullRequestMergeAction = kind === "disable-auto" ? { kind } : { kind, method, mergeQueueEnabled: info.mergeQueueEnabled }
+		const action = resolveMergeAction(kindDef.kind, method, info)
 		const pastTense = kindDef.pastTense(method)
 
 		closeActiveModal()

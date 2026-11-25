@@ -78,7 +78,7 @@ const mergeKindDefinitions = {
 		description: (method) => methodCopy[method].autoDescription,
 		pastTense: () => "Enabled auto-merge",
 		optimisticAutoMergeEnabled: true,
-		isAvailable: (info) => info.state === "open" && !info.autoMergeEnabled && !info.isDraft && info.mergeable !== "conflicting",
+		isAvailable: (info) => info.state === "open" && info.autoMergeAllowed && !info.autoMergeEnabled && !info.isDraft && info.mergeable !== "conflicting",
 	},
 	"disable-auto": {
 		kind: "disable-auto",
@@ -133,13 +133,19 @@ export const getMergeKindDefinition = (kind: PullRequestMergeKind, mergeQueueEna
 	return {
 		...definition,
 		title: () => (kind === "now" ? "Add to merge queue" : "Enable merge queue when ready"),
-		description: () => "Queue when requirements pass; GitHub chooses the merge method.",
+		description: () => (kind === "now" ? "Add this pull request to the merge queue." : "Queue when requirements pass; GitHub chooses the merge method."),
 		pastTense: () => "Requested merge queue for",
 		refreshOnSuccess: true,
 	}
 }
 
-export const mergeActionCliArgs = (action: PullRequestMergeAction): readonly string[] => {
+export const resolveMergeAction = (kind: PullRequestMergeKind, method: PullRequestMergeMethod, info: PullRequestMergeInfo): PullRequestMergeAction => {
+	if (kind === "disable-auto") return { kind }
+	if (kind === "now" && info.queueTarget) return { kind: "enqueue", ...info.queueTarget }
+	return { kind, method, mergeQueueEnabled: info.mergeQueueEnabled }
+}
+
+export const mergeActionCliArgs = (action: Exclude<PullRequestMergeAction, { kind: "enqueue" }>): readonly string[] => {
 	if (action.kind === "disable-auto") return ["--disable-auto"]
 	const methodFlag = methodCopy[action.method].cliFlag
 	// gh rejects branch deletion for queue targets, even with --admin.
@@ -162,6 +168,8 @@ export const mergeInfoFromPullRequest = (pullRequest: PullRequestItem): PullRequ
 	checkStatus: pullRequest.checkStatus,
 	checkSummary: pullRequest.checkSummary,
 	autoMergeEnabled: pullRequest.autoMergeEnabled,
+	queueTarget: null,
+	autoMergeAllowed: false,
 	viewerCanMergeAsAdmin: false,
 	mergeQueueEnabled: false,
 })

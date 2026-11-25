@@ -13,6 +13,8 @@ const cleanInfo: PullRequestMergeInfo = {
 	checkStatus: "passing",
 	checkSummary: "checks 5/5",
 	autoMergeEnabled: false,
+	queueTarget: null,
+	autoMergeAllowed: true,
 	viewerCanMergeAsAdmin: false,
 	mergeQueueEnabled: false,
 }
@@ -47,6 +49,10 @@ describe("availableMergeKinds", () => {
 
 	test("auto-merge enabled offers now and disable-auto, not auto", () => {
 		expect(availableMergeKinds({ ...cleanInfo, autoMergeEnabled: true }).map((k) => k.kind)).toEqual(["now", "disable-auto"])
+	})
+
+	test("queue still offers immediate entry when auto-merge is disabled", () => {
+		expect(availableMergeKinds({ ...cleanInfo, mergeQueueEnabled: true, autoMergeAllowed: false }).map((k) => k.kind)).toEqual(["now"])
 	})
 
 	test("conflicting branch offers nothing", () => {
@@ -104,7 +110,7 @@ describe("visibleMergeKinds", () => {
 })
 
 describe("mergeActionCliArgs", () => {
-	const action = (a: PullRequestMergeAction) => mergeActionCliArgs(a)
+	const action = (a: Exclude<PullRequestMergeAction, { kind: "enqueue" }>) => mergeActionCliArgs(a)
 
 	test("squash + now uses --squash --delete-branch", () => {
 		expect(action({ kind: "now", method: "squash", mergeQueueEnabled: false })).toEqual(["--squash", "--delete-branch"])

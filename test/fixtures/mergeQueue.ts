@@ -45,6 +45,8 @@ export const mergeQueueCommandLayer = (options: MergeQueueFixtureOptions, calls:
 				calls.push([command, ...args])
 				if (command !== "gh") return Effect.die(`Unexpected fixture command: ${command}`)
 				if (args[0] === "pr" && args[1] === "ready") return Effect.succeed({ stdout: "", stderr: "", exitCode: 0 })
+				if (args.includes("id=fixture-pr") && args.includes("head=fixture-head") && args.some((arg) => arg.includes("enqueuePullRequest(input:")))
+					return (options.mergeResult ?? Effect.void).pipe(Effect.as({ stdout: "", stderr: "", exitCode: 0 }))
 				if (args[0] !== "pr" || args[1] !== "merge") return Effect.die(`Unexpected fixture mutation: ${args.join(" ")}`)
 				if (options.queueEnabled && args.includes("--delete-branch")) {
 					return Effect.fail(
@@ -73,29 +75,41 @@ export const mergeQueueCommandLayer = (options: MergeQueueFixtureOptions, calls:
 				if (options.lookupFailure && args[0] === "api" && args[1] === "graphql") {
 					return Effect.fail(new CommandError({ command, args: [...args], detail: "Fixture queue lookup denied", cause: "fixture" }))
 				}
-				const response =
-					args[0] === "pr" && args[1] === "view"
-						? {
-								number: 42,
-								title: mergeQueuePullRequest.title,
-								state: "OPEN",
-								isDraft: options.isDraft ?? false,
-								mergeable: "MERGEABLE",
-								reviewDecision: "APPROVED",
-								autoMergeRequest: null,
-								statusCheckRollup: [
-									{ __typename: "CheckRun", name: "ci", status: options.pendingChecks ? "IN_PROGRESS" : "COMPLETED", conclusion: options.pendingChecks ? null : "SUCCESS" },
-								],
-							}
-						: args[0] === "repo" && args[1] === "view"
-							? { squashMergeAllowed: true, mergeCommitAllowed: true, rebaseMergeAllowed: true }
-							: args[0] === "api" && args[1] === "graphql"
-								? { data: { repository: { pullRequest: { viewerCanMergeAsAdmin: true, mergeQueue: options.queueEnabled ? { id: "fixture-queue" } : null } } } }
-								: args[0] === "api" && args[1] === "user"
-									? { login: "demo-user" }
-									: undefined
-				if (response === undefined) return Effect.die(`Unexpected fixture query: ${args.join(" ")}`)
-				return Schema.decodeUnknownEffect(schema)(response)
+				const decode = Schema.decodeUnknownEffect(schema)
+
+				if (args[0] === "pr" && args[1] === "view")
+					return decode({
+						number: 42,
+						title: mergeQueuePullRequest.title,
+						state: "OPEN",
+						isDraft: options.isDraft ?? false,
+						mergeable: "MERGEABLE",
+						reviewDecision: "APPROVED",
+						autoMergeRequest: null,
+						statusCheckRollup: [
+							{ __typename: "CheckRun", name: "ci", status: options.pendingChecks ? "IN_PROGRESS" : "COMPLETED", conclusion: options.pendingChecks ? null : "SUCCESS" },
+						],
+					})
+
+				if (args[0] === "repo" && args[1] === "view") return decode({ squashMergeAllowed: true, mergeCommitAllowed: true, rebaseMergeAllowed: true })
+
+				if (args[0] === "api" && args[1] === "graphql")
+					return decode({
+						data: {
+							repository: {
+								autoMergeAllowed: true,
+								pullRequest: {
+									id: "fixture-pr",
+									headRefOid: "fixture-head",
+									viewerCanMergeAsAdmin: true,
+									mergeQueue: options.queueEnabled ? { id: "fixture-queue" } : null,
+								},
+							},
+						},
+					})
+
+				if (args[0] === "api" && args[1] === "user") return decode({ login: "demo-user" })
+				return Effect.die(`Unexpected fixture query: ${args.join(" ")}`)
 			},
 		}),
 	)
